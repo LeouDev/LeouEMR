@@ -10,6 +10,7 @@ import {
   performanceIssues,
   rcaEntries,
   rcaNotes,
+  timeMotionStudies,
   users,
   weeklyIssueHistory,
   weeklyMetricResults,
@@ -329,9 +330,9 @@ export async function getActionItemDetail(user: CurrentUser, actionItemId: strin
 
   if (!row) return null;
 
-  // Four independent reads once `row` is known — issued together rather than
-  // as four sequential round trips.
-  const [history, acks, notes, metrics] = await Promise.all([
+  // Five independent reads once `row` is known — issued together rather than
+  // as five sequential round trips.
+  const [history, acks, notes, metrics, timeMotion] = await Promise.all([
     db
       .select()
       .from(weeklyIssueHistory)
@@ -369,9 +370,16 @@ export async function getActionItemDetail(user: CurrentUser, actionItemId: strin
         ),
       )
       .orderBy(weeklyMetricResults.weekStart),
+    // Only ever meaningful for an AHT item, but cheap to fetch alongside
+    // everything else regardless — the page decides whether to render it.
+    db
+      .select()
+      .from(timeMotionStudies)
+      .where(eq(timeMotionStudies.actionItemId, actionItemId))
+      .orderBy(desc(timeMotionStudies.createdAt)),
   ]);
 
-  return { ...row, history, acknowledgements: acks, metrics, notes };
+  return { ...row, history, acknowledgements: acks, metrics, notes, timeMotion };
 }
 
 /** Weekly scorecard for one employee — the IDP view's metric table. */

@@ -622,6 +622,42 @@ export const actionPlans = pgTable("action_plans", {
 });
 
 /**
+ * A supervisor's timed observation of one call, segment by segment against a
+ * baseline — ported from the standalone LeouDev/Time-Motion tool, for AHT
+ * action items specifically: the diagnostic answer to "which part of the
+ * call is actually running long" that a bare AHT number cannot give.
+ *
+ * `segments` is a frozen snapshot ([{code, label, baselineSeconds,
+ * actualSeconds, status}]) rather than a join to a live config table. The
+ * source tool lets a supervisor edit each baseline before starting the call,
+ * so the baseline is an input to one study, not an organizational setting —
+ * freezing what was actually measured means a later change to the defaults
+ * can never retroactively alter a past study's numbers, the same reason
+ * weeklyMetricResults freezes its target rather than reading the KPI
+ * definition live.
+ *
+ * Keyed only on the action item, like rcaEntries and actionPlans — multiple
+ * studies can accumulate against one item over time, the same way rcaNotes
+ * does, because one observed call rarely settles a recurring AHT issue.
+ */
+export const timeMotionStudies = pgTable(
+  "time_motion_studies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actionItemId: uuid("action_item_id").notNull().references(() => actionItems.id),
+    /** Optional call reference from the source system, e.g. "CR-0000123". */
+    callReference: text("call_reference"),
+    segments: jsonb("segments").notNull(),
+    totalActualSeconds: integer("total_actual_seconds").notNull(),
+    totalBaselineSeconds: integer("total_baseline_seconds").notNull(),
+    remarks: text("remarks"),
+    performedBy: uuid("performed_by").notNull().references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("time_motion_studies_action_item_idx").on(table.actionItemId)],
+);
+
+/**
  * One row per acknowledgement *event*, not just the latest — a REOPENED
  * item may require a fresh acknowledgement (spec section 22's audit trail
  * explicitly tracks "when agent acknowledged" as a recurring event).

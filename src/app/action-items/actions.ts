@@ -11,10 +11,12 @@ import {
   actionPlans,
   auditLog,
   employees,
+  kpiDefinitions,
   notifications,
   performanceIssues,
   rcaEntries,
   rcaNotes,
+  timeMotionStudies,
   users,
 } from "@/lib/db/schema";
 import {
@@ -22,6 +24,7 @@ import {
   submitRcaAndActionPlan,
 } from "@/lib/action-item-engine/engine";
 import { actionPlanSchema, rcaSchema } from "@/lib/rca-action-plan/validation";
+import { scoreSegments } from "@/lib/time-motion/engine";
 import { z } from "zod";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -370,5 +373,81 @@ export async function addRcaNote(input: unknown): Promise<ActionResult> {
 
   revalidatePath(`/action-items/${parsed.data.actionItemId}`);
   revalidatePath(`/employees/${scoped.employee.id}`);
+  return { ok: true };
+}
+
+const timeMotionSegmentSchema = z.object({
+  code: z.string().min(1),
+  label: z.string().min(1),
+  baselineSeconds: z.number().int().min(0).max(3600),
+  actualSeconds: z.number().int().min(0).max(3600),
+});
+
+const timeMotionStudySchema = z.object({
+  actionItemId: z.string().uuid(),
+  callReference: z.string().trim().max(100).optional().or(z.literal("")),
+  remarks: z.string().trim().max(2000).optional().or(z.literal("")),
+  segments: z.array(timeMotionSegmentSchema).min(1, "Time at least one segment"),
+});
+
+/**
+ * Records a supervisor's timed observation of one call against an AHT item.
+ *
+ * Restricted to AHT specifically, not any action item: a time-and-motion
+ * study answers "which part of the call is running long", which is only a
+ * meaningful question when the KPI being corrected is handle time. Status
+ * per segment is computed here from the submitted seconds rather than
+ * accepted from the client, for the same reason saveEwsAssessment computes
+ * its own risk level — a crafted request should not be able to post a
+ * "good" band alongside numbers that are actually well over baseline.
+ */
+export async function saveTimeMotionStudy(input: unknown): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (!canManageActionItems(user)) {
+    return { ok: false, error: "Only supervisors and administrators can record a study" };
+  }
+
+  const parsed = timeMotionStudySchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid study" };
+  }
+
+  const scoped = await loadScopedItem(user, parsed.data.actionItemId);
+  if (!scoped) return { ok: false, error: "Action item not found" };
+
+  const [kpi] = await db
+    .select({ code: kpiDefinitions.code })
+    .from(kpiDefinitions)
+    .where(eq(kpiDefinitions.id, scoped.issue.kpiId))
+    .limit(1);
+  if (kpi?.code !== "AHT") {
+    return { ok: false, error: "Time and motion applies to average handle time items" };
+  }
+
+  const scored = scoreSegments(parsed.data.segments);
+
+  await db.insert(timeMotionStudies).values({
+    actionItemId: parsed.data.actionItemId,
+    callReference: parsed.data.callReference || null,
+    segments: scored.segments,
+    totalActualSeconds: scored.totalActualSeconds,
+    totalBaselineSeconds: scored.totalBaselineSeconds,
+    remarks: parsed.data.remarks || null,
+    performedBy: user.id,
+  });
+
+  await db.insert(auditLog).values({
+    actorId: user.id,
+    action: "time_motion.recorded",
+    entityType: "action_item",
+    entityId: parsed.data.actionItemId,
+    after: {
+      totalActualSeconds: scored.totalActualSeconds,
+      totalBaselineSeconds: scored.totalBaselineSeconds,
+    },
+  });
+
+  revalidatePath(`/action-items/${parsed.data.actionItemId}`);
   return { ok: true };
 }
