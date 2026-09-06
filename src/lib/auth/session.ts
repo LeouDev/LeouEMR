@@ -12,6 +12,8 @@ export interface CurrentUser {
   name: string;
   role: UserRole;
   status: UserStatus;
+  /** Links the account to a person in the imported data; null until linked. */
+  employeeEid: string | null;
 }
 
 /**

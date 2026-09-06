@@ -1,0 +1,155 @@
+/**
+ * Integration check for the 4-week sustained-performance rule against the
+ * live database.
+ *
+ * The pure engine is unit tested (src/lib/action-item-engine/engine.test.ts),
+ * but that does not prove the persistence path applies it correctly. This
+ * drives a real acknowledged issue through five synthetic passing weeks
+ * using the production code path, asserts the progression, then removes
+ * everything it inserted.
+ *
+ *   npm run verify:four-week -- AI-2026-000610
+ */
+import { and, eq, gte } from "drizzle-orm";
+import { db } from "../src/lib/db/client";
+import {
+  actionItems,
+  performanceIssues,
+  weeklyIssueHistory,
+  weeklyMetricResults,
+} from "../src/lib/db/schema";
+import { runIssueEngineForWeeks } from "../src/lib/action-item-engine/persistence";
+
+const code = process.argv[2];
+if (!code) {
+  console.error("Usage: npm run verify:four-week -- <ACTION_ITEM_CODE>");
+  process.exit(1);
+}
+
+const [target] = await db
+  .select({
+    issueId: performanceIssues.id,
+    employeeId: performanceIssues.employeeId,
+    kpiId: performanceIssues.kpiId,
+    status: performanceIssues.status,
+    lastEvaluatedWeek: performanceIssues.lastEvaluatedWeek,
+  })
+  .from(actionItems)
+  .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+  .where(eq(actionItems.code, code))
+  .limit(1);
+
+if (!target) {
+  console.error(`No action item ${code}`);
+  process.exit(1);
+}
+if (target.status !== "ACKNOWLEDGED") {
+  console.error(`Issue must be ACKNOWLEDGED to start monitoring; it is ${target.status}`);
+  process.exit(1);
+}
+
+// Five passing weeks after the last one already evaluated.
+const start = new Date(`${target.lastEvaluatedWeek}T00:00:00Z`);
+const weeks: string[] = [];
+for (let i = 1; i <= 5; i++) {
+  const week = new Date(start);
+  week.setUTCDate(week.getUTCDate() + 7 * i);
+  weeks.push(week.toISOString().slice(0, 10));
+}
+
+console.log(`Seeding passing weeks for ${code}: ${weeks.join(", ")}\n`);
+
+for (const week of weeks) {
+  const end = new Date(`${week}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + 6);
+  await db
+    .insert(weeklyMetricResults)
+    .values({
+      employeeId: target.employeeId,
+      kpiId: target.kpiId,
+      weekStart: week,
+      weekEnd: end.toISOString().slice(0, 10),
+      actualValue: 12.5,
+      targetValue: 11,
+      status: "pass",
+      sampleSize: 5,
+    })
+    .onConflictDoNothing();
+}
+
+const expected = [
+  { week: weeks[0], status: "MONITORING", consecutive: 1 },
+  { week: weeks[1], status: "MONITORING", consecutive: 2 },
+  { week: weeks[2], status: "MONITORING", consecutive: 3 },
+  { week: weeks[3], status: "SUSTAINED", consecutive: 4 },
+  { week: weeks[4], status: "COMPLETED", consecutive: 5 },
+];
+
+let failures = 0;
+for (const step of expected) {
+  await runIssueEngineForWeeks([step.week]);
+
+  const [actual] = await db
+    .select({
+      status: performanceIssues.status,
+      consecutive: performanceIssues.consecutivePassingWeeks,
+      resolvedWeek: performanceIssues.resolvedWeek,
+    })
+    .from(performanceIssues)
+    .where(eq(performanceIssues.id, target.issueId))
+    .limit(1);
+
+  const ok = actual.status === step.status && actual.consecutive === step.consecutive;
+  if (!ok) failures += 1;
+
+  console.log(
+    `${ok ? "PASS" : "FAIL"}  ${step.week}  expected ${step.status} ${step.consecutive}/4  ` +
+      `got ${actual.status} ${actual.consecutive}/4`,
+  );
+}
+
+// Also confirm the action item mirrors the issue's final state.
+const [item] = await db
+  .select({ status: actionItems.status })
+  .from(actionItems)
+  .where(eq(actionItems.code, code))
+  .limit(1);
+const mirrored = item.status === "COMPLETED";
+if (!mirrored) failures += 1;
+console.log(`${mirrored ? "PASS" : "FAIL"}  action item mirrors issue status (got ${item.status})`);
+
+// Clean up everything this script inserted and restore the prior state.
+console.log("\nCleaning up synthetic weeks…");
+await db
+  .delete(weeklyIssueHistory)
+  .where(
+    and(
+      eq(weeklyIssueHistory.performanceIssueId, target.issueId),
+      gte(weeklyIssueHistory.week, weeks[0]),
+    ),
+  );
+await db
+  .delete(weeklyMetricResults)
+  .where(
+    and(
+      eq(weeklyMetricResults.employeeId, target.employeeId),
+      eq(weeklyMetricResults.kpiId, target.kpiId),
+      gte(weeklyMetricResults.weekStart, weeks[0]),
+    ),
+  );
+await db
+  .update(performanceIssues)
+  .set({
+    status: "ACKNOWLEDGED",
+    consecutivePassingWeeks: 0,
+    resolvedWeek: null,
+    lastEvaluatedWeek: target.lastEvaluatedWeek,
+  })
+  .where(eq(performanceIssues.id, target.issueId));
+await db
+  .update(actionItems)
+  .set({ status: "ACKNOWLEDGED" })
+  .where(eq(actionItems.code, code));
+
+console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
+process.exit(failures === 0 ? 0 : 1);

@@ -12,6 +12,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/action-items", label: "Action Items" },
   { href: "/skills", label: "Skill Reference" },
 ];
 
