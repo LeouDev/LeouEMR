@@ -1,4 +1,21 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { WorkerMessageHandler } from "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
+/**
+ * pdf.js has no real Worker to hand off to in a serverless function, so it
+ * falls back to a "fake worker" that dynamically imports its own worker
+ * module by a path relative to wherever pdf.mjs itself ends up on disk. That
+ * relative import breaks once Next.js bundles this module into a serverless
+ * chunk — the worker file isn't there anymore, and the error names the
+ * chunk's own missing-file path, not this one. Assigning the message
+ * handler here short-circuits that lookup entirely: pdf.js checks this
+ * global first (see PDFWorker's `_setupFakeWorkerGlobal`) and only reaches
+ * the dynamic import if it's unset. Importing the worker module normally,
+ * as done above, is what makes Next's bundler trace and include it at all.
+ */
+(globalThis as { pdfjsWorker?: { WorkerMessageHandler: unknown } }).pdfjsWorker = {
+  WorkerMessageHandler,
+};
 
 /**
  * The slice of pdf.js's TextItem this module needs. Declared locally rather
