@@ -8,7 +8,7 @@
  * using the production code path, asserts the progression, then removes
  * everything it inserted.
  *
- *   npm run verify:four-week -- AI-2026-000610
+ *   npm run verify:four-week -- PA-2026-000610
  */
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
@@ -19,6 +19,7 @@ import {
   weeklyMetricResults,
 } from "../src/lib/db/schema";
 import { runIssueEngineForWeeks } from "../src/lib/action-item-engine/persistence";
+import { acknowledgeByAgent, submitRcaAndActionPlan } from "../src/lib/action-item-engine/engine";
 
 const code = process.argv[2];
 if (!code) {
@@ -33,6 +34,7 @@ const [target] = await db
     kpiId: performanceIssues.kpiId,
     status: performanceIssues.status,
     lastEvaluatedWeek: performanceIssues.lastEvaluatedWeek,
+    openedWeek: performanceIssues.openedWeek,
   })
   .from(actionItems)
   .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
@@ -43,8 +45,31 @@ if (!target) {
   console.error(`No action item ${code}`);
   process.exit(1);
 }
+const originalStatus = target.status;
+
+// Monitoring only begins once the agent has acknowledged, so drive the real
+// transitions first rather than writing the status directly. This exercises
+// the same engine functions the UI calls.
+if (target.status === "OPEN" || target.status === "REOPENED") {
+  const submitted = submitRcaAndActionPlan(
+    { status: target.status, consecutivePassingWeeks: 0, openedWeek: target.openedWeek },
+    target.openedWeek,
+  );
+  const acknowledged = acknowledgeByAgent(submitted.issue, target.openedWeek);
+  await db
+    .update(performanceIssues)
+    .set({ status: acknowledged.issue.status })
+    .where(eq(performanceIssues.id, target.issueId));
+  await db
+    .update(actionItems)
+    .set({ status: acknowledged.issue.status })
+    .where(eq(actionItems.code, code));
+  console.log(`Advanced ${originalStatus} -> AWAITING_AGENT_ACKNOWLEDGEMENT -> ACKNOWLEDGED\n`);
+  target.status = "ACKNOWLEDGED";
+}
+
 if (target.status !== "ACKNOWLEDGED") {
-  console.error(`Issue must be ACKNOWLEDGED to start monitoring; it is ${target.status}`);
+  console.error(`Issue must reach ACKNOWLEDGED to start monitoring; it is ${target.status}`);
   process.exit(1);
 }
 
@@ -140,7 +165,7 @@ await db
 await db
   .update(performanceIssues)
   .set({
-    status: "ACKNOWLEDGED",
+    status: originalStatus,
     consecutivePassingWeeks: 0,
     resolvedWeek: null,
     lastEvaluatedWeek: target.lastEvaluatedWeek,
@@ -148,7 +173,7 @@ await db
   .where(eq(performanceIssues.id, target.issueId));
 await db
   .update(actionItems)
-  .set({ status: "ACKNOWLEDGED" })
+  .set({ status: originalStatus })
   .where(eq(actionItems.code, code));
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
