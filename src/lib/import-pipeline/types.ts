@@ -63,11 +63,17 @@ export interface SkillWeek {
   cases: number;
   hours: number;
   /**
-   * The employee's own target from the source row. The source carries
-   * per-employee targets (ramping agents have lower ones), so this takes
-   * precedence over the skill reference's default target.
+   * The employee's own targets from the source row, which take precedence
+   * over the skill reference's defaults because the source carries
+   * per-employee targets (ramping agents have lower ones).
+   *
+   * Both units are kept because the two are not interchangeable: a
+   * higher-is-better skill is scored in cases per hour, a lower-is-better
+   * one in seconds per case. They are exact reciprocals (AHT = 3600/CPH),
+   * so using the wrong one silently scores against a target ~70x off.
    */
-  target?: number;
+  cphTarget?: number;
+  ahtTarget?: number;
 }
 
 /**

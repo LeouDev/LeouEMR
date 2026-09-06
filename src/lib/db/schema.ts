@@ -281,6 +281,23 @@ export const actionItems = pgTable("action_items", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Maps a skill label as written in a source workbook onto a configured
+ * skill reference.
+ *
+ * The export names skills differently from the reference table ("General
+ * Phone" vs "Gen_Phones", "Outcome Notification" vs "OCN"), and an
+ * unmatched label silently drops that work from the employee's PAR rating.
+ * Aliases fix that without renaming either side.
+ */
+export const skillAliases = pgTable("skill_aliases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** The label exactly as it appears in the source data. */
+  sourceLabel: text("source_label").notNull().unique(),
+  skillReferenceId: uuid("skill_reference_id").notNull().references(() => skillReferences.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Configurable list from spec section 7. */
 export const rootCauseCategories = pgTable("root_cause_categories", {
   id: uuid("id").primaryKey().defaultRandom(),

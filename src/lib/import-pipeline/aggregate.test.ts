@@ -198,7 +198,7 @@ describe("PAR/MBO inputs", () => {
       cases: 30,
       hours: 3,
       // The ramp target from the row, not the skill's steady-state default.
-      target: 6.4,
+      cphTarget: 6.4,
     });
   });
 
@@ -276,5 +276,30 @@ describe("compliance severity", () => {
     expect(byLabel.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue).toBe(
       byFlag.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue,
     );
+  });
+});
+
+describe("target units", () => {
+  const week = "WE 08/07/26";
+
+  it("keeps both targets, because they are not interchangeable", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        {
+          EID: "1",
+          EMPLOYEENAME: "A",
+          SKILLTYPE: "General Phone",
+          Weekly: week,
+          CASESCOMPLETED: 10,
+          PRODUCTIVITYHOUR: 1,
+          CPHTarget: 6.99,
+          AHTTarget: 515,
+        },
+      ],
+    });
+
+    // A lower-is-better skill is scored in seconds per case and needs the
+    // AHT target; scoring it against ~7 cases/hour would be ~70x off.
+    expect(result.skillWeeks[0]).toMatchObject({ cphTarget: 6.99, ahtTarget: 515 });
   });
 });

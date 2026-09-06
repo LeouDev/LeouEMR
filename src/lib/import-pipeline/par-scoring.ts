@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { skillReferences } from "@/lib/db/schema";
+import { skillAliases, skillReferences } from "@/lib/db/schema";
 import {
   computeSkillRating,
   computeSkillRatio,
@@ -47,6 +47,7 @@ function normalize(value: string): string {
 export async function loadSkillReferences(): Promise<Map<string, SkillReference>> {
   const rows = await db.select().from(skillReferences).where(eq(skillReferences.active, true));
 
+  const byId = new Map<string, SkillReference>();
   const byKey = new Map<string, SkillReference>();
   for (const row of rows) {
     const reference: SkillReference = {
@@ -57,9 +58,18 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
       attributesPerAudit: row.attributesPerAudit,
       thresholds: { r1: row.r1, r2: row.r2, r3: row.r3, r4: row.r4, r5: row.r5 },
     };
+    byId.set(row.id, reference);
     byKey.set(normalize(row.code), reference);
     byKey.set(normalize(row.name), reference);
   }
+
+  // Source labels that differ from the reference's own naming.
+  const aliases = await db.select().from(skillAliases);
+  for (const alias of aliases) {
+    const reference = byId.get(alias.skillReferenceId);
+    if (reference) byKey.set(normalize(alias.sourceLabel), reference);
+  }
+
   return byKey;
 }
 
@@ -67,10 +77,19 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
 export async function loadAttributesBySkill(): Promise<Map<string, number>> {
   const rows = await db.select().from(skillReferences).where(eq(skillReferences.active, true));
   const map = new Map<string, number>();
+  const byId = new Map<string, number>();
   for (const row of rows) {
+    byId.set(row.id, row.attributesPerAudit);
     map.set(normalizeSkill(row.code), row.attributesPerAudit);
     map.set(normalizeSkill(row.name), row.attributesPerAudit);
   }
+
+  const aliases = await db.select().from(skillAliases);
+  for (const alias of aliases) {
+    const attributes = byId.get(alias.skillReferenceId);
+    if (attributes !== undefined) map.set(normalizeSkill(alias.sourceLabel), attributes);
+  }
+
   return map;
 }
 
@@ -117,7 +136,12 @@ export async function computeParMetrics(
         }
         if (skill.hours <= 0 || skill.cases <= 0) return null;
 
-        const target = skill.target ?? reference.target;
+        // The actual and the target must share units. A lower-is-better
+        // skill is measured in seconds per case, so it needs the row's AHT
+        // target; a higher-is-better one needs the cases-per-hour target.
+        const target = reference.lowerIsBetter
+          ? (skill.ahtTarget ?? reference.target)
+          : (skill.cphTarget ?? reference.target);
         if (!target) return null;
 
         const actual = reference.lowerIsBetter

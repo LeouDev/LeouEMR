@@ -295,11 +295,13 @@ function consumeRow(
         skillType,
         cases: 0,
         hours: 0,
-        target: undefined,
+        cphTarget: undefined,
+        ahtTarget: undefined,
       };
       skill.cases += caseCount;
       skill.hours += hourCount;
-      if (cphTarget !== null && Number.isFinite(cphTarget)) skill.target = cphTarget;
+      if (cphTarget !== null && Number.isFinite(cphTarget)) skill.cphTarget = cphTarget;
+      if (ahtTarget !== null && Number.isFinite(ahtTarget)) skill.ahtTarget = ahtTarget;
       acc.skillAcc.set(skillKey, skill);
       return true;
     }
