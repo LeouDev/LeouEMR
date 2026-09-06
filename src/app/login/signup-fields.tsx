@@ -61,6 +61,7 @@ function Text({
   hint,
   type = "text",
   inputMode,
+  maxLength,
 }: {
   name: keyof SignupDetails;
   title: string;
@@ -71,6 +72,7 @@ function Text({
   hint?: string;
   type?: string;
   inputMode?: "text" | "numeric" | "tel";
+  maxLength?: number;
 }) {
   return (
     <label className="block">
@@ -81,6 +83,7 @@ function Text({
       <input
         type={type}
         inputMode={inputMode}
+        maxLength={maxLength}
         required={required}
         value={value}
         placeholder={placeholder}
@@ -114,7 +117,8 @@ export function SignupFields({
             required
             placeholder="001895123"
             inputMode="numeric"
-            hint="Digits only; keep any leading zeros."
+            maxLength={9}
+            hint="Exactly 9 digits, including leading zeros."
           />
           <Text
             name="msid"

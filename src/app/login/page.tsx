@@ -31,8 +31,14 @@ function LoginForm() {
     const supabase = createSupabaseBrowserClient();
 
     if (mode === "signup") {
-      if (!/^\d{6,12}$/.test(details.employeeEid.trim())) {
-        setError("Employee ID should be digits only, keeping any leading zeros");
+      // Exactly 9 digits, including any leading zeros — every employee ID
+      // in the source data has this shape, so a shorter entry usually means
+      // the leading zeros were dropped by a spreadsheet.
+      const employeeEid = details.employeeEid.trim();
+      if (!/^\d{9}$/.test(employeeEid)) {
+        setError(
+          "Employee ID must be exactly 9 digits, including any leading zeros (e.g. 001895123)",
+        );
         setSubmitting(false);
         return;
       }
@@ -43,7 +49,7 @@ function LoginForm() {
       const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { ...details, employeeEid: details.employeeEid.trim() } },
+        options: { data: { ...details, employeeEid } },
       });
       if (signUpError) {
         setError(signUpError.message);
