@@ -10,6 +10,8 @@ import { rootCauseCategories } from "@/lib/db/schema";
 import { getActionItemDetail } from "@/lib/queries/performance";
 import { AcknowledgeButton, ActionPlanForm, RcaForm, SendToAgentButton } from "./workflow";
 import { RcaNotes } from "./rca-notes";
+import { TimeMotionSection } from "./time-motion";
+import type { TimeMotionSegmentRecord } from "./time-motion";
 
 /** Marks a section as filled in. Not a verdict on the agent's performance. */
 function Recorded() {
@@ -42,8 +44,9 @@ export default async function ActionItemPage({
   ]);
   if (!detail) notFound();
 
-  const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics, notes } =
+  const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics, notes, timeMotion } =
     detail;
+  const isAht = kpi.code === "AHT";
 
   const canEdit = canManageActionItems(user);
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
@@ -142,6 +145,35 @@ export default async function ActionItemPage({
             )}
           </div>
         </Card>
+
+        {isAht && (
+          <Card className="mt-6">
+            <CardHeader
+              title="Time & motion"
+              subtitle="Which part of the call is actually driving the handle time, timed against a baseline"
+              action={
+                timeMotion.length > 0 ? (
+                  <span className="text-xs font-semibold text-muted">
+                    {timeMotion.length} stud{timeMotion.length === 1 ? "y" : "ies"}
+                  </span>
+                ) : undefined
+              }
+            />
+            <TimeMotionSection
+              actionItemId={actionItem.id}
+              canRecord={canEdit}
+              studies={timeMotion.map((s) => ({
+                id: s.id,
+                callReference: s.callReference,
+                segments: s.segments as TimeMotionSegmentRecord[],
+                totalActualSeconds: s.totalActualSeconds,
+                totalBaselineSeconds: s.totalBaselineSeconds,
+                remarks: s.remarks,
+                createdAt: s.createdAt,
+              }))}
+            />
+          </Card>
+        )}
 
         <Card className="mt-6">
           <CardHeader
