@@ -162,6 +162,34 @@
       "when": 1788666355806,
       "tag": "0022_obd_special_project",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788670523719,
+      "tag": "0023_employee_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788670524719,
+      "tag": "0024_signup_profile_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1788670565168,
+      "tag": "0025_profile_msid",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788670566168,
+      "tag": "0026_profile_msid_trigger",
+      "breakpoints": true
     }
   ]
 }

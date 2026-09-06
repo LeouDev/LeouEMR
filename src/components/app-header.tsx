@@ -20,6 +20,9 @@ const NAV = [
   { href: "/skills", label: "Skill Reference" },
 ];
 
+/** Only roles with direct reports; an agent's own details are not a 201 file. */
+const LEADER_NAV = [{ href: "/201-file", label: "201 File" }];
+
 /** Admin-only destinations. The pages enforce this themselves too. */
 const ADMIN_NAV = [
   { href: "/import", label: "Import" },
@@ -50,7 +53,11 @@ export async function AppHeader({ user, current }: { user: CurrentUser; current:
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex">
-            {[...NAV, ...(user.role === "admin" ? ADMIN_NAV : [])].map((item) => {
+            {[
+              ...NAV,
+              ...(user.role === "agent" ? [] : LEADER_NAV),
+              ...(user.role === "admin" ? ADMIN_NAV : []),
+            ].map((item) => {
               const active = current === item.href;
               return (
                 <Link

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { BrandLockup } from "@/components/brand";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { EMPTY_SIGNUP, SignupFields, type SignupDetails } from "./signup-fields";
 
 type Mode = "signin" | "signup";
 
@@ -14,7 +15,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<Mode>("signin");
-  const [name, setName] = useState("");
+  const [details, setDetails] = useState<SignupDetails>(EMPTY_SIGNUP);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,10 +31,19 @@ function LoginForm() {
     const supabase = createSupabaseBrowserClient();
 
     if (mode === "signup") {
+      if (!/^\d{6,12}$/.test(details.employeeEid.trim())) {
+        setError("Employee ID should be digits only, keeping any leading zeros");
+        setSubmitting(false);
+        return;
+      }
+
+      // The details travel as auth metadata so the database trigger can
+      // write the account and its 201 file in one transaction, before the
+      // new user has a session of their own.
       const { error: signUpError } = await supabase.auth.signUp({
         email,
         password,
-        options: { data: { name } },
+        options: { data: { ...details, employeeEid: details.employeeEid.trim() } },
       });
       if (signUpError) {
         setError(signUpError.message);
@@ -43,6 +53,7 @@ function LoginForm() {
       setNotice(
         "Account created. An administrator needs to approve it and assign your role before you can sign in.",
       );
+      setDetails(EMPTY_SIGNUP);
       setMode("signin");
       setSubmitting(false);
       return;
@@ -60,7 +71,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-md">
+    <div className={`w-full ${mode === "signup" ? "max-w-2xl" : "max-w-md"}`}>
       <BrandLockup />
 
       <div className="mt-8 overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
@@ -78,20 +89,16 @@ function LoginForm() {
           </div>
 
           {mode === "signup" && (
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-navy-800">Full name</span>
-              <input
-                type="text"
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className={fieldClass}
-              />
-            </label>
+            <SignupFields
+              values={details}
+              onChange={(key, value) => setDetails((prev) => ({ ...prev, [key]: value }))}
+            />
           )}
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-navy-800">Email</span>
+            <span className="mb-1.5 block text-sm font-medium text-navy-800">
+              {mode === "signup" ? "Optum email address" : "Email"}
+            </span>
             <input
               type="email"
               required

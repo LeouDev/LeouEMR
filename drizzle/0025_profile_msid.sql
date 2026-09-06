@@ -1,0 +1,1 @@
+ALTER TABLE "employee_profiles" ADD COLUMN "msid" text;

@@ -21,6 +21,20 @@ export const userRoleEnum = pgEnum("user_role", ["admin", "manager", "supervisor
 export const userStatusEnum = pgEnum("user_status", ["active", "pending", "disabled"]);
 export const employeeStatusEnum = pgEnum("employee_status", ["active", "on_leave", "separated"]);
 
+/**
+ * Job title, distinct from the application role. A Team Lead and an SME may
+ * both hold the supervisor role for access purposes while doing different
+ * jobs, so the two are tracked separately.
+ */
+export const positionEnum = pgEnum("position", [
+  "Supervisor",
+  "Manager",
+  "Pharmacy Technician",
+  "SME",
+  "CE",
+  "Trainer",
+]);
+
 export const kpiTypeEnum = pgEnum("kpi_type", ["percentage", "number", "score", "boolean"]);
 export const kpiDirectionEnum = pgEnum("kpi_direction", [
   "higher_is_better",
@@ -83,6 +97,38 @@ export const users = pgTable("users", {
    */
   employeeEid: text("employee_eid").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The 201 file: personnel details captured at sign-up.
+ *
+ * Kept apart from `users` because it is HR data with a different audience
+ * and lifecycle than authentication and role, and because a supervisor
+ * viewing their team's 201 file should not require access to account
+ * internals.
+ */
+export const employeeProfiles = pgTable("employee_profiles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().unique().references(() => users.id),
+  /** Company employee ID, digits with leading zeros preserved. */
+  employeeEid: text("employee_eid").notNull(),
+  /** Network login, as it appears in the source data (e.g. "mcaumer1"). */
+  msid: text("msid"),
+  lastName: text("last_name").notNull(),
+  firstName: text("first_name").notNull(),
+  middleName: text("middle_name"),
+  position: positionEnum("position").notNull(),
+  addressLine1: text("address_line_1"),
+  addressLine2: text("address_line_2"),
+  cityProvince: text("city_province"),
+  country: text("country"),
+  zipcode: text("zipcode"),
+  phoneNumber: text("phone_number"),
+  emergencyContactName: text("emergency_contact_name"),
+  emergencyContactNumber: text("emergency_contact_number"),
+  emergencyContactRelationship: text("emergency_contact_relationship"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const teams = pgTable("teams", {
