@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { BarList, ChartFrame, StatusBar, TrendChart } from "@/components/charts";
-import { Card, CardHeader, STATUS_LABELS, StatCard, formatWeek } from "@/components/ui";
+import { Card, CardHeader, STATUS_LABELS, StatCard } from "@/components/ui";
 import {
   getAnalytics,
   getAnalyticsFacets,
@@ -9,6 +9,7 @@ import {
   type TrendGrain,
 } from "@/lib/queries/analytics";
 import { MboTree } from "./mbo-tree";
+import { TrendToggle } from "./trend-toggle";
 
 /**
  * The administrator's view: a read-only, org-wide report.
@@ -36,7 +37,13 @@ export async function AdminAnalytics({
   const filtered = Boolean(
     filters.site || filters.manager || filters.weekFrom || filters.weekTo || filters.grain,
   );
-  const latestWeek = analytics.trend.at(-1)?.week;
+  // What the "by site/manager" boards and "failing latest ___" describe — a
+  // single week under the week grain, the whole latest month under the month
+  // grain. Deriving this from the trend chart's last bucket used to work only
+  // by accident: a month bucket's key is a month-start, and formatting that
+  // as a week fabricated a false 7-day range next to figures that actually
+  // covered the whole month.
+  const asOfLabel = analytics.asOfLabel;
   // Every figure on this page now moves with the range, so say what it is.
   const rangeLabel =
     filters.weekFrom || filters.weekTo
@@ -111,26 +118,7 @@ export async function AdminAnalytics({
             <legend className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">
               Trend by
             </legend>
-            {/* A segmented control: one 2px ink box, selected option filled. */}
-            <div className="flex border-2 border-ink">
-              {(["week", "month"] as const).map((option, i) => (
-                <label
-                  key={option}
-                  className={`cursor-pointer px-4 py-2.5 text-sm font-semibold capitalize ${
-                    i > 0 ? "border-l-2 border-ink" : ""
-                  } ${grain === option ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
-                >
-                  <input
-                    type="radio"
-                    name="grain"
-                    value={option}
-                    defaultChecked={grain === option}
-                    className="sr-only"
-                  />
-                  {option}
-                </label>
-              ))}
-            </div>
+            <TrendToggle grain={grain} />
           </fieldset>
 
           <button
@@ -168,10 +156,10 @@ export async function AdminAnalytics({
           hint={`${mbo.passing} of ${mbo.scored} clearing every gate`}
         />
         <StatCard
-          label="Failing latest week"
+          label={grain === "month" ? "Failing latest month" : "Failing latest week"}
           value={analytics.failingEmployees}
           tone={analytics.failingEmployees > 0 ? "fail" : "pass"}
-          hint={latestWeek ? formatWeek(latestWeek) : undefined}
+          hint={asOfLabel ?? undefined}
         />
         <StatCard
           label="Open action items"
@@ -209,7 +197,7 @@ export async function AdminAnalytics({
           />
         </ChartFrame>
 
-        <ChartFrame title="Fail rate by site" subtitle={latestWeek ? formatWeek(latestWeek) : "Latest week"}>
+        <ChartFrame title="Fail rate by site" subtitle={asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")}>
           <BarList
             rows={analytics.bySite.map((s) => ({
               label: s.label,
@@ -221,7 +209,7 @@ export async function AdminAnalytics({
 
         <ChartFrame
           title="Fail rate by manager"
-          subtitle={latestWeek ? formatWeek(latestWeek) : "Latest week"}
+          subtitle={asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")}
         >
           <BarList
             rows={analytics.byManager.slice(0, 12).map((m) => ({

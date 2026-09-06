@@ -1,5 +1,5 @@
 import { BarList, ChartFrame, StatusBar, TrendChart } from "@/components/charts";
-import { Card, CardHeader, STATUS_LABELS, StatCard, formatWeek } from "@/components/ui";
+import { Card, CardHeader, STATUS_LABELS, StatCard } from "@/components/ui";
 import { getAnalytics, getMboOverview, type AnalyticsFilters } from "@/lib/queries/analytics";
 import type { Period } from "@/lib/queries/period";
 import { MboTree } from "./mbo-tree";
@@ -32,7 +32,6 @@ export async function ManagerOverview({
   };
 
   const [analytics, mbo] = await Promise.all([getAnalytics(filters), getMboOverview(filters)]);
-  const latestWeek = analytics.trend.at(-1)?.week;
 
   if (analytics.totalEmployees === 0) {
     return (
@@ -79,7 +78,7 @@ export async function ManagerOverview({
           label="Failing latest week"
           value={analytics.failingEmployees}
           tone={analytics.failingEmployees > 0 ? "fail" : "pass"}
-          hint={latestWeek ? formatWeek(latestWeek) : "No week in range"}
+          hint={analytics.asOfLabel ?? "No week in range"}
         />
         <StatCard
           label="Open action items"
@@ -101,7 +100,7 @@ export async function ManagerOverview({
 
         <ChartFrame
           title="Fail rate by supervisor"
-          subtitle={latestWeek ? `Week of ${formatWeek(latestWeek)}` : "Latest week in range"}
+          subtitle={analytics.asOfLabel ? `Week of ${analytics.asOfLabel}` : "Latest week in range"}
         >
           <BarList
             rows={analytics.bySupervisor.map((s) => ({

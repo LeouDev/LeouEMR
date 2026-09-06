@@ -173,7 +173,11 @@ export default async function DevelopmentPage() {
                           </td>
                         )}
                         <td className={`py-3 align-top ${isAgent ? "px-6" : "px-3"}`}>
-                          <ul className="space-y-1.5">
+                          {/* A vertical stack here would center each line on its own axis —
+                              readable as one line, ragged as a group, since the chips are
+                              different widths. Wrapping them into one centered flex group
+                              keeps the table's centering but reads as a single block. */}
+                          <ul className="flex flex-wrap items-center justify-center gap-1.5">
                             {row.items.map((item) => (
                               <li key={item.actionItemId}>
                                 <Link
