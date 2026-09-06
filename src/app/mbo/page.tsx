@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import { PeriodPicker } from "@/components/period-picker";
@@ -40,13 +41,25 @@ export default async function MboPage({
   // A hidden tab is not a permission check; agents read their own MBO on My Stats.
   if (user.role === "agent") redirect("/my-stats");
 
-  const [params, range] = await Promise.all([searchParams, getFactDateRange()]);
+  const [params, range, cookieStore] = await Promise.all([
+    searchParams,
+    getFactDateRange(),
+    cookies(),
+  ]);
 
-  // MBO is assessed monthly, so that is what this opens on.
-  const granularity = parseGranularity(params.granularity ?? "month");
+  // MBO is assessed monthly, so that is what this opens on absent any other
+  // choice. Dashboard, MBO and Stack Rank share one PeriodPicker and remember
+  // the same selection between them (see period-picker.tsx) — an explicit URL
+  // param still wins, so a shared link or the back button shows what it captured.
+  const granularity = parseGranularity(
+    params.granularity ?? cookieStore.get("periodGranularity")?.value ?? "month",
+  );
   const periods = range ? periodsBetween(granularity, range.first, range.last) : [];
   const period =
     periods.find((p) => p.start === params.period) ??
+    (!params.period
+      ? periods.find((p) => p.start === cookieStore.get("periodStart")?.value)
+      : undefined) ??
     periods[0] ??
     (range ? periodContaining("month", range.last) : null);
 

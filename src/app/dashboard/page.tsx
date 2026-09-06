@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
 import {
@@ -60,11 +61,12 @@ export default async function DashboardPage({
   // Every query below is a round trip to the database, so independent ones
   // are issued together rather than in sequence — the page is otherwise
   // dominated by latency it never needed to pay.
-  const [params, weeks, latest, range] = await Promise.all([
+  const [params, weeks, latest, range, cookieStore] = await Promise.all([
     searchParams,
     getAvailableWeeks(),
     getLatestWeek(),
     getFactDateRange(),
+    cookies(),
   ]);
 
   // Administrators get an aggregate, read-only report rather than the
@@ -95,11 +97,19 @@ export default async function DashboardPage({
   }
 
   // Reporting period. Weeks still drive the action-item engine; this only
-  // changes what the summary above is measured over.
-  const granularity = parseGranularity(params.granularity);
+  // changes what the summary above is measured over. Dashboard, MBO and
+  // Stack Rank share one PeriodPicker control and remember the same choice
+  // between them (see period-picker.tsx) — an explicit URL param still wins,
+  // so a shared link or the back button shows exactly what it captured.
+  const granularity = parseGranularity(
+    params.granularity ?? cookieStore.get("periodGranularity")?.value,
+  );
   const periods = range ? periodsBetween(granularity, range.first, range.last) : [];
   const period =
     periods.find((p) => p.start === params.period) ??
+    (!params.period
+      ? periods.find((p) => p.start === cookieStore.get("periodStart")?.value)
+      : undefined) ??
     periods[0] ??
     (latest ? periodContaining("week", latest) : null);
 
