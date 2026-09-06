@@ -32,10 +32,10 @@ vi.mock("@/lib/db/client", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { updateSkillTarget } = await import("./skills/actions");
-const { updateUser } = await import("./users/actions");
-const { previewImport, runImport } = await import("./import/actions");
-const { addRcaNote } = await import("./action-items/actions");
+const { updateSkillTarget } = await import("./(shell)/skills/actions");
+const { updateUser } = await import("./(shell)/users/actions");
+const { previewImport, runImport } = await import("./(shell)/import/actions");
+const { addRcaNote } = await import("./(shell)/action-items/actions");
 
 function signedInAs(role: UserRole): CurrentUser {
   return {
