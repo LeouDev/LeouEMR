@@ -78,6 +78,34 @@
       "when": 1788659688728,
       "tag": "0010_seed_ews_indicators",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788660144910,
+      "tag": "0011_attributes_per_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788660145854,
+      "tag": "0012_real_thresholds_and_dpo",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788660228940,
+      "tag": "0013_component_kpi_flag",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788660229940,
+      "tag": "0014_attributes_seed_and_pa_prefix",
+      "breakpoints": true
     }
   ]
 }

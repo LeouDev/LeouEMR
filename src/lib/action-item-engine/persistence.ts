@@ -1,8 +1,9 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   actionItems,
   auditLog,
+  kpiDefinitions,
   performanceIssues,
   weeklyIssueHistory,
   weeklyMetricResults,
@@ -56,6 +57,9 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
   const live = await loadLiveIssues();
 
   for (const week of [...new Set(weeks)].sort()) {
+    // Component KPIs (the PAR rating, DPU, DPO) are gates on the composite
+    // MBO result rather than standalone measures, so they are shown on the
+    // scorecard but never open an action item of their own.
     const metrics = await db
       .select({
         employeeId: weeklyMetricResults.employeeId,
@@ -63,7 +67,13 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
         status: weeklyMetricResults.status,
       })
       .from(weeklyMetricResults)
-      .where(eq(weeklyMetricResults.weekStart, week))
+      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+      .where(
+        and(
+          eq(weeklyMetricResults.weekStart, week),
+          eq(kpiDefinitions.generatesActionItems, true),
+        ),
+      )
       .orderBy(asc(weeklyMetricResults.employeeId));
 
     const updates: Array<{ issue: LiveIssue; next: PerformanceIssueState }> = [];
@@ -243,7 +253,7 @@ async function applyOpens(
 
     await db.insert(actionItems).values(
       issues.map((issue) => ({
-        code: sql`'AI-' || ${year} || '-' || lpad(nextval('action_item_seq')::text, 6, '0')`,
+        code: sql`'PA-' || ${year} || '-' || lpad(nextval('action_item_seq')::text, 6, '0')`,
         performanceIssueId: issue.id,
         status: issue.status,
       })),

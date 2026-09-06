@@ -310,20 +310,24 @@ function consumeRow(
       if (score === null) return false;
       accumulate(acc.means, eid, weekStart, KPI_CODES.QUALITY, score * 100);
 
-      // Audit tallies for DPU (share of audits with a perfect result).
+      // Audit tallies for DPU and DPO, split by skill because DPO weights
+      // each record by its own skill's attribute count.
       const markdown = toNumber(cols.markdown ? row[cols.markdown] : undefined) ?? 0;
+      const auditSkill =
+        toText(cols.skillType ? row[cols.skillType] : undefined) ?? "Unspecified";
+
       const qualityKey = `${eid}|${weekStart}`;
       const tally = acc.qualityAcc.get(qualityKey) ?? {
         eid,
         weekStart,
         weekEnd: week.weekEnd,
-        audits: 0,
-        imperfect: 0,
-        markdowns: 0,
+        bySkill: {},
       };
-      tally.audits += 1;
-      if (score < 1) tally.imperfect += 1;
-      tally.markdowns += markdown;
+      const skillTally = tally.bySkill[auditSkill] ?? { audits: 0, imperfect: 0, markdowns: 0 };
+      skillTally.audits += 1;
+      if (score < 1) skillTally.imperfect += 1;
+      skillTally.markdowns += markdown;
+      tally.bySkill[auditSkill] = skillTally;
       acc.qualityAcc.set(qualityKey, tally);
       return true;
     }
@@ -349,10 +353,17 @@ function consumeRow(
     }
 
     case "feedback": {
-      // One row per compliance incident; only critical ones count against the KPI.
-      const risk = toText(cols.risk ? row[cols.risk] : undefined);
-      if (!risk) return false;
-      const isCritical = risk.toLowerCase().includes("critical");
+      // One row per compliance incident; only critical ones count against the
+      // KPI. The severity is expressed either as a label ("Critical IO") or
+      // as a 0/1 flag depending on which column the sheet supplies, so both
+      // forms are accepted rather than assuming one.
+      const raw = cols.risk ? row[cols.risk] : undefined;
+      const numeric = toNumber(raw);
+      const label = toText(raw);
+      if (numeric === null && !label) return false;
+
+      const isCritical =
+        numeric !== null ? numeric === 1 : label!.toLowerCase().includes("critical");
       accumulate(acc.counts, eid, weekStart, KPI_CODES.CRITICAL_ERRORS, isCritical ? 1 : 0);
       return true;
     }

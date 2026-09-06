@@ -4,6 +4,7 @@ import { AppHeader } from "@/components/app-header";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { skillReferences } from "@/lib/db/schema";
+import { QualityCalculator } from "./quality-calculator";
 import { SkillWorkspace, type SkillRow } from "./skill-workspace";
 
 export default async function SkillsPage() {
@@ -47,6 +48,15 @@ export default async function SkillsPage() {
         </div>
 
         <SkillWorkspace skills={skills} canEditTargets={user.role === "admin"} />
+
+        <div className="mt-6">
+          <QualityCalculator
+            skills={rows.map((row) => ({
+              name: row.name,
+              attributesPerAudit: row.attributesPerAudit,
+            }))}
+          />
+        </div>
       </main>
     </div>
   );

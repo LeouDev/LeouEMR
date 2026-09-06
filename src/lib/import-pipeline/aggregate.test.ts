@@ -212,14 +212,69 @@ describe("PAR/MBO inputs", () => {
     expect(result.skillWeeks.map((s) => s.skillType).sort()).toEqual(["Fax", "OCN"]);
   });
 
-  it("tallies audits and imperfect scores for DPU", () => {
+  it("tallies audits per skill, since DPO weights each by its own skill", () => {
     const result = aggregateWorkbook({
       Quality: [
-        { EID: "1", AgentName: "A", Weekly: week, Score: 1, TotalMarkdown: 0 },
-        { EID: "1", AgentName: "A", Weekly: week, Score: 0.94, TotalMarkdown: 1 },
-        { EID: "1", AgentName: "A", Weekly: week, Score: 1, TotalMarkdown: 0 },
+        { EID: "1", AgentName: "A", Weekly: week, SkillSet: "Edits", Score: 1, TotalMarkdown: 0 },
+        { EID: "1", AgentName: "A", Weekly: week, SkillSet: "Edits", Score: 0.94, TotalMarkdown: 1 },
+        { EID: "1", AgentName: "A", Weekly: week, SkillSet: "Fax", Score: 1, TotalMarkdown: 0 },
       ],
     });
-    expect(result.qualityWeeks[0]).toMatchObject({ audits: 3, imperfect: 1, markdowns: 1 });
+
+    expect(result.qualityWeeks[0].bySkill).toEqual({
+      Edits: { audits: 2, imperfect: 1, markdowns: 1 },
+      Fax: { audits: 1, imperfect: 0, markdowns: 0 },
+    });
+  });
+});
+
+describe("compliance severity", () => {
+  const week = "WE 08/07/26";
+
+  it("prefers an exact header when two normalize identically", () => {
+    // The real workbook carries both: a 0/1 flag and a label.
+    const resolved = resolveColumns(["Compliance Risk", "ComplianceRisk"], {
+      risk: ["ComplianceRisk", "Compliance Risk"],
+    });
+    expect(resolved.risk).toBe("ComplianceRisk");
+  });
+
+  it("reads severity from the label form", () => {
+    const result = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, ComplianceRisk: "Critical IO" },
+        { EID: "1", AgentName: "A", Weekly: week, ComplianceRisk: "Standard IO" },
+      ],
+    });
+    expect(result.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue).toBe(1);
+  });
+
+  it("reads severity from the 0/1 flag form", () => {
+    const result = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, "Compliance Risk": 1 },
+        { EID: "1", AgentName: "A", Weekly: week, "Compliance Risk": 1 },
+        { EID: "1", AgentName: "A", Weekly: week, "Compliance Risk": 0 },
+      ],
+    });
+    expect(result.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue).toBe(2);
+  });
+
+  it("agrees across both forms for the same incidents", () => {
+    const byLabel = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, ComplianceRisk: "Critical IO" },
+        { EID: "1", AgentName: "A", Weekly: week, ComplianceRisk: "Standard IO" },
+      ],
+    });
+    const byFlag = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, "Compliance Risk": 1 },
+        { EID: "1", AgentName: "A", Weekly: week, "Compliance Risk": 0 },
+      ],
+    });
+    expect(byLabel.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue).toBe(
+      byFlag.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue,
+    );
   });
 });

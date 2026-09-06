@@ -126,6 +126,15 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
   rangeMin: numeric("range_min", { mode: "number" }),
   rangeMax: numeric("range_max", { mode: "number" }),
   expectedBoolean: boolean("expected_boolean"),
+  /**
+   * Whether a failure here opens an action item.
+   *
+   * False for KPIs that are components of a composite rather than
+   * standalone measures: the PAR rating, DPU and DPO are all gates on the
+   * MBO result, so MBO is what opens the action item while the components
+   * stay visible on the scorecard to show which gate failed.
+   */
+  generatesActionItems: boolean("generates_action_items").notNull().default(true),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -151,6 +160,12 @@ export const skillReferences = pgTable("skill_references", {
   r3: numeric("r3", { mode: "number" }).notNull(),
   r2: numeric("r2", { mode: "number" }).notNull(),
   r1: numeric("r1", { mode: "number" }).notNull(),
+  /**
+   * Scored attributes per quality audit, used as the denominator for DPO
+   * (defects per opportunity). The source data does not carry this, so it
+   * is configuration; 23 is the fallback the existing MBO2 app used.
+   */
+  attributesPerAudit: integer("attributes_per_audit").notNull().default(23),
   sortOrder: integer("sort_order").notNull().default(0),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

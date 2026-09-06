@@ -1,0 +1,1 @@
+ALTER TABLE "skill_references" ADD COLUMN "attributes_per_audit" integer DEFAULT 23 NOT NULL;

@@ -6,11 +6,24 @@ import {
   computeSkillRatio,
   type RatingThresholds,
 } from "@/lib/kpi-engine/par-mbo";
+import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import type { AggregatedMetric, QualityWeek, SkillWeek } from "./types";
 
 export const PAR_KPI_CODES = {
   PRODUCTION_RATE: "PRODUCTION_RATE",
   DPU: "DPU",
+  DPO: "DPO",
+  MBO: "MBO",
+} as const;
+
+/**
+ * The MBO gates, matching the existing MBO2 app's isPass(): a production
+ * rate at or above 2.99 and both quality measures at or above 95%.
+ */
+export const MBO_GATES = {
+  productionRate: 2.99,
+  dpu: 95,
+  dpo: 95,
 } as const;
 
 interface SkillReference {
@@ -18,6 +31,7 @@ interface SkillReference {
   name: string;
   target: number;
   lowerIsBetter: boolean;
+  attributesPerAudit: number;
   thresholds: RatingThresholds;
 }
 
@@ -40,12 +54,24 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
       name: row.name,
       target: row.target,
       lowerIsBetter: row.lowerIsBetter,
+      attributesPerAudit: row.attributesPerAudit,
       thresholds: { r1: row.r1, r2: row.r2, r3: row.r3, r4: row.r4, r5: row.r5 },
     };
     byKey.set(normalize(row.code), reference);
     byKey.set(normalize(row.name), reference);
   }
   return byKey;
+}
+
+/** Normalized skill key -> attributes per audit, for the DPO denominator. */
+export async function loadAttributesBySkill(): Promise<Map<string, number>> {
+  const rows = await db.select().from(skillReferences).where(eq(skillReferences.active, true));
+  const map = new Map<string, number>();
+  for (const row of rows) {
+    map.set(normalizeSkill(row.code), row.attributesPerAudit);
+    map.set(normalizeSkill(row.name), row.attributesPerAudit);
+  }
+  return map;
 }
 
 export interface ParScoringResult {
@@ -69,6 +95,8 @@ export async function computeParMetrics(
   const references = await loadSkillReferences();
   const metrics: AggregatedMetric[] = [];
   const unmatched = new Set<string>();
+  const productionRates = new Map<string, number>();
+  const qualityGates = new Map<string, { dpu: number; dpo: number | null }>();
 
   // Group each employee-week's skills so the rating can be hours-weighted.
   const byEmployeeWeek = new Map<string, SkillWeek[]>();
@@ -124,20 +152,85 @@ export async function computeParMetrics(
       actualValue: finalRate,
       sampleSize: scored.length,
     });
+    productionRates.set(`${first.eid}|${first.weekStart}`, finalRate);
   }
 
+  const attributesBySkill = await loadAttributesBySkill();
+
   for (const week of qualityWeeks) {
-    if (week.audits <= 0) continue;
+    const records = Object.entries(week.bySkill).map(([skill, tally]) => ({
+      skill,
+      audits: tally.audits,
+      markdowns: tally.markdowns,
+      imperfect: tally.imperfect,
+    }));
+
+    const totals = computeQualityTotals(records, attributesBySkill);
+    if (totals.dpu === null) continue;
+
     metrics.push({
       eid: week.eid,
       kpiCode: PAR_KPI_CODES.DPU as never,
       weekStart: week.weekStart,
       weekEnd: week.weekEnd,
-      // Share of audits with no markdown, expressed as a percentage.
-      actualValue: ((week.audits - week.imperfect) / week.audits) * 100,
-      sampleSize: week.audits,
+      actualValue: totals.dpu,
+      sampleSize: totals.audits,
+    });
+
+    if (totals.dpo !== null) {
+      metrics.push({
+        eid: week.eid,
+        kpiCode: PAR_KPI_CODES.DPO as never,
+        weekStart: week.weekStart,
+        weekEnd: week.weekEnd,
+        actualValue: totals.dpo,
+        sampleSize: totals.attributes,
+      });
+    }
+
+    qualityGates.set(`${week.eid}|${week.weekStart}`, { dpu: totals.dpu, dpo: totals.dpo });
+  }
+
+  // The composite MBO result. Every employee-week with any component is
+  // scored on the share of gates met, so falling short of any one fails.
+  const keys = new Set([...productionRates.keys(), ...qualityGates.keys()]);
+  for (const key of keys) {
+    const [eid, weekStart] = key.split("|");
+    const rate = productionRates.get(key);
+    const gates = qualityGates.get(key);
+
+    const checks: boolean[] = [];
+    if (rate !== undefined) checks.push(rate >= MBO_GATES.productionRate);
+    if (gates) {
+      checks.push(gates.dpu >= MBO_GATES.dpu);
+      if (gates.dpo !== null) checks.push(gates.dpo >= MBO_GATES.dpo);
+    }
+    if (checks.length === 0) continue;
+
+    const weekEnd = weekEndFor(skillWeeks, qualityWeeks, eid, weekStart);
+    if (!weekEnd) continue;
+
+    metrics.push({
+      eid,
+      kpiCode: PAR_KPI_CODES.MBO as never,
+      weekStart,
+      weekEnd,
+      actualValue: (checks.filter(Boolean).length / checks.length) * 100,
+      sampleSize: checks.length,
     });
   }
 
   return { metrics, unmatchedSkills: [...unmatched] };
+}
+
+function weekEndFor(
+  skillWeeks: SkillWeek[],
+  qualityWeeks: QualityWeek[],
+  eid: string,
+  weekStart: string,
+): string | null {
+  const skill = skillWeeks.find((s) => s.eid === eid && s.weekStart === weekStart);
+  if (skill) return skill.weekEnd;
+  const quality = qualityWeeks.find((q) => q.eid === eid && q.weekStart === weekStart);
+  return quality?.weekEnd ?? null;
 }

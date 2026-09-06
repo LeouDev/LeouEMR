@@ -23,6 +23,7 @@ export function resolveColumns(
   headers: string[],
   candidates: Record<string, string[]>,
 ): HeaderMap {
+  const exact = new Set(headers);
   const byNormalized = new Map<string, string>();
   for (const header of headers) {
     const key = normalize(header);
@@ -32,6 +33,16 @@ export function resolveColumns(
 
   const resolved: HeaderMap = {};
   for (const [field, options] of Object.entries(candidates)) {
+    // An exact header match wins over a normalized one. Sheets can contain
+    // two headers that normalize identically ("Compliance Risk" holding a
+    // 0/1 flag and "ComplianceRisk" holding the label); without this, only
+    // whichever appears first is ever reachable.
+    const exactMatch = options.find((option) => exact.has(option));
+    if (exactMatch) {
+      resolved[field] = exactMatch;
+      continue;
+    }
+
     for (const option of options) {
       const match = byNormalized.get(normalize(option));
       if (match) {

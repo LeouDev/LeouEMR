@@ -70,13 +70,24 @@ export interface SkillWeek {
   target?: number;
 }
 
-/** Quality audit tallies for one employee in one week. */
+/**
+ * Quality audit tallies for one employee in one week, split by skill.
+ *
+ * The split matters for DPO: each record's attribute count is its own
+ * skill's, so an employee audited on several skills must not be scored
+ * against a single flat attributes value.
+ */
 export interface QualityWeek {
   eid: string;
   weekStart: string;
   weekEnd: string;
+  /** Per-skill tallies, keyed by the skill label as written in the source. */
+  bySkill: Record<string, QualitySkillTally>;
+}
+
+export interface QualitySkillTally {
   audits: number;
-  /** Audits scoring below a perfect result. */
+  /** Audits scoring below a perfect result (#<100). */
   imperfect: number;
   markdowns: number;
 }
