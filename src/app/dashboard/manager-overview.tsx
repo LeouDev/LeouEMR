@@ -78,7 +78,7 @@ export async function ManagerOverview({
           label="Failing latest week"
           value={analytics.failingEmployees}
           tone={analytics.failingEmployees > 0 ? "fail" : "pass"}
-          hint={analytics.asOfLabel ?? "No week in range"}
+          hint={analytics.asOfLabel ? `${analytics.asOfLabel} · any KPI, not just MBO` : "No week in range"}
         />
         <StatCard
           label="Open action items"
@@ -100,7 +100,11 @@ export async function ManagerOverview({
 
         <ChartFrame
           title="Fail rate by supervisor"
-          subtitle={analytics.asOfLabel ? `Week of ${analytics.asOfLabel}` : "Latest week in range"}
+          subtitle={
+            analytics.asOfLabel
+              ? `Week of ${analytics.asOfLabel} — any KPI, not just MBO`
+              : "Latest week in range"
+          }
         >
           <BarList
             rows={analytics.bySupervisor.map((s) => ({

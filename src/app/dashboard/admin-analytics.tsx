@@ -159,7 +159,7 @@ export async function AdminAnalytics({
           label={grain === "month" ? "Failing latest month" : "Failing latest week"}
           value={analytics.failingEmployees}
           tone={analytics.failingEmployees > 0 ? "fail" : "pass"}
-          hint={asOfLabel ?? undefined}
+          hint={asOfLabel ? `${asOfLabel} · any KPI, not just MBO` : undefined}
         />
         <StatCard
           label="Open action items"
@@ -197,7 +197,10 @@ export async function AdminAnalytics({
           />
         </ChartFrame>
 
-        <ChartFrame title="Fail rate by site" subtitle={asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")}>
+        <ChartFrame
+          title="Fail rate by site"
+          subtitle={`${asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")} — any KPI, not just MBO`}
+        >
           <BarList
             rows={analytics.bySite.map((s) => ({
               label: s.label,
@@ -209,7 +212,7 @@ export async function AdminAnalytics({
 
         <ChartFrame
           title="Fail rate by manager"
-          subtitle={asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")}
+          subtitle={`${asOfLabel ?? (grain === "month" ? "Latest month" : "Latest week")} — any KPI, not just MBO`}
         >
           <BarList
             rows={analytics.byManager.slice(0, 12).map((m) => ({
