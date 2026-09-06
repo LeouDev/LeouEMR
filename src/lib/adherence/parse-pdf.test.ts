@@ -41,8 +41,25 @@ const DETAIL_HEADER = [
   item("Description", 499.5, 652.5),
 ];
 
-/** The summary table's header wraps "Scheduled" and "Activities" onto separate lines in the real report. */
-const SUMMARY_HEADER = [item("Scheduled", 56.1, 300), item("Activities", 56.1, 290)];
+/**
+ * The summary table's header wraps "Scheduled" and "Activities" onto
+ * separate lines in the real report — and several other column labels
+ * ("Min. in Adherence", "Percent of Total Schedule", etc.) also wrap, with
+ * their first halves sharing the same physical line as "Scheduled". A real
+ * export groups them exactly like this; a naive fixture with "Scheduled"
+ * alone on its line would miss the bug where those other halves get read
+ * as a bogus row's activity/variance text.
+ */
+const SUMMARY_HEADER = [
+  item("Scheduled", 56.1, 300),
+  item("Min. in", 330, 300),
+  item("Min. out", 400, 300),
+  item("Percent of", 500, 300),
+  item("Activities", 56.1, 290),
+  item("Adherence", 330, 290),
+  item("Adherence", 400, 290),
+  item("Total Schedule", 500, 290),
+];
 
 describe("parseAdherencePdf", () => {
   it("parses a matched row, an unscheduled event, and a wrapped variance line", async () => {

@@ -93,11 +93,17 @@ interface Line {
  *
  * The report also prints the "Adherence <date range>" banner and a running
  * footer on every page, and a "Scheduled\nActivities ..." summary table
- * after each agent's detail rows, whose two header words fall on different
- * printed lines and so cannot be matched as one line — the exit trigger
- * below matches "Activities" alone for that reason. Any row a page's
- * boilerplate manages to slip through the leader anyway is caught by the
- * final filter: a genuine row always names an activity or a time.
+ * after each agent's detail rows, whose two header words print on separate
+ * lines: "Scheduled" (grouped on its line with several other summary
+ * column labels that also wrap — "Min. in", "Percent of", etc.) then
+ * "Activities" alone on the next. Both lines must end the detail table,
+ * not just the second — the first one still has an item positioned in the
+ * time-column zone (from "Scheduled" itself) and, without this, gets read
+ * as one final bogus row per agent, with those other column labels
+ * bucketed into it as if they were real activity/variance text. Matched on
+ * an exact standalone "Scheduled" text item rather than a substring, since
+ * real variance text nearby ("> Schedule", "Unscheduled Event") contains
+ * similar but distinct words that must not trigger this.
  */
 export async function parseAdherencePdf(bytes: Uint8Array): Promise<AdherenceAgentDay[]> {
   const doc = await getDocument({ data: bytes, useSystemFonts: true }).promise;
@@ -159,7 +165,7 @@ export async function parseAdherencePdf(bytes: Uint8Array): Promise<AdherenceAge
         inDetailTable = true;
         continue;
       }
-      if (text.includes("Activities")) {
+      if (text.includes("Activities") || line.items.some((i) => i.str.trim() === "Scheduled")) {
         inDetailTable = false;
         continue;
       }
