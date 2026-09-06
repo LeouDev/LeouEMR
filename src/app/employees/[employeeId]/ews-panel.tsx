@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { computeEwsRisk, EWS_RISK_GUIDANCE, EWS_RISK_LABELS } from "@/lib/ews/engine";
+import { EwsRiskBadge } from "@/components/ui";
+import { computeEwsRisk, EWS_RISK_GUIDANCE } from "@/lib/ews/engine";
 import type { EwsAttrition } from "@/lib/ews/engine";
 import { saveEwsAssessment } from "./ews-actions";
 
@@ -19,13 +20,6 @@ export interface EwsAssessmentValues {
   notes: string;
 }
 
-const RISK_STYLES: Record<string, string> = {
-  GREEN: "bg-pass-bg text-pass",
-  YELLOW: "bg-warn-bg text-warn",
-  RED: "bg-fail-bg text-fail",
-  BLACK: "bg-navy-900 text-white",
-};
-
 const ATTRITION_OPTIONS: Array<{ value: EwsAttrition; label: string }> = [
   { value: "none", label: "None" },
   { value: "black", label: "Confirmed resignation / termination" },
@@ -33,19 +27,6 @@ const ATTRITION_OPTIONS: Array<{ value: EwsAttrition; label: string }> = [
   { value: "loa", label: "Leave of absence" },
   { value: "maternity", label: "Maternity" },
 ];
-
-export function EwsRiskBadge({ riskLevel, score }: { riskLevel: string; score?: number }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold ${
-        RISK_STYLES[riskLevel] ?? "bg-line text-muted"
-      }`}
-    >
-      {EWS_RISK_LABELS[riskLevel as keyof typeof EWS_RISK_LABELS] ?? riskLevel}
-      {score !== undefined && <span className="font-mono opacity-70">{score}</span>}
-    </span>
-  );
-}
 
 export function EwsPanel({
   employeeId,

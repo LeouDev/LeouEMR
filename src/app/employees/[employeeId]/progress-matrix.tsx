@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { formatMetric, formatWeek } from "@/components/ui";
-import { EwsRiskBadge } from "./ews-panel";
+import { EwsRiskBadge } from "@/components/ui";
 import type { EmployeeMatrix } from "@/lib/queries/performance";
 
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";

@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState, PageBand, formatWeek } from "@/components/ui";
-import { EwsRiskBadge } from "@/app/employees/[employeeId]/ews-panel";
+import { Card, CardHeader, EmptyState, EwsRiskBadge, PageBand, formatWeek } from "@/components/ui";
+
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAvailableWeeks, getLatestWeek } from "@/lib/queries/performance";
 import { getRoster, getRosterFacets } from "@/lib/queries/roster";
