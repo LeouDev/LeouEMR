@@ -93,9 +93,12 @@ function TargetCell({
 export function SkillWorkspace({
   skills: initialSkills,
   canEditTargets,
+  showReferenceTable = true,
 }: {
   skills: SkillRow[];
   canEditTargets: boolean;
+  /** A team lead has no configuration to reference here — just the calculator below it. */
+  showReferenceTable?: boolean;
 }) {
   const [skills, setSkills] = useState(initialSkills);
   const [selectedId, setSelectedId] = useState(initialSkills[0]?.id ?? "");
@@ -119,75 +122,77 @@ export function SkillWorkspace({
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden border-2 border-ink bg-surface">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-6 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-ink">Skill reference</h2>
-            <p className="mt-0.5 text-sm text-muted">
-              {canEditTargets
-                ? "Targets are editable. Rating thresholds are locked scoring policy."
-                : "Read-only. Only administrators can change targets."}
+      {showReferenceTable && (
+        <section className="overflow-hidden border-2 border-ink bg-surface">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-6 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-ink">Skill reference</h2>
+              <p className="mt-0.5 text-sm text-muted">
+                {canEditTargets
+                  ? "Targets are editable. Rating thresholds are locked scoring policy."
+                  : "Read-only. Only administrators can change targets."}
+              </p>
+            </div>
+            <p className="text-xs text-muted">
+              Thresholds stored as ratios, shown as percentages of target
             </p>
           </div>
-          <p className="text-xs text-muted">
-            Thresholds stored as ratios, shown as percentages of target
-          </p>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b-2 border-ink bg-cream">
-                <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Skill</th>
-                <th className="px-3 py-2.5 font-semibold text-ink">Target</th>
-                <th className="px-3 py-2.5 font-semibold text-ink">
-                  Lower is better
-                </th>
-                {(["r5", "r4", "r3", "r2", "r1"] as const).map((key) => (
-                  <th
-                    key={key}
-                    className="px-3 py-2.5 font-semibold text-ink"
-                    title="Locked"
-                  >
-                    Rating {key.slice(1)}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b-2 border-ink bg-cream">
+                  <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Skill</th>
+                  <th className="px-3 py-2.5 font-semibold text-ink">Target</th>
+                  <th className="px-3 py-2.5 font-semibold text-ink">
+                    Lower is better
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {skills.map((skill) => (
-                <tr key={skill.id} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
-                  <td className="px-6 py-2 font-medium text-ink">{skill.name}</td>
-                  <td className="px-3 py-2">
-                    <TargetCell
-                      skill={skill}
-                      editable={canEditTargets}
-                      onSaved={(target) => handleTargetSaved(skill.id, target)}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    {skill.lowerIsBetter ? (
-                      <span className="bg-orange-brand-100 px-2 py-0.5 text-xs font-semibold text-orange-brand-dark">
-                        Yes
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted">No</span>
-                    )}
-                  </td>
                   {(["r5", "r4", "r3", "r2", "r1"] as const).map((key) => (
-                    <td
+                    <th
                       key={key}
-                      className="px-3 py-2 font-mono text-xs text-muted tabular-nums"
+                      className="px-3 py-2.5 font-semibold text-ink"
+                      title="Locked"
                     >
-                      {asPercent(skill[key])}
-                    </td>
+                      Rating {key.slice(1)}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {skills.map((skill) => (
+                  <tr key={skill.id} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
+                    <td className="px-6 py-2 font-medium text-ink">{skill.name}</td>
+                    <td className="px-3 py-2">
+                      <TargetCell
+                        skill={skill}
+                        editable={canEditTargets}
+                        onSaved={(target) => handleTargetSaved(skill.id, target)}
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      {skill.lowerIsBetter ? (
+                        <span className="bg-orange-brand-100 px-2 py-0.5 text-xs font-semibold text-orange-brand-dark">
+                          Yes
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted">No</span>
+                      )}
+                    </td>
+                    {(["r5", "r4", "r3", "r2", "r1"] as const).map((key) => (
+                      <td
+                        key={key}
+                        className="px-3 py-2 font-mono text-xs text-muted tabular-nums"
+                      >
+                        {asPercent(skill[key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="overflow-hidden border-2 border-ink bg-surface">
         <div className="border-b border-line px-6 py-4">
