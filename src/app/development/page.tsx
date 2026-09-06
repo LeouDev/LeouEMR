@@ -7,6 +7,9 @@ import { SUSTAINED_WEEKS, getDevelopmentBoard } from "@/lib/queries/development"
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
+/** How many people's rows to show before the table scrolls, on a large board. */
+const VISIBLE_ROWS = 20;
+
 /** Progress toward the four sustained weeks that close an issue. */
 function Progress({ weeks }: { weeks: number }) {
   return (
@@ -31,11 +34,18 @@ function Progress({ weeks }: { weeks: number }) {
  * The Development Hub: everyone with open development work, and what each
  * of them needs next.
  *
- * Grouped by person rather than by action item, because a supervisor develops
- * people — someone with three open items needs one conversation, not three.
- * Ordered by who is blocked on the supervisor rather than by severity: an item
- * with no root cause recorded cannot move at all, while one three weeks into
- * monitoring is already working.
+ * One row per person, one table. This used to be two tables — a board grouped
+ * by person, then every item again in a flat list directly below it — which
+ * doubled the scrolling for no new information: the same KPI, RCA and plan
+ * status appeared twice. Each open item is now its own link right in the
+ * person's row, so a supervisor with three items across three KPIs can jump
+ * straight to the one they want instead of landing on the person's overview
+ * and hunting for it.
+ *
+ * Ordered by who is blocked on the supervisor rather than by severity: an
+ * item with no root cause recorded cannot move at all, while one three weeks
+ * into monitoring is already working. In practice almost everything lands in
+ * "record root cause" — see the note below the table when that dominates.
  */
 export default async function DevelopmentPage() {
   const user = await getCurrentUser();
@@ -45,6 +55,14 @@ export default async function DevelopmentPage() {
   const board = await getDevelopmentBoard(user);
   const { totals } = board;
   const isAgent = user.role === "agent";
+
+  // When almost every row is stuck on the same step, the ordering that
+  // usually surfaces what's most blocked stops differentiating anything —
+  // it is worth saying so rather than leaving a wall of identical rows
+  // unexplained.
+  const stuckOnRca = board.rows.length > 3 && totals.missingRca / totals.openItems > 0.8;
+
+  const scrolls = !isAgent && board.rows.length > VISIBLE_ROWS;
 
   return (
     <div className="min-h-screen bg-cream">
@@ -96,7 +114,9 @@ export default async function DevelopmentPage() {
             subtitle={
               board.rows.length === 0
                 ? "Nothing in development"
-                : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
+                : scrolls
+                  ? `Showing ${VISIBLE_ROWS} of ${board.rows.length} — most blocked first, scroll for the rest`
+                  : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
             }
           />
 
@@ -110,124 +130,98 @@ export default async function DevelopmentPage() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-cream">
-                    <th className={`${HEAD} px-6`}>{isAgent ? "Plan" : "Employee"}</th>
-                    <th className={HEAD}>In development for</th>
-                    <th className={HEAD}>Open</th>
-                    <th className={HEAD}>Sustained progress</th>
-                    <th className={HEAD}>Next step</th>
-                    <th className={`${HEAD} px-6`}>Open</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {board.rows.map((row) => (
-                    <tr key={row.employeeId} className="border-b-2 border-line last:border-0 hover:bg-cream/60">
-                      <td className="px-6 py-3">
-                        <Link
-                          href={`/employees/${row.employeeId}`}
-                          prefetch={false}
-                          className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                        >
-                          {row.employeeName}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3 text-xs text-muted">{row.kpis.join(", ")}</td>
-                      <td className="px-3 py-3 font-mono tabular-nums text-ink">{row.openItems}</td>
-                      <td className="px-3 py-3">
-                        <Progress weeks={row.bestProgress} />
-                      </td>
-                      <td className="px-3 py-3">
-                        <span
-                          className={`text-xs font-semibold ${
-                            row.urgency <= 1 ? "text-fail" : row.urgency <= 3 ? "text-warn" : "text-muted"
-                          }`}
-                        >
-                          {row.nextStep}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3">
-                        <Link
-                          href={`/employees/${row.employeeId}`}
-                          prefetch={false}
-                          className="text-sm font-semibold text-orange-brand underline-offset-4 hover:underline"
-                        >
-                          Open plan →
-                        </Link>
-                      </td>
+            <>
+              {stuckOnRca && (
+                <div className="border-b-2 border-line bg-cream px-6 py-3 text-xs text-muted">
+                  Most of what&rsquo;s below is waiting on a root cause, so the ordering can&rsquo;t
+                  tell you much beyond that — items with the same KPI often share one. Look for
+                  repeats in the list before writing each one from scratch.
+                </div>
+              )}
+              <div
+                className="overflow-x-auto"
+                style={
+                  scrolls
+                    ? { maxHeight: `${VISIBLE_ROWS * 57 + 42}px`, overflowY: "auto" }
+                    : undefined
+                }
+              >
+                <table className="w-full min-w-[900px] border-collapse text-sm">
+                  <thead className={scrolls ? "sticky top-0 z-20" : undefined}>
+                    <tr className="border-b-2 border-ink bg-cream">
+                      {!isAgent && <th className={`${HEAD} px-6`}>Employee</th>}
+                      <th className={`${HEAD} ${isAgent ? "px-6" : ""}`}>Open items</th>
+                      <th className={HEAD}>Sustained progress</th>
+                      <th className={`${HEAD} px-6`}>Next step</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-
-        {board.rows.length > 0 && (
-          <Card>
-            <CardHeader
-              title="Open items in detail"
-              subtitle="Every action item behind the board above"
-            />
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[820px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-cream">
-                    <th className={`${HEAD} px-6`}>Item</th>
-                    {!isAgent && <th className={HEAD}>Employee</th>}
-                    <th className={HEAD}>KPI</th>
-                    <th className={HEAD}>Status</th>
-                    <th className={HEAD}>RCA</th>
-                    <th className={HEAD}>Plan</th>
-                    <th className={`${HEAD} px-6`}>Progress</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {board.rows.flatMap((row) =>
-                    row.items.map((item) => (
+                  </thead>
+                  <tbody>
+                    {board.rows.map((row) => (
                       <tr
-                        key={item.actionItemId}
-                        className="border-b-2 border-line last:border-0 hover:bg-cream/60"
+                        key={row.employeeId}
+                        className="border-b-2 border-line bg-surface last:border-0 hover:bg-cream/60"
                       >
-                        <td className="px-6 py-2.5">
-                          <Link
-                            href={`/action-items/${item.actionItemId}`}
-                            prefetch={false}
-                            className="font-mono text-xs text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                          >
-                            {item.actionItemCode}
-                          </Link>
-                        </td>
                         {!isAgent && (
-                          <td className="px-3 py-2.5 text-ink">{item.employeeName}</td>
+                          <td className="px-6 py-3 align-top">
+                            <Link
+                              href={`/employees/${row.employeeId}`}
+                              prefetch={false}
+                              className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                            >
+                              {row.employeeName}
+                            </Link>
+                          </td>
                         )}
-                        <td className="px-3 py-2.5 text-muted">{item.kpiName}</td>
-                        <td className="px-3 py-2.5">
-                          <StatusBadge status={item.status} />
+                        <td className={`py-3 align-top ${isAgent ? "px-6" : "px-3"}`}>
+                          <ul className="space-y-1.5">
+                            {row.items.map((item) => (
+                              <li key={item.actionItemId}>
+                                <Link
+                                  href={`/action-items/${item.actionItemId}`}
+                                  prefetch={false}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                                >
+                                  {item.kpiName}
+                                  {!item.hasRca ? (
+                                    <span className="bg-fail-bg px-1.5 py-0.5 text-[10px] font-bold text-fail no-underline">
+                                      RCA
+                                    </span>
+                                  ) : !item.hasActionPlan ? (
+                                    <span className="bg-warn-bg px-1.5 py-0.5 text-[10px] font-bold text-warn no-underline">
+                                      Plan
+                                    </span>
+                                  ) : (
+                                    <StatusBadge status={item.status} />
+                                  )}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
                         </td>
-                        <td className="px-3 py-2.5">
-                          <span className={item.hasRca ? "text-pass" : "text-fail"}>
-                            {item.hasRca ? "Done" : "Missing"}
+                        <td className="px-3 py-3 align-top">
+                          <Progress weeks={row.bestProgress} />
+                        </td>
+                        <td className="px-6 py-3 align-top">
+                          <span
+                            className={`text-xs font-semibold ${
+                              row.urgency <= 1
+                                ? "text-fail"
+                                : row.urgency <= 3
+                                  ? "text-warn"
+                                  : "text-muted"
+                            }`}
+                          >
+                            {row.nextStep}
                           </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <span className={item.hasActionPlan ? "text-pass" : "text-fail"}>
-                            {item.hasActionPlan ? "Done" : "Missing"}
-                          </span>
-                        </td>
-                        <td className="px-6 py-2.5">
-                          <Progress weeks={item.consecutivePassingWeeks} />
                         </td>
                       </tr>
-                    )),
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </Card>
       </main>
     </div>
   );

@@ -164,31 +164,41 @@ export const teams = pgTable("teams", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const employees = pgTable("employees", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  /** External employee id from the raw weekly import (RawData.xlsx's EID column). */
-  eid: text("eid").notNull().unique(),
-  name: text("name").notNull(),
-  teamId: uuid("team_id").references(() => teams.id),
-  supervisorId: uuid("supervisor_id").references(() => users.id),
-  managerId: uuid("manager_id").references(() => users.id),
-  /**
-   * Org hierarchy exactly as the source data expresses it. The raw file
-   * identifies supervisors by EID and managers by name only, so these are
-   * the authoritative scoping fields; supervisorId/managerId are populated
-   * only once matching login accounts exist.
-   */
-  supervisorEid: text("supervisor_eid"),
-  supervisorName: text("supervisor_name"),
-  managerName: text("manager_name"),
-  site: text("site"),
-  skillType: text("skill_type"),
-  status: employeeStatusEnum("status").notNull().default("active"),
-  /** Set once the employee has their own Agent login. Null until then. */
-  userId: uuid("user_id").references(() => users.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const employees = pgTable(
+  "employees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** External employee id from the raw weekly import (RawData.xlsx's EID column). */
+    eid: text("eid").notNull().unique(),
+    name: text("name").notNull(),
+    teamId: uuid("team_id").references(() => teams.id),
+    supervisorId: uuid("supervisor_id").references(() => users.id),
+    managerId: uuid("manager_id").references(() => users.id),
+    /**
+     * Org hierarchy exactly as the source data expresses it. The raw file
+     * identifies supervisors by EID and managers by name only, so these are
+     * the authoritative scoping fields; supervisorId/managerId are populated
+     * only once matching login accounts exist.
+     */
+    supervisorEid: text("supervisor_eid"),
+    supervisorName: text("supervisor_name"),
+    managerName: text("manager_name"),
+    site: text("site"),
+    skillType: text("skill_type"),
+    status: employeeStatusEnum("status").notNull().default("active"),
+    /** Set once the employee has their own Agent login. Null until then. */
+    userId: uuid("user_id").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // A manager's span and a supervisor's team are resolved on nearly every
+    // authenticated page load (see employeeScope in src/lib/auth/scope.ts).
+    // Cheap to add while the table is small; expensive to add after it isn't.
+    index("employees_manager_name_idx").on(table.managerName),
+    index("employees_supervisor_eid_idx").on(table.supervisorEid),
+  ],
+);
 
 /**
  * Who someone reported to during a period, as opposed to right now.
@@ -464,25 +474,32 @@ export const qualityFacts = pgTable(
  * PerformanceIssueState; the engine module is the pure logic that computes
  * its transitions.
  */
-export const performanceIssues = pgTable("performance_issues", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  /** Stable human-facing identifier, e.g. PI-2026-000045 (spec section 30). */
-  code: text("code").notNull().unique(),
-  employeeId: uuid("employee_id").notNull().references(() => employees.id),
-  kpiId: uuid("kpi_id").notNull().references(() => kpiDefinitions.id),
-  status: issueStatusEnum("status").notNull().default("OPEN"),
-  openedWeek: date("opened_week").notNull(),
-  consecutivePassingWeeks: integer("consecutive_passing_weeks").notNull().default(0),
-  /**
-   * Latest week already folded into this issue's state. Re-importing an
-   * earlier or equal week is a no-op, so a corrected re-upload can never
-   * double-count a pass or spuriously reopen a resolved issue.
-   */
-  lastEvaluatedWeek: date("last_evaluated_week"),
-  resolvedWeek: date("resolved_week"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const performanceIssues = pgTable(
+  "performance_issues",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Stable human-facing identifier, e.g. PI-2026-000045 (spec section 30). */
+    code: text("code").notNull().unique(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    kpiId: uuid("kpi_id").notNull().references(() => kpiDefinitions.id),
+    status: issueStatusEnum("status").notNull().default("OPEN"),
+    openedWeek: date("opened_week").notNull(),
+    consecutivePassingWeeks: integer("consecutive_passing_weeks").notNull().default(0),
+    /**
+     * Latest week already folded into this issue's state. Re-importing an
+     * earlier or equal week is a no-op, so a corrected re-upload can never
+     * double-count a pass or spuriously reopen a resolved issue.
+     */
+    lastEvaluatedWeek: date("last_evaluated_week"),
+    resolvedWeek: date("resolved_week"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // Every open-items count or list filters by employee and status together.
+    index("performance_issues_employee_status_idx").on(table.employeeId, table.status),
+  ],
+);
 
 /** Powers the weekly timeline view (spec section 12) — one row per week the issue was evaluated. */
 export const weeklyIssueHistory = pgTable(

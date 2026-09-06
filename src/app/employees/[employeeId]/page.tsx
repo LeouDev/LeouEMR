@@ -25,7 +25,16 @@ export default async function EmployeePage({
   const { employeeId } = await params;
   const query = await searchParams;
 
-  const matrix = await getEmployeeMatrix(user, employeeId);
+  // The indicator list is a static reference table with no dependency on the
+  // matrix, so it is fetched alongside it rather than after it.
+  const [matrix, indicators] = await Promise.all([
+    getEmployeeMatrix(user, employeeId),
+    db
+      .select({ code: ewsIndicators.code, label: ewsIndicators.label })
+      .from(ewsIndicators)
+      .where(eq(ewsIndicators.active, true))
+      .orderBy(asc(ewsIndicators.sortOrder)),
+  ]);
   if (!matrix) notFound();
 
   const { employee, weeks, kpis, cells, issues } = matrix;
@@ -34,12 +43,6 @@ export default async function EmployeePage({
   // The EWS assessment is recorded for a specific week, so it still needs a
   // selected one; the matrix above shows every week's risk at a glance.
   const assessmentWeek = query.week && weeks.includes(query.week) ? query.week : latestWeek;
-
-  const indicators = await db
-    .select({ code: ewsIndicators.code, label: ewsIndicators.label })
-    .from(ewsIndicators)
-    .where(eq(ewsIndicators.active, true))
-    .orderBy(asc(ewsIndicators.sortOrder));
 
   const [assessment] = assessmentWeek
     ? await db

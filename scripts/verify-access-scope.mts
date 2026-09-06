@@ -144,7 +144,7 @@ if (foreign) {
 console.log("\nSEARCH AND FILTERS — must narrow within scope, never widen");
 const supUser = asUser({ role: "supervisor", employeeEid: sup.eid! });
 
-const supAll = await getRoster(supUser, week, {}, 1000);
+const { rows: supAll } = await getRoster(supUser, week, {}, 1000);
 check("  supervisor roster size", supAll.length, supTeam);
 
 const outsiders = supAll.filter((r) => r.supervisorName !== sup.name).length;
@@ -157,15 +157,15 @@ const [foreignEmp] = await db
   .where(eq(employees.supervisorEid, "001918874"))
   .limit(1);
 
-const searched = await getRoster(supUser, week, { search: foreignEmp.name }, 1000);
+const { rows: searched } = await getRoster(supUser, week, { search: foreignEmp.name }, 1000);
 check(`  searching another team's employee ("${foreignEmp.name}")`, searched.length, 0);
 
 // Filtering by another supervisor's name must also yield nothing.
-const filtered = await getRoster(supUser, week, { supervisor: "Alyana Marie Jose Dela Cruz" }, 1000);
+const { rows: filtered } = await getRoster(supUser, week, { supervisor: "Alyana Marie Jose Dela Cruz" }, 1000);
 check("  filtering by another supervisor", filtered.length, 0);
 
 // An agent searching broadly still sees only themselves.
-const agentRoster = await getRoster(agentUser, week, { search: "a" }, 1000);
+const { rows: agentRoster } = await getRoster(agentUser, week, { search: "a" }, 1000);
 check("  agent broad search returns only self", agentRoster.length, 1);
 
 console.log(failures === 0 ? "\nAll scope checks passed." : `\n${failures} scope check(s) FAILED.`);

@@ -29,19 +29,14 @@ export default async function EmployeesPage({
   const latest = await getLatestWeek();
   const week = params.week && weeks.includes(params.week) ? params.week : latest;
 
-  const [rows, facets] = await Promise.all([
-    getRoster(
-      user,
-      week,
-      {
-        search: params.q,
-        supervisor: params.supervisor,
-        site: params.site,
-        risk: params.risk,
-        standing: params.standing,
-      },
-      300,
-    ),
+  const [{ rows, total }, facets] = await Promise.all([
+    getRoster(user, week, {
+      search: params.q,
+      supervisor: params.supervisor,
+      site: params.site,
+      risk: params.risk,
+      standing: params.standing,
+    }),
     getRosterFacets(user),
   ]);
 
@@ -72,7 +67,11 @@ export default async function EmployeesPage({
         <Card className="mt-4">
           <CardHeader
             title="Roster"
-            subtitle={`${rows.length} employee${rows.length === 1 ? "" : "s"}`}
+            subtitle={
+              rows.length < total
+                ? `Showing the first ${rows.length} of ${total} — search or filter to narrow further`
+                : `${rows.length} employee${rows.length === 1 ? "" : "s"}`
+            }
           />
 
           {rows.length === 0 ? (

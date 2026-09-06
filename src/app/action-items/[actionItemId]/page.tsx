@@ -30,17 +30,20 @@ export default async function ActionItemPage({
   if (user.status !== "active") redirect("/pending");
 
   const { actionItemId } = await params;
-  const detail = await getActionItemDetail(user, actionItemId);
+  // The category list is a static reference table with no dependency on the
+  // item, so it is fetched alongside it rather than after it.
+  const [detail, categories] = await Promise.all([
+    getActionItemDetail(user, actionItemId),
+    db
+      .select({ id: rootCauseCategories.id, label: rootCauseCategories.label })
+      .from(rootCauseCategories)
+      .where(eq(rootCauseCategories.active, true))
+      .orderBy(asc(rootCauseCategories.label)),
+  ]);
   if (!detail) notFound();
 
   const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics, notes } =
     detail;
-
-  const categories = await db
-    .select({ id: rootCauseCategories.id, label: rootCauseCategories.label })
-    .from(rootCauseCategories)
-    .where(eq(rootCauseCategories.active, true))
-    .orderBy(asc(rootCauseCategories.label));
 
   const canEdit = canManageActionItems(user);
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
