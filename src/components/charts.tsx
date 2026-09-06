@@ -67,7 +67,12 @@ export function TrendChart({
         })
       : formatWeek(start);
   if (points.length < 2) {
-    return <p className="py-8 text-center text-sm text-muted">Not enough weeks to plot a trend.</p>;
+    return (
+      <p className="py-8 text-center text-sm text-muted">
+        Only {points.length} {grain}{points.length === 1 ? "" : "s"} in this range — widen the dates
+        to plot a trend.
+      </p>
+    );
   }
 
   const W = 720;
