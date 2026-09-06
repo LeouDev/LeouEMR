@@ -131,3 +131,17 @@ function formatRange(start: Date, end: Date): string {
 export function parseGranularity(value: string | undefined): Granularity {
   return GRANULARITIES.includes(value as Granularity) ? (value as Granularity) : "week";
 }
+
+/**
+ * The period immediately before this one, at the same granularity.
+ *
+ * Derived by stepping one day back from the start and asking which period
+ * contains it, so month lengths, quarter boundaries and leap years are
+ * handled by the same logic that built the original rather than by arithmetic
+ * that has to special-case each granularity.
+ */
+export function previousPeriod(period: Period): Period {
+  const dayBefore = new Date(`${period.start}T00:00:00Z`);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  return periodContaining(period.granularity, dayBefore.toISOString().slice(0, 10));
+}

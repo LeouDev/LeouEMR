@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState, StatusBadge, formatWeek } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand, StatusBadge, formatWeek } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getActionItems } from "@/lib/queries/performance";
 
@@ -21,10 +21,9 @@ export default async function ActionItemsPage({
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/action-items" />
+      <PageBand title="Action items" subtitle="Open performance threads" />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <h1 className="mb-6 text-xl font-semibold tracking-tight text-navy-900">Action items</h1>
-
         <Card>
           <CardHeader
             title={openOnly ? "Active items" : "All items"}
@@ -32,7 +31,7 @@ export default async function ActionItemsPage({
             action={
               <Link
                 href={openOnly ? "/action-items?all=1" : "/action-items"}
-                className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-navy-800 transition hover:border-orange-brand hover:text-orange-brand"
+                className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
               >
                 {openOnly ? "Show resolved too" : "Show active only"}
               </Link>
@@ -48,23 +47,24 @@ export default async function ActionItemsPage({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-cream text-left">
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">Item</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Employee</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">KPI</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Status</th>
-                    <th className="px-3 py-2.5 text-center font-semibold text-navy-800">Progress</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Opened</th>
-                    <th className="px-6 py-2.5 text-right font-semibold text-navy-800">RCA / Plan</th>
+                  <tr className="border-b-2 border-ink bg-cream">
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Item</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">KPI</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
+                    <th className="px-3 py-2.5 font-semibold text-ink">Progress</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Opened</th>
+                    <th className="px-6 py-2.5 font-semibold text-ink">RCA / Plan</th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => (
-                    <tr key={item.actionItemId} className="border-b border-line/70 last:border-0 hover:bg-cream/60">
+                    <tr key={item.actionItemId} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
                       <td className="px-6 py-2">
                         <Link
                           href={`/action-items/${item.actionItemId}`}
-                          className="font-mono text-xs font-medium text-navy-900 underline-offset-4 hover:text-orange-brand hover:underline"
+                    prefetch={false}
+                          className="font-mono text-xs font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
                         >
                           {item.actionItemCode}
                         </Link>
@@ -72,20 +72,21 @@ export default async function ActionItemsPage({
                       <td className="px-3 py-2">
                         <Link
                           href={`/employees/${item.employeeId}`}
-                          className="text-navy-900 underline-offset-4 hover:text-orange-brand hover:underline"
+                    prefetch={false}
+                          className="text-ink underline-offset-4 hover:text-orange-brand hover:underline"
                         >
                           {item.employeeName}
                         </Link>
                       </td>
-                      <td className="px-3 py-2 text-navy-800">{item.kpiName}</td>
+                      <td className="px-3 py-2 text-ink">{item.kpiName}</td>
                       <td className="px-3 py-2">
                         <StatusBadge status={item.status} />
                       </td>
-                      <td className="px-3 py-2 text-center font-mono text-xs tabular-nums text-muted">
+                      <td className="px-3 py-2 font-mono text-xs tabular-nums text-muted">
                         {item.consecutivePassingWeeks} / 4
                       </td>
                       <td className="px-3 py-2 text-xs text-muted">{formatWeek(item.openedWeek)}</td>
-                      <td className="px-6 py-2 text-right text-xs">
+                      <td className="px-6 py-2 text-xs">
                         <span className={item.hasRca ? "text-pass" : "text-muted"}>
                           {item.hasRca ? "RCA ✓" : "RCA —"}
                         </span>

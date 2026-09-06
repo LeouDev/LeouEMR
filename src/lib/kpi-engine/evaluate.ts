@@ -94,3 +94,35 @@ function evaluateBooleanMatch(
 export function toPassFail(status: KpiEvaluationResult["status"]): "PASS" | "FAIL" {
   return status === "FAIL" ? "FAIL" : "PASS";
 }
+
+
+/**
+ * Overrides a KPI definition's thresholds with a per-employee target from the
+ * source workbook.
+ *
+ * CPH and AHT targets are per employee — a ramping agent and an Edits agent
+ * do not share the KPI's default — so the pass/fail line moves with the
+ * supplied target while the warning band keeps its configured offset.
+ *
+ * Shared by the import and by period re-aggregation: when only the import
+ * applied it, a month view scored everyone against the KPI default and
+ * marked agents on a lower target as failing while they were above it.
+ */
+export function applySourceTarget(
+  definition: KpiDefinition,
+  sourceTarget?: number,
+): KpiDefinition {
+  if (sourceTarget === undefined || !Number.isFinite(sourceTarget)) return definition;
+
+  const offset =
+    definition.warningThreshold !== undefined && definition.failureThreshold !== undefined
+      ? definition.warningThreshold - definition.failureThreshold
+      : undefined;
+
+  return {
+    ...definition,
+    target: sourceTarget,
+    failureThreshold: sourceTarget,
+    warningThreshold: offset === undefined ? undefined : sourceTarget + offset,
+  };
+}

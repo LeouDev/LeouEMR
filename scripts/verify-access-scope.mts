@@ -11,7 +11,12 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { employees, performanceIssues } from "../src/lib/db/schema";
 import type { CurrentUser } from "../src/lib/auth/session";
-import { getActionItems, getAttentionRows, getTeamSummary } from "../src/lib/queries/performance";
+import {
+  OPENS_ACTION_ITEMS,
+  getActionItems,
+  getAttentionRows,
+  getTeamSummary,
+} from "../src/lib/queries/performance";
 import { getRoster } from "../src/lib/queries/roster";
 
 function asUser(over: Partial<CurrentUser>): CurrentUser {
@@ -22,6 +27,7 @@ function asUser(over: Partial<CurrentUser>): CurrentUser {
     role: "agent",
     status: "active",
     employeeEid: null,
+    managerName: null,
     ...over,
   };
 }
@@ -94,13 +100,19 @@ const foreignRows = agentRows.filter((r) => r.employeeEid !== agentRow.eid).leng
 check("  attention rows belonging to others", foreignRows, 0);
 
 const agentItems = await getActionItems(agentUser, { openOnly: false, limit: 500 });
+// Counted with the same predicate the query applies: only KPIs that generate
+// action items. MBO is assessed monthly and deliberately does not, so counting
+// every issue row here would expect an item the app is right not to show.
 const [{ n: ownIssues }] = await db
   .select({ n: count() })
   .from(performanceIssues)
   .where(
-    inArray(
-      performanceIssues.employeeId,
-      db.select({ id: employees.id }).from(employees).where(eq(employees.eid, agentRow.eid)),
+    and(
+      inArray(
+        performanceIssues.employeeId,
+        db.select({ id: employees.id }).from(employees).where(eq(employees.eid, agentRow.eid)),
+      ),
+      OPENS_ACTION_ITEMS,
     ),
   );
 check("  action items visible", agentItems.length, ownIssues);
@@ -132,7 +144,7 @@ if (foreign) {
 console.log("\nSEARCH AND FILTERS — must narrow within scope, never widen");
 const supUser = asUser({ role: "supervisor", employeeEid: sup.eid! });
 
-const supAll = await getRoster(supUser, week, {}, 1000);
+const { rows: supAll } = await getRoster(supUser, week, {}, 1000);
 check("  supervisor roster size", supAll.length, supTeam);
 
 const outsiders = supAll.filter((r) => r.supervisorName !== sup.name).length;
@@ -145,15 +157,15 @@ const [foreignEmp] = await db
   .where(eq(employees.supervisorEid, "001918874"))
   .limit(1);
 
-const searched = await getRoster(supUser, week, { search: foreignEmp.name }, 1000);
+const { rows: searched } = await getRoster(supUser, week, { search: foreignEmp.name }, 1000);
 check(`  searching another team's employee ("${foreignEmp.name}")`, searched.length, 0);
 
 // Filtering by another supervisor's name must also yield nothing.
-const filtered = await getRoster(supUser, week, { supervisor: "Alyana Marie Jose Dela Cruz" }, 1000);
+const { rows: filtered } = await getRoster(supUser, week, { supervisor: "Alyana Marie Jose Dela Cruz" }, 1000);
 check("  filtering by another supervisor", filtered.length, 0);
 
 // An agent searching broadly still sees only themselves.
-const agentRoster = await getRoster(agentUser, week, { search: "a" }, 1000);
+const { rows: agentRoster } = await getRoster(agentUser, week, { search: "a" }, 1000);
 check("  agent broad search returns only self", agentRoster.length, 1);
 
 console.log(failures === 0 ? "\nAll scope checks passed." : `\n${failures} scope check(s) FAILED.`);

@@ -1,15 +1,23 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
+  employeeAssignments,
   employees,
   importBatches,
   kpiDefinitions,
   metricFacts,
+  npsFacts,
   qualityFacts,
   skillFacts,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { evaluateKpi } from "@/lib/kpi-engine/evaluate";
+import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
+import {
+  type Assignment,
+  type OrgWeek,
+  collapseWeeks,
+  spliceAssignments,
+} from "@/lib/org/assignments";
 import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
 import { computeParMetrics } from "./par-scoring";
@@ -39,6 +47,10 @@ export async function commitImport(
   options: { importBatchId: string },
 ): Promise<CommitSummary> {
   const employeeIdByEid = await upsertEmployees(parsed);
+  // Before anything is measured: record who each person reported to during the
+  // weeks this file covers, so the roll-ups can attribute results to the
+  // supervisor of record rather than to whoever holds them today.
+  await persistAssignments(parsed, employeeIdByEid, options.importBatchId);
   const definitions = await loadKpiDefinitions();
 
   const missingKpis = new Set<string>();
@@ -240,25 +252,36 @@ async function persistFacts(
         },
       });
   }
-}
 
-/** Overrides a KPI definition's thresholds with a per-row target from the source. */
-function applySourceTarget(definition: KpiDefinition, sourceTarget?: number): KpiDefinition {
-  if (sourceTarget === undefined || !Number.isFinite(sourceTarget)) return definition;
+  const npsRows = parsed.npsFacts
+    .map((fact) => {
+      const employeeId = employeeIdByEid.get(fact.eid);
+      if (!employeeId) return null;
+      return {
+        employeeId,
+        factDate: fact.factDate,
+        promoters: fact.promoters,
+        passives: fact.passives,
+        detractors: fact.detractors,
+        sourceImportId: importBatchId,
+      };
+    })
+    .filter((r) => r !== null);
 
-  // The source supplies the target itself, so the pass/fail line moves with
-  // it. Warning bands keep their configured offset relative to the target.
-  const offset =
-    definition.warningThreshold !== undefined && definition.failureThreshold !== undefined
-      ? definition.warningThreshold - definition.failureThreshold
-      : undefined;
-
-  return {
-    ...definition,
-    target: sourceTarget,
-    failureThreshold: sourceTarget,
-    warningThreshold: offset === undefined ? undefined : sourceTarget + offset,
-  };
+  for (let i = 0; i < npsRows.length; i += CHUNK) {
+    await db
+      .insert(npsFacts)
+      .values(npsRows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: [npsFacts.employeeId, npsFacts.factDate],
+        set: {
+          promoters: sql`excluded.promoters`,
+          passives: sql`excluded.passives`,
+          detractors: sql`excluded.detractors`,
+          sourceImportId: sql`excluded.source_import_id`,
+        },
+      });
+  }
 }
 
 type EmployeeIdMap = Map<string, string> & {
@@ -317,6 +340,92 @@ async function upsertEmployees(parsed: ParseResult): Promise<EmployeeIdMap> {
   map.stats.employeesCreated = inserted.length - existingByEid.size;
 
   return map;
+}
+
+/**
+ * Records dated org history from the weeks this file states.
+ *
+ * The file is authoritative for exactly the weeks it covers for each person,
+ * so that window is spliced into their existing history rather than appended
+ * or wholesale replaced — which is what makes re-importing a month, or
+ * uploading an older month after a newer one, safe.
+ *
+ * The delete and re-insert run in one transaction because a partial write
+ * would leave someone with no history at all, which reads as "never assigned"
+ * rather than as an error.
+ */
+async function persistAssignments(
+  parsed: ParseResult,
+  employeeIdByEid: Map<string, string>,
+  importBatchId: string,
+): Promise<void> {
+  if (parsed.orgWeeks.length === 0) return;
+
+  const byEmployee = new Map<string, OrgWeek[]>();
+  for (const week of parsed.orgWeeks) {
+    const employeeId = employeeIdByEid.get(week.eid);
+    if (!employeeId) continue;
+    byEmployee.set(employeeId, [...(byEmployee.get(employeeId) ?? []), week]);
+  }
+  if (byEmployee.size === 0) return;
+
+  const employeeIds = [...byEmployee.keys()];
+  const existingRows = await db
+    .select()
+    .from(employeeAssignments)
+    .where(inArray(employeeAssignments.employeeId, employeeIds));
+
+  const existingByEmployee = new Map<string, Assignment[]>();
+  for (const row of existingRows) {
+    existingByEmployee.set(row.employeeId, [
+      ...(existingByEmployee.get(row.employeeId) ?? []),
+      {
+        effectiveFrom: row.effectiveFrom,
+        effectiveTo: row.effectiveTo,
+        supervisorEid: row.supervisorEid,
+        supervisorName: row.supervisorName,
+        managerName: row.managerName,
+        site: row.site,
+        sourceImportId: row.sourceImportId,
+      },
+    ]);
+  }
+
+  const values: Array<typeof employeeAssignments.$inferInsert> = [];
+  for (const [employeeId, weeks] of byEmployee) {
+    const incoming = collapseWeeks(weeks).map((a) => ({ ...a, sourceImportId: importBatchId }));
+    if (incoming.length === 0) continue;
+
+    // The window this file speaks for, for this person specifically — someone
+    // present in only two of four weeks is not evidence about the other two.
+    const rangeStart = incoming[0].effectiveFrom;
+    const rangeEnd = weeks.reduce((max, w) => (w.weekEnd > max ? w.weekEnd : max), weeks[0].weekEnd);
+
+    const existing = (existingByEmployee.get(employeeId) ?? []).sort((a, b) =>
+      a.effectiveFrom.localeCompare(b.effectiveFrom),
+    );
+
+    for (const a of spliceAssignments(existing, incoming, rangeStart, rangeEnd)) {
+      values.push({
+        employeeId,
+        effectiveFrom: a.effectiveFrom,
+        effectiveTo: a.effectiveTo,
+        supervisorEid: a.supervisorEid,
+        supervisorName: a.supervisorName,
+        managerName: a.managerName,
+        site: a.site,
+        sourceImportId: a.sourceImportId ?? importBatchId,
+      });
+    }
+  }
+
+  const CHUNK = 500;
+  await db.transaction(async (tx) => {
+    await tx.delete(employeeAssignments).where(inArray(employeeAssignments.employeeId, employeeIds));
+    for (let i = 0; i < values.length; i += CHUNK) {
+      await tx.insert(employeeAssignments).values(values.slice(i, i + CHUNK));
+    }
+  });
 }
 
 async function loadKpiDefinitions() {

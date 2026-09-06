@@ -5,8 +5,8 @@ import { useState } from "react";
 import { acknowledge, saveActionPlan, saveRca, sendToAgent } from "../actions";
 
 const field =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100";
-const label = "mb-1.5 block text-sm font-medium text-navy-800";
+  "w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition";
+const label = "mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
 export interface RcaValues {
   problemStatement: string;
@@ -33,8 +33,7 @@ function Feedback({ message, tone }: { message: string | null; tone: "error" | "
   return (
     <p
       role={tone === "error" ? "alert" : "status"}
-      className={`rounded-lg px-3 py-2 text-sm ${
-        tone === "error" ? "bg-fail-bg text-fail" : "bg-pass-bg text-pass"
+      className={`px-3 py-2 text-sm ${tone === "error" ? "bg-fail-bg text-fail" : "bg-pass-bg text-pass"
       }`}
     >
       {message}
@@ -159,7 +158,7 @@ export function RcaForm({
       <button
         type="submit"
         disabled={saving}
-        className="rounded-lg bg-navy-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-900 disabled:opacity-50"
+        className="btn-primary px-5 py-3 text-sm"
       >
         {saving ? "Saving…" : "Save RCA"}
       </button>
@@ -300,21 +299,21 @@ export function ActionPlanForm({
       </div>
 
       <div className="flex flex-wrap gap-6">
-        <label className="flex items-center gap-2 text-sm text-navy-800">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={values.coachingRequired}
             onChange={(e) => setValues({ ...values, coachingRequired: e.target.checked })}
-            className="h-4 w-4 rounded border-line accent-[var(--brand-navy)]"
+            className="h-4 w-4 border-2 border-ink"
           />
           Coaching required
         </label>
-        <label className="flex items-center gap-2 text-sm text-navy-800">
+        <label className="flex items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"
             checked={values.trainingRequired}
             onChange={(e) => setValues({ ...values, trainingRequired: e.target.checked })}
-            className="h-4 w-4 rounded border-line accent-[var(--brand-navy)]"
+            className="h-4 w-4 border-2 border-ink"
           />
           Training required
         </label>
@@ -336,7 +335,7 @@ export function ActionPlanForm({
       <button
         type="submit"
         disabled={saving}
-        className="rounded-lg bg-navy-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-900 disabled:opacity-50"
+        className="btn-primary px-5 py-3 text-sm"
       >
         {saving ? "Saving…" : "Save action plan"}
       </button>
@@ -371,7 +370,7 @@ export function SendToAgentButton({
         onClick={send}
         disabled={sending || disabledReason !== null}
         title={disabledReason ?? undefined}
-        className="rounded-lg bg-orange-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-brand-dark disabled:cursor-not-allowed disabled:opacity-50"
+        className="btn-primary px-5 py-3 text-sm"
       >
         {sending ? "Sending…" : "Send to agent"}
       </button>
@@ -401,7 +400,7 @@ export function AcknowledgeButton({ actionItemId }: { actionItemId: string }) {
         type="button"
         onClick={confirm}
         disabled={busy}
-        className="rounded-lg bg-orange-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-brand-dark disabled:opacity-50"
+        className="btn-primary px-5 py-3 text-sm"
       >
         {busy ? "Recording…" : "I acknowledge this plan"}
       </button>
@@ -414,7 +413,7 @@ function Readonly({ term, value }: { term: string; value: string }) {
   return (
     <div>
       <dt className="text-xs font-medium tracking-wide text-muted uppercase">{term}</dt>
-      <dd className="mt-0.5 whitespace-pre-wrap text-navy-900">{value || "—"}</dd>
+      <dd className="mt-0.5 whitespace-pre-wrap text-ink">{value || "—"}</dd>
     </div>
   );
 }

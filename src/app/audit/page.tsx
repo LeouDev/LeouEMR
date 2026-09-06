@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, users } from "@/lib/db/schema";
@@ -54,11 +54,11 @@ export default async function AuditPage({
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/audit" />
+      <PageBand title="Audit trail" subtitle="Every recorded change, in order" />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">Audit trail</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
+          <p className="max-w-2xl text-sm text-muted">
             Every RCA, action plan, acknowledgement, threshold change and automatic issue
             transition. Entries without an actor were written by the import engine rather than a
             person.
@@ -74,11 +74,11 @@ export default async function AuditPage({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-cream text-left">
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">When</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Who</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Action</th>
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">Detail</th>
+                  <tr className="border-b-2 border-ink bg-cream">
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">When</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Who</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Action</th>
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Detail</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -90,10 +90,10 @@ export default async function AuditPage({
                           timeStyle: "short",
                         })}
                       </td>
-                      <td className="px-3 py-2 text-navy-900">
+                      <td className="px-3 py-2 text-ink">
                         {row.actorName ?? <span className="text-muted">System</span>}
                       </td>
-                      <td className="px-3 py-2 text-navy-800">
+                      <td className="px-3 py-2 text-ink">
                         {ACTION_LABELS[row.action] ?? row.action}
                       </td>
                       <td className="px-6 py-2 font-mono text-xs text-muted">

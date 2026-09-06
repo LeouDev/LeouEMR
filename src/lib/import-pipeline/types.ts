@@ -21,6 +21,24 @@ export interface ParsedEmployee {
   skillType?: string;
 }
 
+/**
+ * The org structure one weekly row states for one employee.
+ *
+ * The source repeats the supervisor, manager and site on every weekly row, so
+ * a realignment is already visible in the file. Kept per week rather than
+ * collapsed to one value per person, which is what lets reporting attribute
+ * August's numbers to August's supervisor.
+ */
+export interface ParsedOrgWeek {
+  eid: string;
+  weekStart: string;
+  weekEnd: string;
+  supervisorEid: string | null;
+  supervisorName: string | null;
+  managerName: string | null;
+  site: string | null;
+}
+
 /** One aggregated metric for one employee in one week. */
 export interface AggregatedMetric {
   eid: string;
@@ -117,12 +135,15 @@ export interface QualitySkillTally {
 
 export interface ParseResult {
   employees: ParsedEmployee[];
+  /** Org structure as stated for each week, the raw material for dated history. */
+  orgWeeks: ParsedOrgWeek[];
   metrics: AggregatedMetric[];
   skillWeeks: SkillWeek[];
   qualityWeeks: QualityWeek[];
   metricFacts: MetricFact[];
   skillFacts: SkillFact[];
   qualityFacts: QualityFact[];
+  npsFacts: NpsFact[];
   issues: ValidationIssue[];
   sheets: SheetSummary[];
   weeks: string[];
@@ -153,6 +174,20 @@ export interface SkillFact {
   hours: number;
   weightHours: number;
   prodWeight: number;
+}
+
+/**
+ * One day's NPS response mix for one employee.
+ *
+ * Counted at import because the mix cannot be recovered from the score
+ * afterwards — see src/lib/kpi-engine/nps.ts.
+ */
+export interface NpsFact {
+  eid: string;
+  factDate: string;
+  promoters: number;
+  passives: number;
+  detractors: number;
 }
 
 /** One day's audit tallies for one employee on one skill. */

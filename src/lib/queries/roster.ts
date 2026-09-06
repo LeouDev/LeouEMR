@@ -9,7 +9,7 @@ import {
   performanceIssues,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { OPEN_STATUSES } from "./performance";
+import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 
 export interface RosterFilters {
   search?: string;
@@ -40,14 +40,20 @@ export interface RosterRow {
  * can never widen what a user can see — it only narrows within their own
  * scope.
  */
+export interface RosterPage {
+  rows: RosterRow[];
+  /** How many rows match scope and filters in total, before `limit` cuts the page. */
+  total: number;
+}
+
 export async function getRoster(
   user: CurrentUser,
   week: string | null,
   filters: RosterFilters,
-  limit = 200,
-): Promise<RosterRow[]> {
+  limit = 500,
+): Promise<RosterPage> {
   const scope = employeeScope(user);
-  if (scope === null) return [];
+  if (scope === null) return { rows: [], total: 0 };
 
   const search = filters.search?.trim();
   const conditions = [
@@ -64,60 +70,69 @@ export async function getRoster(
     filters.site ? eq(employees.site, filters.site) : undefined,
   ].filter(Boolean);
 
-  const matched = await db
-    .select({
-      id: employees.id,
-      eid: employees.eid,
-      name: employees.name,
-      supervisorName: employees.supervisorName,
-      managerName: employees.managerName,
-      site: employees.site,
-    })
-    .from(employees)
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(employees.name)
-    .limit(limit);
+  // The count shares the same conditions as the page of rows, minus the
+  // limit, so the UI can say when a browse (no search) has been cut off
+  // rather than silently rendering a partial roster as if it were complete.
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+  const [matched, [{ total }]] = await Promise.all([
+    db
+      .select({
+        id: employees.id,
+        eid: employees.eid,
+        name: employees.name,
+        supervisorName: employees.supervisorName,
+        managerName: employees.managerName,
+        site: employees.site,
+      })
+      .from(employees)
+      .where(whereClause)
+      .orderBy(employees.name)
+      .limit(limit),
+    db.select({ total: count() }).from(employees).where(whereClause),
+  ]);
 
-  if (matched.length === 0) return [];
+  if (matched.length === 0) return { rows: [], total };
   const ids = matched.map((row) => row.id);
 
-  const failing = week
-    ? await db
-        .select({ employeeId: weeklyMetricResults.employeeId, n: count() })
-        .from(weeklyMetricResults)
-        .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-        .where(
-          and(
-            inArray(weeklyMetricResults.employeeId, ids),
-            eq(weeklyMetricResults.weekStart, week),
-            eq(weeklyMetricResults.status, "fail"),
-            eq(kpiDefinitions.generatesActionItems, true),
-          ),
-        )
-        .groupBy(weeklyMetricResults.employeeId)
-    : [];
-
-  const open = await db
-    .select({ employeeId: performanceIssues.employeeId, n: count() })
-    .from(performanceIssues)
-    .where(
-      and(
-        inArray(performanceIssues.employeeId, ids),
-        inArray(performanceIssues.status, [...OPEN_STATUSES]),
-      ),
-    )
-    .groupBy(performanceIssues.employeeId);
-
-  const ews = week
-    ? await db
-        .select({
-          employeeId: ewsAssessments.employeeId,
-          riskLevel: ewsAssessments.riskLevel,
-          score: ewsAssessments.score,
-        })
-        .from(ewsAssessments)
-        .where(and(inArray(ewsAssessments.employeeId, ids), eq(ewsAssessments.week, week)))
-    : [];
+  // Three independent reads, all keyed only on `ids`.
+  const [failing, open, ews] = await Promise.all([
+    week
+      ? db
+          .select({ employeeId: weeklyMetricResults.employeeId, n: count() })
+          .from(weeklyMetricResults)
+          .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+          .where(
+            and(
+              inArray(weeklyMetricResults.employeeId, ids),
+              eq(weeklyMetricResults.weekStart, week),
+              eq(weeklyMetricResults.status, "fail"),
+              eq(kpiDefinitions.generatesActionItems, true),
+            ),
+          )
+          .groupBy(weeklyMetricResults.employeeId)
+      : Promise.resolve([]),
+    db
+      .select({ employeeId: performanceIssues.employeeId, n: count() })
+      .from(performanceIssues)
+      .where(
+        and(
+          inArray(performanceIssues.employeeId, ids),
+          inArray(performanceIssues.status, [...OPEN_STATUSES]),
+          OPENS_ACTION_ITEMS,
+        ),
+      )
+      .groupBy(performanceIssues.employeeId),
+    week
+      ? db
+          .select({
+            employeeId: ewsAssessments.employeeId,
+            riskLevel: ewsAssessments.riskLevel,
+            score: ewsAssessments.score,
+          })
+          .from(ewsAssessments)
+          .where(and(inArray(ewsAssessments.employeeId, ids), eq(ewsAssessments.week, week)))
+      : Promise.resolve([]),
+  ]);
 
   const failingBy = new Map(failing.map((r) => [r.employeeId, r.n]));
   const openBy = new Map(open.map((r) => [r.employeeId, r.n]));
@@ -131,13 +146,19 @@ export async function getRoster(
     ewsScore: ewsBy.get(row.id)?.score ?? null,
   }));
 
-  return rows.filter((row) => {
+  const filtered = rows.filter((row) => {
     if (filters.risk && row.ewsRisk !== filters.risk) return false;
     if (filters.standing === "failing" && row.failingKpis === 0) return false;
     if (filters.standing === "attention" && row.openIssues === 0) return false;
     if (filters.standing === "clear" && (row.failingKpis > 0 || row.openIssues > 0)) return false;
     return true;
   });
+
+  // The risk/standing filters apply in memory after the page is fetched, so
+  // `total` (a plain count of scope + search/supervisor/site) can overstate
+  // how many rows match once they run. It still correctly answers the
+  // question that matters: was the *page itself* cut off by `limit`.
+  return { rows: filtered, total };
 }
 
 /** Distinct supervisors and sites within the caller's scope, for the filter menus. */
@@ -193,6 +214,7 @@ export async function getSupervisorRollup(
       and(
         scope === "all" ? undefined : scope,
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        OPENS_ACTION_ITEMS,
       ),
     )
     .groupBy(employees.supervisorName, performanceIssues.status);
@@ -255,6 +277,7 @@ export async function getOverdueCount(user: CurrentUser, today: string): Promise
       and(
         scope === "all" ? undefined : scope,
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        OPENS_ACTION_ITEMS,
         sql`exists (
           select 1 from action_items ai
           where ai.performance_issue_id = ${performanceIssues.id}

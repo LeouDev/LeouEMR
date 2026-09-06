@@ -9,6 +9,16 @@ import { db } from "@/lib/db/client";
 import { rootCauseCategories } from "@/lib/db/schema";
 import { getActionItemDetail } from "@/lib/queries/performance";
 import { AcknowledgeButton, ActionPlanForm, RcaForm, SendToAgentButton } from "./workflow";
+import { RcaNotes } from "./rca-notes";
+
+/** Marks a section as filled in. Not a verdict on the agent's performance. */
+function Recorded() {
+  return (
+    <span className="inline-block bg-pass-bg px-2 py-1 text-[11px] font-bold tracking-[0.08em] text-pass uppercase">
+      Recorded
+    </span>
+  );
+}
 
 export default async function ActionItemPage({
   params,
@@ -20,16 +30,20 @@ export default async function ActionItemPage({
   if (user.status !== "active") redirect("/pending");
 
   const { actionItemId } = await params;
-  const detail = await getActionItemDetail(user, actionItemId);
+  // The category list is a static reference table with no dependency on the
+  // item, so it is fetched alongside it rather than after it.
+  const [detail, categories] = await Promise.all([
+    getActionItemDetail(user, actionItemId),
+    db
+      .select({ id: rootCauseCategories.id, label: rootCauseCategories.label })
+      .from(rootCauseCategories)
+      .where(eq(rootCauseCategories.active, true))
+      .orderBy(asc(rootCauseCategories.label)),
+  ]);
   if (!detail) notFound();
 
-  const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics } = detail;
-
-  const categories = await db
-    .select({ id: rootCauseCategories.id, label: rootCauseCategories.label })
-    .from(rootCauseCategories)
-    .where(eq(rootCauseCategories.active, true))
-    .orderBy(asc(rootCauseCategories.label));
+  const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics, notes } =
+    detail;
 
   const canEdit = canManageActionItems(user);
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
@@ -52,7 +66,7 @@ export default async function ActionItemPage({
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Link
           href="/action-items"
-          className="text-sm font-medium text-muted underline-offset-4 hover:text-navy-900 hover:underline"
+          className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
         >
           ← All action items
         </Link>
@@ -60,14 +74,15 @@ export default async function ActionItemPage({
         <div className="mt-4 mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-navy-900">{kpi.name}</h1>
+              <h1 className="text-xl font-semibold tracking-tight text-ink">{kpi.name}</h1>
               <StatusBadge status={issue.status} />
             </div>
             <p className="mt-1 text-sm text-muted">
               <span className="font-mono">{actionItem.code}</span> ·{" "}
               <Link
                 href={`/employees/${employee.id}`}
-                className="underline-offset-4 hover:text-navy-900 hover:underline"
+                    prefetch={false}
+                className="underline-offset-4 hover:text-ink hover:underline"
               >
                 {employee.name}
               </Link>{" "}
@@ -76,7 +91,7 @@ export default async function ActionItemPage({
           </div>
 
           <div className="text-right">
-            <p className="font-mono text-2xl font-semibold tabular-nums text-navy-900">
+            <p className="font-mono text-2xl font-semibold tabular-nums text-ink">
               {issue.consecutivePassingWeeks} / 4
             </p>
             <p className="text-xs text-muted">consecutive passing weeks</p>
@@ -96,14 +111,13 @@ export default async function ActionItemPage({
                     <li key={entry.id} className="flex gap-4">
                       <div className="flex flex-col items-center">
                         <span
-                          className={`mt-1 h-3 w-3 shrink-0 rounded-full ${
-                            entry.result === "fail" ? "bg-fail" : "bg-pass"
+                          className={`mt-1 h-3 w-3 shrink-0 ${entry.result === "fail" ? "bg-fail" : "bg-pass"
                           }`}
                         />
                         {index < history.length - 1 && <span className="w-px flex-1 bg-line" />}
                       </div>
                       <div className="pb-5">
-                        <p className="text-sm font-medium text-navy-900">
+                        <p className="text-sm font-medium text-ink">
                           {formatWeek(entry.week)}{" "}
                           <span className={entry.result === "fail" ? "text-fail" : "text-pass"}>
                             {entry.result === "fail" ? "FAIL" : "PASS"}
@@ -133,7 +147,7 @@ export default async function ActionItemPage({
           <CardHeader
             title="Root cause analysis"
             subtitle={canEdit ? "Required before the item can be sent to the agent" : "Entered by the supervisor"}
-            action={rca ? <StatusBadge status="pass" /> : undefined}
+            action={rca ? <Recorded /> : undefined}
           />
           <RcaForm
             actionItemId={actionItem.id}
@@ -149,11 +163,33 @@ export default async function ActionItemPage({
           />
         </Card>
 
+        {rca && (
+          <Card className="mt-6">
+            <CardHeader
+              title="Notes on the root cause"
+              subtitle="How the circumstances changed, week by week. The RCA above stays as the underlying explanation."
+              action={
+                notes.length > 0 ? (
+                  <span className="text-xs font-semibold text-muted">
+                    {notes.length} note{notes.length === 1 ? "" : "s"}
+                  </span>
+                ) : undefined
+              }
+            />
+            <RcaNotes
+              actionItemId={actionItem.id}
+              notes={notes}
+              weeks={[...history].map((h) => h.week).reverse()}
+              canAdd={canEdit}
+            />
+          </Card>
+        )}
+
         <Card className="mt-6">
           <CardHeader
             title="Action plan"
             subtitle={canEdit ? "Required before the item can be sent to the agent" : "Entered by the supervisor"}
-            action={plan ? <StatusBadge status="pass" /> : undefined}
+            action={plan ? <Recorded /> : undefined}
           />
           <ActionPlanForm
             actionItemId={actionItem.id}
@@ -183,7 +219,7 @@ export default async function ActionItemPage({
           />
           <div className="space-y-4 px-6 py-5">
             {acknowledgements.length > 0 && (
-              <ul className="space-y-1 text-sm text-navy-800">
+              <ul className="space-y-1 text-sm text-ink">
                 {acknowledgements.map((ack) => (
                   <li key={ack.id}>
                     Acknowledged on{" "}

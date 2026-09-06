@@ -14,6 +14,7 @@ const updateSchema = z.object({
   role: z.enum(["admin", "manager", "supervisor", "agent"]),
   status: z.enum(["active", "pending", "disabled"]),
   employeeEid: z.string().trim().max(64).optional(),
+  managerName: z.string().trim().max(200).optional(),
 });
 
 /**
@@ -39,6 +40,10 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   if (!before) return { ok: false, error: "User not found" };
 
   const employeeEid = parsed.data.employeeEid?.trim() || null;
+  // Only meaningful for managers; cleared otherwise so a demoted account
+  // cannot keep a span it no longer has a role for.
+  const managerName =
+    parsed.data.role === "manager" ? parsed.data.managerName?.trim() || null : null;
 
   if (employeeEid) {
     const [clash] = await db.select().from(users).where(eq(users.employeeEid, employeeEid)).limit(1);
@@ -49,7 +54,7 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
 
   await db
     .update(users)
-    .set({ role: parsed.data.role, status: parsed.data.status, employeeEid })
+    .set({ role: parsed.data.role, status: parsed.data.status, employeeEid, managerName })
     .where(eq(users.id, parsed.data.userId));
 
   await db.insert(auditLog).values({
@@ -57,8 +62,13 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
     action: "user.updated",
     entityType: "user",
     entityId: parsed.data.userId,
-    before: { role: before.role, status: before.status, employeeEid: before.employeeEid },
-    after: { role: parsed.data.role, status: parsed.data.status, employeeEid },
+    before: {
+      role: before.role,
+      status: before.status,
+      employeeEid: before.employeeEid,
+      managerName: before.managerName,
+    },
+    after: { role: parsed.data.role, status: parsed.data.status, employeeEid, managerName },
   });
 
   revalidatePath("/users");

@@ -9,6 +9,8 @@ import {
   kpiDefinitions,
   performanceIssues,
   rcaEntries,
+  rcaNotes,
+  users,
   weeklyIssueHistory,
   weeklyMetricResults,
 } from "@/lib/db/schema";
@@ -16,6 +18,21 @@ import { employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 
 /** Statuses still requiring attention (not resolved). */
+/**
+ * Restricts a query over `performance_issues` to KPIs that still generate
+ * action items.
+ *
+ * Written as an EXISTS rather than a join so it can be dropped into any
+ * existing `where` without reshaping the query. It matters because the flag
+ * can be turned off after items already exist — MBO is assessed monthly, so
+ * its weekly items should stop counting everywhere at once rather than being
+ * filtered out at each call site by hand, or deleted irreversibly.
+ */
+export const OPENS_ACTION_ITEMS = sql`exists (
+  select 1 from kpi_definitions k
+  where k.id = ${performanceIssues.kpiId} and k.generates_action_items
+)`;
+
 export const OPEN_STATUSES = [
   "OPEN",
   "AWAITING_AGENT_ACKNOWLEDGEMENT",
@@ -108,7 +125,7 @@ export async function getTeamSummary(user: CurrentUser, week: string | null): Pr
   const issueStatusRows = await db
     .select({ status: performanceIssues.status, n: count() })
     .from(performanceIssues)
-    .where(issueFilter)
+    .where(issueFilter ? and(issueFilter, OPENS_ACTION_ITEMS) : OPENS_ACTION_ITEMS)
     .groupBy(performanceIssues.status);
 
   const byStatus = new Map(issueStatusRows.map((r) => [r.status, r.n]));
@@ -260,6 +277,7 @@ export async function getActionItems(
         ids === "all" ? undefined : inArray(performanceIssues.employeeId, ids),
         options.openOnly ? inArray(performanceIssues.status, [...OPEN_STATUSES]) : undefined,
         options.employeeId ? eq(performanceIssues.employeeId, options.employeeId) : undefined,
+        OPENS_ACTION_ITEMS,
       ),
     )
     .orderBy(desc(performanceIssues.openedWeek), employees.name)
@@ -311,35 +329,49 @@ export async function getActionItemDetail(user: CurrentUser, actionItemId: strin
 
   if (!row) return null;
 
-  const history = await db
-    .select()
-    .from(weeklyIssueHistory)
-    .where(eq(weeklyIssueHistory.performanceIssueId, row.issue.id))
-    .orderBy(weeklyIssueHistory.week);
+  // Four independent reads once `row` is known — issued together rather than
+  // as four sequential round trips.
+  const [history, acks, notes, metrics] = await Promise.all([
+    db
+      .select()
+      .from(weeklyIssueHistory)
+      .where(eq(weeklyIssueHistory.performanceIssueId, row.issue.id))
+      .orderBy(weeklyIssueHistory.week),
+    db
+      .select()
+      .from(acknowledgements)
+      .where(eq(acknowledgements.actionItemId, actionItemId))
+      .orderBy(desc(acknowledgements.acknowledgedAt)),
+    db
+      .select({
+        id: rcaNotes.id,
+        week: rcaNotes.week,
+        note: rcaNotes.note,
+        createdAt: rcaNotes.createdAt,
+        authorName: users.name,
+      })
+      .from(rcaNotes)
+      .leftJoin(users, eq(users.id, rcaNotes.createdBy))
+      .where(eq(rcaNotes.actionItemId, actionItemId))
+      .orderBy(desc(rcaNotes.week), desc(rcaNotes.createdAt)),
+    db
+      .select({
+        weekStart: weeklyMetricResults.weekStart,
+        actualValue: weeklyMetricResults.actualValue,
+        targetValue: weeklyMetricResults.targetValue,
+        status: weeklyMetricResults.status,
+      })
+      .from(weeklyMetricResults)
+      .where(
+        and(
+          eq(weeklyMetricResults.employeeId, row.issue.employeeId),
+          eq(weeklyMetricResults.kpiId, row.issue.kpiId),
+        ),
+      )
+      .orderBy(weeklyMetricResults.weekStart),
+  ]);
 
-  const acks = await db
-    .select()
-    .from(acknowledgements)
-    .where(eq(acknowledgements.actionItemId, actionItemId))
-    .orderBy(desc(acknowledgements.acknowledgedAt));
-
-  const metrics = await db
-    .select({
-      weekStart: weeklyMetricResults.weekStart,
-      actualValue: weeklyMetricResults.actualValue,
-      targetValue: weeklyMetricResults.targetValue,
-      status: weeklyMetricResults.status,
-    })
-    .from(weeklyMetricResults)
-    .where(
-      and(
-        eq(weeklyMetricResults.employeeId, row.issue.employeeId),
-        eq(weeklyMetricResults.kpiId, row.issue.kpiId),
-      ),
-    )
-    .orderBy(weeklyMetricResults.weekStart);
-
-  return { ...row, history, acknowledgements: acks, metrics };
+  return { ...row, history, acknowledgements: acks, metrics, notes };
 }
 
 /** Weekly scorecard for one employee — the IDP view's metric table. */
@@ -431,6 +463,7 @@ export interface EmployeeMatrix {
     consecutivePassingWeeks: number;
     hasRca: boolean;
     hasActionPlan: boolean;
+    noteWeeks: Set<string>;
     /** week -> pass/fail and the running count after that week */
     history: Map<string, { result: "pass" | "fail"; consecutiveCountAfter: number }>;
   }>;
@@ -448,24 +481,59 @@ export async function getEmployeeMatrix(
   if (ids === null || (Array.isArray(ids) && ids.length === 0)) return null;
   if (ids !== "all" && !ids.includes(employeeId)) return null;
 
-  const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+  // Four independent reads, all keyed only on employeeId with no data
+  // dependency between them — issued together rather than as four sequential
+  // round trips, which is most of what made this page feel slow to open.
+  const [[employee], rows, assessments, issueRows] = await Promise.all([
+    db.select().from(employees).where(eq(employees.id, employeeId)).limit(1),
+    db
+      .select({
+        week: weeklyMetricResults.weekStart,
+        kpiCode: kpiDefinitions.code,
+        kpiName: kpiDefinitions.name,
+        direction: kpiDefinitions.direction,
+        actualValue: weeklyMetricResults.actualValue,
+        targetValue: weeklyMetricResults.targetValue,
+        status: weeklyMetricResults.status,
+        sampleSize: weeklyMetricResults.sampleSize,
+      })
+      .from(weeklyMetricResults)
+      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+      .where(eq(weeklyMetricResults.employeeId, employeeId))
+      .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
+    db
+      .select({
+        week: ewsAssessments.week,
+        riskLevel: ewsAssessments.riskLevel,
+        score: ewsAssessments.score,
+      })
+      .from(ewsAssessments)
+      .where(eq(ewsAssessments.employeeId, employeeId)),
+    db
+      .select({
+        actionItemId: actionItems.id,
+        actionItemCode: actionItems.code,
+        issueId: performanceIssues.id,
+        kpiCode: kpiDefinitions.code,
+        kpiName: kpiDefinitions.name,
+        status: performanceIssues.status,
+        openedWeek: performanceIssues.openedWeek,
+        consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
+        rcaId: rcaEntries.id,
+        planId: actionPlans.id,
+      })
+      .from(actionItems)
+      .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
+      .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
+      .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
+      // The development timeline is a list, so it honours the same flag every
+      // other list does. MBO is assessed monthly and no longer opens weekly
+      // work; its historical rows stay in the database but off this plan.
+      .where(and(eq(performanceIssues.employeeId, employeeId), OPENS_ACTION_ITEMS))
+      .orderBy(desc(performanceIssues.openedWeek)),
+  ]);
   if (!employee) return null;
-
-  const rows = await db
-    .select({
-      week: weeklyMetricResults.weekStart,
-      kpiCode: kpiDefinitions.code,
-      kpiName: kpiDefinitions.name,
-      direction: kpiDefinitions.direction,
-      actualValue: weeklyMetricResults.actualValue,
-      targetValue: weeklyMetricResults.targetValue,
-      status: weeklyMetricResults.status,
-      sampleSize: weeklyMetricResults.sampleSize,
-    })
-    .from(weeklyMetricResults)
-    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-    .where(eq(weeklyMetricResults.employeeId, employeeId))
-    .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name);
 
   const weeks = [...new Set(rows.map((r) => r.week))].sort();
   const kpiOrder = new Map<string, { code: string; name: string; direction: string }>();
@@ -481,42 +549,19 @@ export async function getEmployeeMatrix(
     });
   }
 
-  const assessments = await db
-    .select({
-      week: ewsAssessments.week,
-      riskLevel: ewsAssessments.riskLevel,
-      score: ewsAssessments.score,
-    })
-    .from(ewsAssessments)
-    .where(eq(ewsAssessments.employeeId, employeeId));
-
-  const issueRows = await db
-    .select({
-      actionItemId: actionItems.id,
-      actionItemCode: actionItems.code,
-      issueId: performanceIssues.id,
-      kpiCode: kpiDefinitions.code,
-      kpiName: kpiDefinitions.name,
-      status: performanceIssues.status,
-      openedWeek: performanceIssues.openedWeek,
-      consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
-      rcaId: rcaEntries.id,
-      planId: actionPlans.id,
-    })
-    .from(actionItems)
-    .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
-    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
-    .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
-    .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
-    .where(eq(performanceIssues.employeeId, employeeId))
-    .orderBy(desc(performanceIssues.openedWeek));
-
-  const historyRows = issueRows.length
-    ? await db
-        .select()
-        .from(weeklyIssueHistory)
-        .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId)))
-    : [];
+  // Both of these depend only on issueRows, not on each other.
+  const [historyRows, noteRows] = issueRows.length
+    ? await Promise.all([
+        db
+          .select()
+          .from(weeklyIssueHistory)
+          .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId))),
+        db
+          .select({ actionItemId: rcaNotes.actionItemId, week: rcaNotes.week })
+          .from(rcaNotes)
+          .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId))),
+      ])
+    : [[], []];
 
   return {
     employee,
@@ -534,6 +579,10 @@ export async function getEmployeeMatrix(
       consecutivePassingWeeks: row.consecutivePassingWeeks,
       hasRca: row.rcaId !== null,
       hasActionPlan: row.planId !== null,
+      /** Weeks carrying a dated note against the root cause. */
+      noteWeeks: new Set(
+        noteRows.filter((n) => n.actionItemId === row.actionItemId).map((n) => n.week),
+      ),
       history: new Map(
         historyRows
           .filter((h) => h.performanceIssueId === row.issueId)

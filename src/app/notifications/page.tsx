@@ -2,7 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { notifications } from "@/lib/db/schema";
@@ -30,10 +30,9 @@ export default async function NotificationsPage() {
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/notifications" />
+      <PageBand title="Notifications" subtitle="Your inbox" />
 
       <main className="mx-auto max-w-3xl px-6 py-8">
-        <h1 className="mb-6 text-xl font-semibold tracking-tight text-navy-900">Notifications</h1>
-
         <Card>
           <CardHeader
             title="Inbox"
@@ -53,12 +52,11 @@ export default async function NotificationsPage() {
                 return (
                   <li
                     key={row.id}
-                    className={`flex flex-wrap items-center justify-between gap-3 px-6 py-3 ${
-                      row.readAt === null ? "bg-orange-brand-100/25" : ""
+                    className={`flex flex-wrap items-center justify-between gap-3 px-6 py-3 ${row.readAt === null ? "bg-orange-brand-100/25" : ""
                     }`}
                   >
                     <div>
-                      <p className="text-sm font-medium text-navy-900">
+                      <p className="text-sm font-medium text-ink">
                         {TYPE_LABELS[row.type] ?? row.type}
                       </p>
                       <p className="text-xs text-muted">
@@ -72,7 +70,8 @@ export default async function NotificationsPage() {
                     {payload?.actionItemId && (
                       <Link
                         href={`/action-items/${payload.actionItemId}`}
-                        className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-navy-800 transition hover:border-orange-brand hover:text-orange-brand"
+                    prefetch={false}
+                        className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
                       >
                         Open
                       </Link>

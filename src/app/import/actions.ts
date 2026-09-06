@@ -7,6 +7,7 @@ import { db } from "@/lib/db/client";
 import { importBatches } from "@/lib/db/schema";
 import { commitImport } from "@/lib/import-pipeline/commit";
 import { parseWorkbookBuffer } from "@/lib/import-pipeline/parse-workbook";
+import { loadSkillMetrics } from "@/lib/import-pipeline/par-scoring";
 import type { ParseResult } from "@/lib/import-pipeline/types";
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -56,7 +57,10 @@ export async function previewImport(formData: FormData): Promise<PreviewResponse
 
   let parsed: ParseResult;
   try {
-    parsed = parseWorkbookBuffer(Buffer.from(await upload.file.arrayBuffer()));
+    parsed = parseWorkbookBuffer(
+      Buffer.from(await upload.file.arrayBuffer()),
+      await loadSkillMetrics(),
+    );
   } catch (error) {
     return { ok: false, error: `Could not read the workbook: ${(error as Error).message}` };
   }
@@ -99,7 +103,10 @@ export async function runImport(formData: FormData): Promise<CommitResponse> {
 
   let parsed: ParseResult;
   try {
-    parsed = parseWorkbookBuffer(Buffer.from(await upload.file.arrayBuffer()));
+    parsed = parseWorkbookBuffer(
+      Buffer.from(await upload.file.arrayBuffer()),
+      await loadSkillMetrics(),
+    );
   } catch (error) {
     return { ok: false, error: `Could not read the workbook: ${(error as Error).message}` };
   }

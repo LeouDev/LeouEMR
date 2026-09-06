@@ -19,9 +19,15 @@ export function employeeScope(user: CurrentUser): SQL | null | "all" {
     case "admin":
       return "all";
 
-    case "manager":
-      // Managers are only identifiable by name in the source data.
-      return eq(employees.managerName, user.name);
+    case "manager": {
+      // The workbook identifies managers by name only, so the span is keyed
+      // on the name an administrator linked to this account. Falling back to
+      // the display name keeps accounts working where the two already agree,
+      // but an unlinked account whose name matches nothing sees nobody —
+      // which is the fail-closed outcome, not a silent "all rows".
+      const name = user.managerName ?? user.name;
+      return eq(employees.managerName, name);
+    }
 
     case "supervisor":
       if (!user.employeeEid) return null;

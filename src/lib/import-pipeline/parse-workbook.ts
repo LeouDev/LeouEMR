@@ -1,5 +1,5 @@
 import * as XLSX from "xlsx";
-import { aggregateWorkbook, type SheetRows } from "./aggregate";
+import { aggregateWorkbook, type SheetRows, type SkillMetrics } from "./aggregate";
 import type { ParseResult } from "./types";
 
 /**
@@ -7,7 +7,10 @@ import type { ParseResult } from "./types";
  * aggregates it. Parsing and aggregation are kept separate so the
  * aggregation rules stay testable without a real workbook.
  */
-export function parseWorkbookBuffer(buffer: ArrayBuffer | Buffer): ParseResult {
+export function parseWorkbookBuffer(
+  buffer: ArrayBuffer | Buffer,
+  skillMetrics?: SkillMetrics,
+): ParseResult {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
   const sheets: SheetRows = {};
@@ -20,5 +23,5 @@ export function parseWorkbookBuffer(buffer: ArrayBuffer | Buffer): ParseResult {
     });
   }
 
-  return aggregateWorkbook(sheets);
+  return aggregateWorkbook(sheets, skillMetrics);
 }

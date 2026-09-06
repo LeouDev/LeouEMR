@@ -90,3 +90,57 @@ describe("computeQualityMetrics", () => {
     expect(metrics.dpo).toBeNull();
   });
 });
+
+describe("final production rate, worked example", () => {
+  // Reproduces the reference calculator exactly: three skills, weighted by
+  // productive hours. Thresholds are the live values for these skills, so a
+  // change to either the curve or the weighting shows up here first.
+  const FAX = { r1: 0, r2: 0.8955, r3: 1.0, r4: 1.1682, r5: 1.2727 };
+  const PARTD = { r1: 0, r2: 0.85, r3: 1.0, r4: 1.0892, r5: 1.1788 };
+  const GLP1 = { r1: 0, r2: 0.895, r3: 1.0, r4: 1.168, r5: 1.2733 };
+
+  const result = computeEmployeeFinalRate([
+    { skillCode: "fax", actual: 12, target: 11, hoursWorked: 56, thresholds: FAX },
+    {
+      skillCode: "partd_phones",
+      actual: 485,
+      target: 500,
+      hoursWorked: 32,
+      // Average handle time: a lower actual is the better result.
+      lowerIsBetter: true,
+      thresholds: PARTD,
+    },
+    { skillCode: "glp_1", actual: 17, target: 15, hoursWorked: 23, thresholds: GLP1 },
+  ]);
+
+  it("totals the productive hours", () => {
+    expect(result.totalHours).toBe(111);
+  });
+
+  it("computes each skill's ratio", () => {
+    expect(result.skills[0].ratio).toBeCloseTo(1.0909, 4);
+    // Inverted for the lower-is-better skill: 500 / 485, not 485 / 500.
+    expect(result.skills[1].ratio).toBeCloseTo(1.0309, 4);
+    expect(result.skills[2].ratio).toBeCloseTo(1.1333, 4);
+  });
+
+  it("interpolates each rating between R3 and R4", () => {
+    expect(result.skills[0].rating).toBeCloseTo(3.54, 3);
+    expect(result.skills[1].rating).toBeCloseTo(3.347, 3);
+    expect(result.skills[2].rating).toBeCloseTo(3.794, 3);
+  });
+
+  it("weights each skill by its share of productive hours", () => {
+    expect(result.skills[0].weight).toBeCloseTo(0.505, 3);
+    expect(result.skills[1].weight).toBeCloseTo(0.288, 3);
+    expect(result.skills[2].weight).toBeCloseTo(0.207, 3);
+  });
+
+  it("sums the weighted ratings into the final production rate", () => {
+    const weighted = result.skills.map((s) => s.rating * s.weight);
+    expect(weighted[0]).toBeCloseTo(1.786, 3);
+    expect(weighted[1]).toBeCloseTo(0.965, 3);
+    expect(weighted[2]).toBeCloseTo(0.786, 3);
+    expect(result.finalRate).toBeCloseTo(3.537, 3);
+  });
+});

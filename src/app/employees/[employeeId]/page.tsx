@@ -25,7 +25,16 @@ export default async function EmployeePage({
   const { employeeId } = await params;
   const query = await searchParams;
 
-  const matrix = await getEmployeeMatrix(user, employeeId);
+  // The indicator list is a static reference table with no dependency on the
+  // matrix, so it is fetched alongside it rather than after it.
+  const [matrix, indicators] = await Promise.all([
+    getEmployeeMatrix(user, employeeId),
+    db
+      .select({ code: ewsIndicators.code, label: ewsIndicators.label })
+      .from(ewsIndicators)
+      .where(eq(ewsIndicators.active, true))
+      .orderBy(asc(ewsIndicators.sortOrder)),
+  ]);
   if (!matrix) notFound();
 
   const { employee, weeks, kpis, cells, issues } = matrix;
@@ -34,12 +43,6 @@ export default async function EmployeePage({
   // The EWS assessment is recorded for a specific week, so it still needs a
   // selected one; the matrix above shows every week's risk at a glance.
   const assessmentWeek = query.week && weeks.includes(query.week) ? query.week : latestWeek;
-
-  const indicators = await db
-    .select({ code: ewsIndicators.code, label: ewsIndicators.label })
-    .from(ewsIndicators)
-    .where(eq(ewsIndicators.active, true))
-    .orderBy(asc(ewsIndicators.sortOrder));
 
   const [assessment] = assessmentWeek
     ? await db
@@ -65,14 +68,14 @@ export default async function EmployeePage({
       <main className="mx-auto max-w-7xl px-6 py-8">
         <Link
           href="/employees"
-          className="text-sm font-medium text-muted underline-offset-4 hover:text-navy-900 hover:underline"
+          className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
         >
           ← Back to employees
         </Link>
 
         <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-navy-900">{employee.name}</h1>
+            <h1 className="text-xl font-semibold tracking-tight text-ink">{employee.name}</h1>
             <p className="mt-1 text-sm text-muted">
               <span className="font-mono">{employee.eid}</span>
               {employee.supervisorName && <> · Supervisor: {employee.supervisorName}</>}
@@ -82,13 +85,12 @@ export default async function EmployeePage({
           </div>
           <div className="flex gap-3 text-right">
             <div>
-              <p className="font-mono text-2xl font-semibold text-navy-900">{openItems}</p>
+              <p className="font-mono text-2xl font-semibold text-ink">{openItems}</p>
               <p className="text-xs text-muted">active items</p>
             </div>
             <div>
               <p
-                className={`font-mono text-2xl font-semibold ${
-                  failingLatest > 0 ? "text-fail" : "text-pass"
+                className={`font-mono text-2xl font-semibold ${failingLatest > 0 ? "text-fail" : "text-pass"
                 }`}
               >
                 {failingLatest}
@@ -125,10 +127,9 @@ export default async function EmployeePage({
                     <Link
                       key={week}
                       href={`/employees/${employeeId}?week=${week}`}
-                      className={`rounded-lg border px-2 py-0.5 text-xs font-medium transition ${
-                        week === assessmentWeek
-                          ? "border-navy bg-navy-800 text-white"
-                          : "border-line bg-surface text-muted hover:border-navy-100 hover:text-navy-900"
+                    prefetch={false}
+                      className={`border px-2 py-0.5 text-xs font-medium transition ${week === assessmentWeek ? "border-ink bg-ink text-white"
+                          : "border-line bg-surface text-muted hover:border-orange-brand hover:text-ink"
                       }`}
                     >
                       {formatWeek(week)}

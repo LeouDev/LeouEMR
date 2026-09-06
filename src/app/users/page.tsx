@@ -1,10 +1,10 @@
-import { asc, desc } from "drizzle-orm";
+import { asc, desc, eq, isNotNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader } from "@/components/ui";
+import { Card, CardHeader, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { users } from "@/lib/db/schema";
+import { employeeProfiles, employees, users } from "@/lib/db/schema";
 import { UserTable, type UserRow } from "./user-table";
 
 export default async function UsersPage() {
@@ -21,20 +21,37 @@ export default async function UsersPage() {
       role: users.role,
       status: users.status,
       employeeEid: users.employeeEid,
+      managerName: users.managerName,
+      // What they told us they are at sign-up. A claim, not a granted role.
+      signedUpAs: employeeProfiles.position,
     })
     .from(users)
+    .leftJoin(employeeProfiles, eq(employeeProfiles.userId, users.id))
     .orderBy(desc(users.status), asc(users.name));
+
+  // The names a manager's span can be linked to are exactly those present in
+  // the imported data — offering free text would just recreate the typo that
+  // made a span silently empty.
+  const managerNames = (
+    await db
+      .selectDistinct({ name: employees.managerName })
+      .from(employees)
+      .where(isNotNull(employees.managerName))
+  )
+    .map((r) => r.name)
+    .filter((n): n is string => Boolean(n))
+    .sort();
 
   const pending = rows.filter((row) => row.status === "pending").length;
 
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/users" />
+      <PageBand title="Users" subtitle="Accounts, roles and employee links" />
 
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">Users</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
+          <p className="max-w-2xl text-sm text-muted">
             New signups arrive as pending agents. Assign a role, activate the account, and link it to
             an employee ID — that link is what scopes a supervisor to their team and an agent to
             their own record.
@@ -50,7 +67,11 @@ export default async function UsersPage() {
                 : `${rows.length} account${rows.length === 1 ? "" : "s"}`
             }
           />
-          <UserTable users={rows as UserRow[]} currentUserId={user.id} />
+          <UserTable
+            users={rows as UserRow[]}
+            currentUserId={user.id}
+            managerNames={managerNames}
+          />
         </Card>
       </main>
     </div>
