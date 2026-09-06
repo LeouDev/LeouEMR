@@ -128,6 +128,38 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const EWS_RISK_STYLES: Record<string, string> = {
+  GREEN: "bg-pass-bg text-pass",
+  YELLOW: "bg-warn-bg text-warn",
+  RED: "bg-fail-bg text-fail",
+  BLACK: "bg-navy-900 text-white",
+};
+
+const EWS_RISK_LABELS: Record<string, string> = {
+  GREEN: "Stable",
+  YELLOW: "Watch",
+  RED: "At risk",
+  BLACK: "Critical",
+};
+
+/**
+ * Shared with the per-employee EWS panel, so a risk level reads identically
+ * whether it is being recorded on one person's page or scanned across a
+ * whole board.
+ */
+export function EwsRiskBadge({ riskLevel, score }: { riskLevel: string; score?: number }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold ${
+        EWS_RISK_STYLES[riskLevel] ?? "bg-line text-muted"
+      }`}
+    >
+      {EWS_RISK_LABELS[riskLevel] ?? riskLevel}
+      {score !== undefined && <span className="font-mono opacity-70">{score}</span>}
+    </span>
+  );
+}
+
 /**
  * Text colour for a measured value, from its evaluated status.
  *
