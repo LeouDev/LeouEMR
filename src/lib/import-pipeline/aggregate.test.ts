@@ -179,3 +179,47 @@ describe("aggregateWorkbook", () => {
     expect(result.metrics).toHaveLength(1);
   });
 });
+
+describe("PAR/MBO inputs", () => {
+  const week = "WE 08/07/26";
+
+  it("accumulates per-skill totals and keeps the row's own target", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        { EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "Fax", Weekly: week, CASESCOMPLETED: 10, PRODUCTIVITYHOUR: 1, CPHTarget: 6.4 },
+        { EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "Fax", Weekly: week, CASESCOMPLETED: 20, PRODUCTIVITYHOUR: 2, CPHTarget: 6.4 },
+      ],
+    });
+
+    expect(result.skillWeeks).toHaveLength(1);
+    expect(result.skillWeeks[0]).toMatchObject({
+      eid: "1",
+      skillType: "Fax",
+      cases: 30,
+      hours: 3,
+      // The ramp target from the row, not the skill's steady-state default.
+      target: 6.4,
+    });
+  });
+
+  it("separates skills within the same employee-week", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        { EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "Fax", Weekly: week, CASESCOMPLETED: 10, PRODUCTIVITYHOUR: 1 },
+        { EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "OCN", Weekly: week, CASESCOMPLETED: 5, PRODUCTIVITYHOUR: 1 },
+      ],
+    });
+    expect(result.skillWeeks.map((s) => s.skillType).sort()).toEqual(["Fax", "OCN"]);
+  });
+
+  it("tallies audits and imperfect scores for DPU", () => {
+    const result = aggregateWorkbook({
+      Quality: [
+        { EID: "1", AgentName: "A", Weekly: week, Score: 1, TotalMarkdown: 0 },
+        { EID: "1", AgentName: "A", Weekly: week, Score: 0.94, TotalMarkdown: 1 },
+        { EID: "1", AgentName: "A", Weekly: week, Score: 1, TotalMarkdown: 0 },
+      ],
+    });
+    expect(result.qualityWeeks[0]).toMatchObject({ audits: 3, imperfect: 1, markdowns: 1 });
+  });
+});

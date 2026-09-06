@@ -9,6 +9,7 @@ import {
 import { evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
+import { computeParMetrics } from "./par-scoring";
 import type { ParseResult } from "./types";
 
 export interface CommitSummary {
@@ -19,6 +20,8 @@ export interface CommitSummary {
   weeks: string[];
   issuesOpened: number;
   issuesUpdated: number;
+  /** Skill labels present in the data with no configured reference. */
+  unmatchedSkills: string[];
 }
 
 /**
@@ -38,7 +41,12 @@ export async function commitImport(
   const missingKpis = new Set<string>();
   const rows: Array<typeof weeklyMetricResults.$inferInsert> = [];
 
-  for (const metric of parsed.metrics) {
+  // PAR/MBO ratings are derived rather than measured, so they are computed
+  // here from the per-skill totals and appended to the measured metrics.
+  const par = await computeParMetrics(parsed.skillWeeks, parsed.qualityWeeks);
+  const allMetrics = [...parsed.metrics, ...par.metrics];
+
+  for (const metric of allMetrics) {
     const employeeId = employeeIdByEid.get(metric.eid);
     const definition = definitions.get(metric.kpiCode);
 
@@ -110,6 +118,7 @@ export async function commitImport(
     ...employeeIdByEid.stats,
     metricsWritten: rows.length,
     metricsSkippedNoKpi: [...missingKpis],
+    unmatchedSkills: par.unmatchedSkills,
     weeks: parsed.weeks,
     issuesOpened: engineResult.opened,
     issuesUpdated: engineResult.updated,

@@ -319,6 +319,57 @@ export const acknowledgements = pgTable("acknowledgements", {
 });
 
 // ---------------------------------------------------------------------------
+// Early Warning System
+//
+// EWS is deliberately separate from the KPI engine: its indicators are
+// qualitative judgements a supervisor makes (job-hunting signals,
+// disengagement in huddles, conflicts) and cannot be derived from the
+// weekly performance data. It sits alongside the data-driven engine rather
+// than being computed from it.
+// ---------------------------------------------------------------------------
+
+export const ewsRiskEnum = pgEnum("ews_risk", ["GREEN", "YELLOW", "RED", "BLACK"]);
+export const ewsAttritionEnum = pgEnum("ews_attrition", [
+  "none",
+  "black",
+  "absconding",
+  "loa",
+  "maternity",
+]);
+
+/** The configurable indicator taxonomy, seeded from the existing EWS app. */
+export const ewsIndicators = pgTable("ews_indicators", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull().unique(),
+  label: text("label").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+});
+
+export const ewsAssessments = pgTable(
+  "ews_assessments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    week: date("week").notNull(),
+    /** Indicator code -> flagged, as judged by the supervisor. */
+    indicators: jsonb("indicators").notNull().default({}),
+    /** Active corrective action plan; counts one point toward the score. */
+    capActive: boolean("cap_active").notNull().default(false),
+    attrition: ewsAttritionEnum("attrition").notNull().default("none"),
+    attritionDate: date("attrition_date"),
+    notes: text("notes"),
+    /** Derived from the fields above and stored so it can be filtered on. */
+    score: integer("score").notNull().default(0),
+    riskLevel: ewsRiskEnum("risk_level").notNull().default("GREEN"),
+    assessedBy: uuid("assessed_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("ews_assessments_employee_week_idx").on(table.employeeId, table.week)],
+);
+
+// ---------------------------------------------------------------------------
 // Audit trail + notifications
 // ---------------------------------------------------------------------------
 

@@ -50,9 +50,42 @@ export interface SheetSummary {
   rowsSkipped: number;
 }
 
+/**
+ * Per-skill production for one employee in one week, used for PAR/MBO
+ * scoring. Kept separate from AggregatedMetric because the PAR rating is an
+ * hours-weighted roll-up across skills rather than a single measured value.
+ */
+export interface SkillWeek {
+  eid: string;
+  weekStart: string;
+  weekEnd: string;
+  skillType: string;
+  cases: number;
+  hours: number;
+  /**
+   * The employee's own target from the source row. The source carries
+   * per-employee targets (ramping agents have lower ones), so this takes
+   * precedence over the skill reference's default target.
+   */
+  target?: number;
+}
+
+/** Quality audit tallies for one employee in one week. */
+export interface QualityWeek {
+  eid: string;
+  weekStart: string;
+  weekEnd: string;
+  audits: number;
+  /** Audits scoring below a perfect result. */
+  imperfect: number;
+  markdowns: number;
+}
+
 export interface ParseResult {
   employees: ParsedEmployee[];
   metrics: AggregatedMetric[];
+  skillWeeks: SkillWeek[];
+  qualityWeeks: QualityWeek[];
   issues: ValidationIssue[];
   sheets: SheetSummary[];
   weeks: string[];

@@ -1,5 +1,8 @@
+import { and, count, eq, isNull } from "drizzle-orm";
 import Link from "next/link";
 import { BrandMark, BrandWordmark } from "@/components/brand";
+import { db } from "@/lib/db/client";
+import { notifications } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -20,9 +23,15 @@ const NAV = [
 const ADMIN_NAV = [
   { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
+  { href: "/audit", label: "Audit" },
 ];
 
-export function AppHeader({ user, current }: { user: CurrentUser; current: string }) {
+export async function AppHeader({ user, current }: { user: CurrentUser; current: string }) {
+  const [unread] = await db
+    .select({ n: count() })
+    .from(notifications)
+    .where(and(eq(notifications.recipientId, user.id), isNull(notifications.readAt)));
+
   return (
     <header className="border-b border-line bg-surface">
       <div className="h-1 bg-gradient-to-r from-navy-800 via-navy to-orange-brand" />
@@ -61,6 +70,19 @@ export function AppHeader({ user, current }: { user: CurrentUser; current: strin
         </div>
 
         <div className="flex items-center gap-4">
+          <Link
+            href="/notifications"
+            aria-label={`Notifications${unread.n > 0 ? `, ${unread.n} unread` : ""}`}
+            className="relative rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-navy-800 transition hover:border-orange-brand hover:text-orange-brand"
+          >
+            Inbox
+            {unread.n > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-orange-brand px-1 text-[10px] font-bold text-white">
+                {unread.n > 99 ? "99+" : unread.n}
+              </span>
+            )}
+          </Link>
+
           <div className="hidden text-right sm:block">
             <p className="text-sm font-medium text-navy-900">{user.name}</p>
             <p className="text-xs text-muted">{ROLE_LABELS[user.role] ?? user.role}</p>

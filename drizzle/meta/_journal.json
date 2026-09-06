@@ -57,6 +57,27 @@
       "when": 1788657022250,
       "tag": "0007_id_sequences_and_kpi_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788659498106,
+      "tag": "0008_par_kpi_definitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788659687783,
+      "tag": "0009_ews_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788659688728,
+      "tag": "0010_seed_ews_indicators",
+      "breakpoints": true
     }
   ]
 }

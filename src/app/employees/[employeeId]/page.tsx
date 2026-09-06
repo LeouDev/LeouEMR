@@ -9,7 +9,12 @@ import {
   formatMetric,
   formatWeek,
 } from "@/components/ui";
+import { and, asc, eq } from "drizzle-orm";
+import { canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import { db } from "@/lib/db/client";
+import { ewsAssessments, ewsIndicators, users } from "@/lib/db/schema";
+import { EwsPanel } from "./ews-panel";
 import { getAvailableWeeks, getEmployeeWeek, getLatestWeek } from "@/lib/queries/performance";
 import { OPEN_STATUSES } from "@/lib/queries/performance";
 
@@ -56,6 +61,26 @@ export default async function EmployeePage({
   if (!data) notFound();
 
   const { employee, metrics, priorByKpi, actionItems } = data;
+
+  const indicators = await db
+    .select({ code: ewsIndicators.code, label: ewsIndicators.label })
+    .from(ewsIndicators)
+    .where(eq(ewsIndicators.active, true))
+    .orderBy(asc(ewsIndicators.sortOrder));
+
+  const [assessment] = week
+    ? await db
+        .select({
+          assessment: ewsAssessments,
+          assessorName: users.name,
+        })
+        .from(ewsAssessments)
+        .leftJoin(users, eq(users.id, ewsAssessments.assessedBy))
+        .where(and(eq(ewsAssessments.employeeId, employeeId), eq(ewsAssessments.week, week)))
+        .limit(1)
+    : [];
+
+  const canAssess = canManageActionItems(user);
   const openItems = actionItems.filter((item) => OPEN_STATUSES.includes(item.status as never));
   const failing = metrics.filter((m) => m.status === "fail").length;
 
@@ -165,6 +190,33 @@ export default async function EmployeePage({
             </div>
           )}
         </Card>
+
+        {week && (
+          <Card className="mt-6">
+            <CardHeader
+              title="Early warning signs"
+              subtitle={
+                canAssess
+                  ? "Supervisor judgement — these cannot be derived from the performance data"
+                  : "Recorded by the supervisor"
+              }
+            />
+            <EwsPanel
+              employeeId={employeeId}
+              week={week}
+              indicators={indicators}
+              readOnly={!canAssess}
+              assessedByName={assessment?.assessorName ?? null}
+              initial={{
+                indicators: (assessment?.assessment.indicators as Record<string, boolean>) ?? {},
+                capActive: assessment?.assessment.capActive ?? false,
+                attrition: assessment?.assessment.attrition ?? "none",
+                attritionDate: assessment?.assessment.attritionDate ?? "",
+                notes: assessment?.assessment.notes ?? "",
+              }}
+            />
+          </Card>
+        )}
 
         <Card className="mt-6">
           <CardHeader

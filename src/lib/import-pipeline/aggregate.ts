@@ -12,7 +12,9 @@ import {
   type KpiCode,
   type ParsedEmployee,
   type ParseResult,
+  type QualityWeek,
   type SheetSummary,
+  type SkillWeek,
   type ValidationIssue,
 } from "./types";
 
@@ -81,6 +83,10 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
   const expected: AccumulatorMap = new Map();
   const weekRange = new Map<string, string>(); // weekStart -> weekEnd
 
+  // PAR/MBO inputs, keyed separately because they roll up differently.
+  const skillAcc = new Map<string, SkillWeek>(); // `${eid}|${week}|${skill}`
+  const qualityAcc = new Map<string, QualityWeek>(); // `${eid}|${week}`
+
   const resolvedSheets = matchSheets(sheets);
 
   for (const [canonical, sheetName] of Object.entries(resolvedSheets)) {
@@ -117,13 +123,15 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
       weekRange.set(week.weekStart, week.weekEnd);
       captureEmployee(employees, eid, row, cols);
 
-      const consumed = consumeRow(canonical, row, cols, eid, week.weekStart, {
+      const consumed = consumeRow(canonical, row, cols, eid, week, {
         means,
         counts,
         cases,
         hours,
         present,
         expected,
+        skillAcc,
+        qualityAcc,
       });
 
       if (consumed) used += 1;
@@ -151,7 +159,7 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
   }
 
   const metrics = buildMetrics(
-    { means, counts, cases, hours, present, expected },
+    { means, counts, cases, hours, present, expected, skillAcc, qualityAcc },
     weekRange,
   );
 
@@ -171,6 +179,8 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
   return {
     employees: [...employees.values()],
     metrics,
+    skillWeeks: [...skillAcc.values()].filter((s) => s.hours > 0 && s.cases > 0),
+    qualityWeeks: [...qualityAcc.values()],
     issues,
     sheets: summaries,
     weeks: [...weeks].sort(),
@@ -246,6 +256,8 @@ interface Accumulators {
   hours: AccumulatorMap;
   present: AccumulatorMap;
   expected: AccumulatorMap;
+  skillAcc: Map<string, SkillWeek>;
+  qualityAcc: Map<string, QualityWeek>;
 }
 
 function consumeRow(
@@ -253,9 +265,10 @@ function consumeRow(
   row: Record<string, unknown>,
   cols: HeaderMap,
   eid: string,
-  weekStart: string,
+  week: { weekStart: string; weekEnd: string },
   acc: Accumulators,
 ): boolean {
+  const weekStart = week.weekStart;
   switch (sheet) {
     case "productivity": {
       const caseCount = toNumber(cols.cases ? row[cols.cases] : undefined);
@@ -269,6 +282,25 @@ function consumeRow(
       accumulate(acc.hours, eid, weekStart, KPI_CODES.CPH, hourCount);
       accumulate(acc.cases, eid, weekStart, KPI_CODES.AHT, caseCount, ahtTarget);
       accumulate(acc.hours, eid, weekStart, KPI_CODES.AHT, hourCount);
+
+      // Per-skill totals for PAR/MBO scoring. The target comes from the row
+      // because the source carries per-employee targets (ramping agents have
+      // lower ones) that must not be replaced by the skill's default.
+      const skillType = toText(cols.skillType ? row[cols.skillType] : undefined) ?? "Unspecified";
+      const skillKey = `${eid}|${weekStart}|${skillType}`;
+      const skill = acc.skillAcc.get(skillKey) ?? {
+        eid,
+        weekStart,
+        weekEnd: week.weekEnd,
+        skillType,
+        cases: 0,
+        hours: 0,
+        target: undefined,
+      };
+      skill.cases += caseCount;
+      skill.hours += hourCount;
+      if (cphTarget !== null && Number.isFinite(cphTarget)) skill.target = cphTarget;
+      acc.skillAcc.set(skillKey, skill);
       return true;
     }
 
@@ -277,6 +309,22 @@ function consumeRow(
       const score = toNumber(cols.score ? row[cols.score] : undefined);
       if (score === null) return false;
       accumulate(acc.means, eid, weekStart, KPI_CODES.QUALITY, score * 100);
+
+      // Audit tallies for DPU (share of audits with a perfect result).
+      const markdown = toNumber(cols.markdown ? row[cols.markdown] : undefined) ?? 0;
+      const qualityKey = `${eid}|${weekStart}`;
+      const tally = acc.qualityAcc.get(qualityKey) ?? {
+        eid,
+        weekStart,
+        weekEnd: week.weekEnd,
+        audits: 0,
+        imperfect: 0,
+        markdowns: 0,
+      };
+      tally.audits += 1;
+      if (score < 1) tally.imperfect += 1;
+      tally.markdowns += markdown;
+      acc.qualityAcc.set(qualityKey, tally);
       return true;
     }
 
