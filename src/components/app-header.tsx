@@ -2,6 +2,7 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import Link from "next/link";
 import { BrandMark, BrandWordmark } from "@/components/brand";
 import { HeaderScene } from "@/components/header-scene";
+import { NavTabs } from "@/components/nav-tabs";
 import { db } from "@/lib/db/client";
 import { notifications } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -60,8 +61,13 @@ const ADMIN_NAV = [
  * could not fit beside the logo, and squeezing them made the row wrap into a
  * ragged two-line block. A single full-width strip scrolls sideways when it
  * has to and stays one clean line the rest of the time.
+ *
+ * Rendered once by the (shell) layout rather than by each page — which tab
+ * is active comes from NavTabs reading the pathname itself, so this
+ * component (and the animated scene inside it) never depends on the route
+ * and is never recreated by navigating.
  */
-export async function AppHeader({ user, current }: { user: CurrentUser; current: string }) {
+export async function AppHeader({ user }: { user: CurrentUser }) {
   const [unread] = await db
     .select({ n: count() })
     .from(notifications)
@@ -128,23 +134,7 @@ export async function AppHeader({ user, current }: { user: CurrentUser; current:
         className="border-t-2 border-navy-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <div className="mx-auto flex max-w-7xl overflow-x-auto px-6">
-          {items.map((item) => {
-            const active = current === item.href;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={`shrink-0 border-b-2 px-3.5 py-2.5 text-xs font-semibold tracking-[0.06em] whitespace-nowrap uppercase transition ${
-                  active
-                    ? "border-orange-brand text-cream"
-                    : "border-transparent text-navy-100/70 hover:text-cream"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          <NavTabs items={items} />
         </div>
       </nav>
     </header>

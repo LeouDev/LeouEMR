@@ -339,8 +339,25 @@ img:not([data-keep-color]) {
   98%, 100% { transform: scale(1.9); opacity: 0; }
 }
 
+/* The active route's own fade — never applied to the header, which sits
+   outside PageTransition entirely and so never re-triggers this. */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.page-transition {
+  animation: page-fade-in 180ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade-up,
+  .page-transition,
   [style*="animation"] {
     animation: none !important;
   }
