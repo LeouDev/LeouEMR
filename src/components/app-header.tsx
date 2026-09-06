@@ -73,9 +73,18 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
     .from(notifications)
     .where(and(eq(notifications.recipientId, user.id), isNull(notifications.readAt)));
 
+  // A supervisor's /skills tab has no configuration to reference — just the
+  // rating and quality calculators — so it reads as "My Tools" for them
+  // specifically, while a manager or admin still sees "Skills".
+  const leaderNav = LEADER_ONLY_NAV.map((item) =>
+    item.href === "/skills" && user.role === "supervisor"
+      ? { ...item, label: "My Tools" }
+      : item,
+  );
+
   const items = [
     ...NAV,
-    ...(user.role === "agent" ? AGENT_NAV : [...LEADER_ONLY_NAV, ...LEADER_NAV]),
+    ...(user.role === "agent" ? AGENT_NAV : [...leaderNav, ...LEADER_NAV]),
     ...(user.role === "admin" ? ADMIN_NAV : []),
   ];
 

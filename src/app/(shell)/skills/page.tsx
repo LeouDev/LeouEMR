@@ -31,20 +31,35 @@ export default async function SkillsPage() {
     r1: row.r1,
   }));
 
+  // A team lead has no skill configuration to reference — the underlying
+  // targets are a manager/admin concern — so their tab is the calculators
+  // alone, named for what it actually is to them.
+  const isSupervisor = user.role === "supervisor";
+
   return (
     <>
-      <PageBand title="Skill reference" subtitle="Targets and the R1–R5 rating curve" />
+      {isSupervisor ? (
+        <PageBand title="My Tools" subtitle="Rating and quality calculators" />
+      ) : (
+        <PageBand title="Skill reference" subtitle="Targets and the R1–R5 rating curve" />
+      )}
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <p className="max-w-3xl text-sm text-muted">
-            Each skill&apos;s target and its R1&ndash;R5 rating curve. Performance at target rates
-            exactly 3.000; below target the rating steps in whole numbers, above target it
-            interpolates smoothly to 5.000.
-          </p>
-        </div>
+        {!isSupervisor && (
+          <div className="mb-6">
+            <p className="max-w-3xl text-sm text-muted">
+              Each skill&apos;s target and its R1&ndash;R5 rating curve. Performance at target rates
+              exactly 3.000; below target the rating steps in whole numbers, above target it
+              interpolates smoothly to 5.000.
+            </p>
+          </div>
+        )}
 
-        <SkillWorkspace skills={skills} canEditTargets={user.role === "admin"} />
+        <SkillWorkspace
+          skills={skills}
+          canEditTargets={user.role === "admin"}
+          showReferenceTable={!isSupervisor}
+        />
 
         <div className="mt-6">
           <QualityCalculator
