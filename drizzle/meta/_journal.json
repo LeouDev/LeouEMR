@@ -15,6 +15,27 @@
       "when": 1788655281776,
       "tag": "0001_auth_trigger_and_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788656105822,
+      "tag": "0002_skill_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788656111612,
+      "tag": "0003_seed_skill_references",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1788656143466,
+      "tag": "0004_skill_references_rls",
+      "breakpoints": true
     }
   ]
 }

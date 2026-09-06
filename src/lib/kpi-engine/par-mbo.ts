@@ -82,10 +82,18 @@ export interface EmployeeProductionResult {
   skills: EmployeeSkillResult[];
 }
 
-/** Ratio direction mirrors the KPI engine's higher/lower-is-better split. */
-function computeSkillRatio(actual: number, target: number, lowerIsBetter: boolean): number {
+/**
+ * Ratio direction mirrors the KPI engine's higher/lower-is-better split.
+ * For lower-is-better skills (AHT-style, where a smaller actual is better)
+ * the ratio inverts so a faster actual still maps to a higher rating.
+ */
+export function computeSkillRatio(actual: number, target: number, lowerIsBetter: boolean): number {
+  if (lowerIsBetter) {
+    if (actual === 0) return 0;
+    return target / actual;
+  }
   if (target === 0) return 0;
-  return lowerIsBetter ? target / actual : actual / target;
+  return actual / target;
 }
 
 /**

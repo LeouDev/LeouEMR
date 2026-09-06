@@ -116,6 +116,32 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * PAR/MBO skill reference data: per-skill target plus the R1-R5 ratio
+ * thresholds that drive the 1.00-5.00 rating curve
+ * (see src/lib/kpi-engine/par-mbo.ts).
+ *
+ * Thresholds are stored as decimal ratios (1.2727 = 127.27%) and are fixed
+ * scoring policy — only `target` is editable, and only by an admin.
+ */
+export const skillReferences = pgTable("skill_references", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  target: numeric("target", { mode: "number" }).notNull(),
+  /** True for skills where a lower actual is better (ratio = target/actual). */
+  lowerIsBetter: boolean("lower_is_better").notNull().default(false),
+  r5: numeric("r5", { mode: "number" }).notNull(),
+  r4: numeric("r4", { mode: "number" }).notNull(),
+  r3: numeric("r3", { mode: "number" }).notNull(),
+  r2: numeric("r2", { mode: "number" }).notNull(),
+  r1: numeric("r1", { mode: "number" }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const importBatches = pgTable("import_batches", {
   id: uuid("id").primaryKey().defaultRandom(),
   uploadedBy: uuid("uploaded_by").references(() => users.id),

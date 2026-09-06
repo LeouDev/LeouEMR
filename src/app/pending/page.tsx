@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { BrandLockup } from "@/components/brand";
 import { getCurrentUser } from "@/lib/auth/session";
-import { SignOutButton } from "../dashboard/sign-out-button";
+import { SignOutButton } from "@/components/sign-out-button";
 
 export default async function PendingPage() {
   const user = await getCurrentUser();
