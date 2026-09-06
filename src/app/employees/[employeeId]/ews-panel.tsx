@@ -37,8 +37,8 @@ const ATTRITION_OPTIONS: Array<{ value: EwsAttrition; label: string }> = [
 export function EwsRiskBadge({ riskLevel, score }: { riskLevel: string; score?: number }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-        RISK_STYLES[riskLevel] ?? "bg-cream-dark text-muted"
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold ${
+        RISK_STYLES[riskLevel] ?? "bg-line text-muted"
       }`}
     >
       {EWS_RISK_LABELS[riskLevel as keyof typeof EWS_RISK_LABELS] ?? riskLevel}
@@ -102,11 +102,9 @@ export function EwsPanel({
         {indicators.map((indicator) => (
           <label
             key={indicator.code}
-            className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition ${
-              values.indicators[indicator.code]
-                ? "border-orange-brand/40 bg-orange-brand-100/30 text-navy-900"
-                : "border-line text-navy-800"
-            } ${readOnly ? "" : "cursor-pointer hover:border-navy-100"}`}
+            className={`flex items-center gap-2.5 border px-3 py-2 text-sm transition ${values.indicators[indicator.code] ? "border-orange-brand/40 bg-orange-brand-100/30 text-ink"
+                : "border-line text-ink"
+            } ${readOnly ? "" : "cursor-pointer hover:border-orange-brand"}`}
           >
             <input
               type="checkbox"
@@ -118,7 +116,7 @@ export function EwsPanel({
                   indicators: { ...values.indicators, [indicator.code]: e.target.checked },
                 })
               }
-              className="h-4 w-4 rounded border-line accent-[var(--brand-orange)]"
+              className="h-4 w-4 border-2 border-ink"
             />
             {indicator.label}
           </label>
@@ -126,8 +124,7 @@ export function EwsPanel({
       </div>
 
       <label
-        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm ${
-          values.capActive ? "border-orange-brand/40 bg-orange-brand-100/30" : "border-line"
+        className={`flex items-center gap-2.5 border px-3 py-2 text-sm ${values.capActive ? "border-orange-brand/40 bg-orange-brand-100/30" : "border-line"
         } ${readOnly ? "" : "cursor-pointer"}`}
       >
         <input
@@ -135,7 +132,7 @@ export function EwsPanel({
           disabled={readOnly}
           checked={values.capActive}
           onChange={(e) => setValues({ ...values, capActive: e.target.checked })}
-          className="h-4 w-4 rounded border-line accent-[var(--brand-orange)]"
+          className="h-4 w-4 border-2 border-ink"
         />
         Active corrective action plan
         <span className="ml-auto text-xs text-muted">counts one point</span>
@@ -143,12 +140,12 @@ export function EwsPanel({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1.5 block text-sm font-medium text-navy-800">Attrition status</span>
+          <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Attrition status</span>
           <select
             disabled={readOnly}
             value={values.attrition}
             onChange={(e) => setValues({ ...values, attrition: e.target.value as EwsAttrition })}
-            className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none focus:border-navy focus:ring-2 focus:ring-navy-100 disabled:opacity-60"
+            className="w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none disabled:opacity-60"
           >
             {ATTRITION_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -160,31 +157,31 @@ export function EwsPanel({
 
         {values.attrition !== "none" && (
           <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-navy-800">Effective date</span>
+            <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Effective date</span>
             <input
               type="date"
               disabled={readOnly}
               value={values.attritionDate}
               onChange={(e) => setValues({ ...values, attritionDate: e.target.value })}
-              className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none focus:border-navy focus:ring-2 focus:ring-navy-100 disabled:opacity-60"
+              className="w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none disabled:opacity-60"
             />
           </label>
         )}
       </div>
 
       <label className="block">
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">Observations</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Observations</span>
         <textarea
           rows={2}
           disabled={readOnly}
           value={values.notes}
           onChange={(e) => setValues({ ...values, notes: e.target.value })}
           placeholder="What you observed this week"
-          className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none focus:border-navy focus:ring-2 focus:ring-navy-100 disabled:opacity-60"
+          className="w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none disabled:opacity-60"
         />
       </label>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-cream/70 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3 bg-cream/70 px-4 py-3">
         <EwsRiskBadge riskLevel={preview.riskLevel} score={preview.score} />
         <p className="text-sm text-muted">
           {EWS_RISK_GUIDANCE[preview.riskLevel]}
@@ -193,12 +190,12 @@ export function EwsPanel({
       </div>
 
       {error && (
-        <p role="alert" className="rounded-lg bg-fail-bg px-3 py-2 text-sm text-fail">
+        <p role="alert" className="bg-fail-bg px-3 py-2 text-sm text-fail">
           {error}
         </p>
       )}
       {saved && !error && (
-        <p role="status" className="rounded-lg bg-pass-bg px-3 py-2 text-sm text-pass">
+        <p role="status" className="bg-pass-bg px-3 py-2 text-sm text-pass">
           Assessment saved
         </p>
       )}
@@ -213,7 +210,7 @@ export function EwsPanel({
       <button
         type="submit"
         disabled={saving}
-        className="rounded-lg bg-navy-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-900 disabled:opacity-50"
+        className="btn-primary px-5 py-3 text-sm"
       >
         {saving ? "Saving…" : "Save assessment"}
       </button>

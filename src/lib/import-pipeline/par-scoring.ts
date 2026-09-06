@@ -280,3 +280,36 @@ function weekEndFor(
   const quality = qualityWeeks.find((q) => q.eid === eid && q.weekStart === weekStart);
   return quality?.weekEnd ?? null;
 }
+
+/**
+ * Skill label to the formula that skill is measured by, for the aggregator.
+ *
+ * Keyed on the same normalized form `loadSkillReferences` matches on, so a
+ * workbook writing "PartD_Phones" or "Part D Phones" resolves either way.
+ */
+export async function loadSkillMetrics(): Promise<Map<string, "cph" | "aht" | "case_rate">> {
+  const rows = await db
+    .select({ name: skillReferences.name, code: skillReferences.code, metric: skillReferences.metric })
+    .from(skillReferences)
+    .where(eq(skillReferences.active, true));
+
+  const map = new Map<string, "cph" | "aht" | "case_rate">();
+  for (const row of rows) {
+    map.set(normalize(row.name), row.metric);
+    map.set(normalize(row.code), row.metric);
+  }
+
+  const aliases = await db
+    .select({ alias: skillAliases.sourceLabel, referenceId: skillAliases.skillReferenceId })
+    .from(skillAliases);
+  const metricById = new Map(
+    (await db.select({ id: skillReferences.id, metric: skillReferences.metric }).from(skillReferences))
+      .map((r) => [r.id, r.metric]),
+  );
+  for (const a of aliases) {
+    const metric = metricById.get(a.referenceId);
+    if (metric) map.set(normalize(a.alias), metric);
+  }
+
+  return map;
+}

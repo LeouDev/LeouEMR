@@ -28,7 +28,7 @@ function blankRow(skill: string): Row {
 }
 
 const numberInput =
-  "w-20 rounded-md border border-line bg-surface px-2 py-1 text-right font-mono text-sm text-navy-900 tabular-nums outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100";
+  "w-20 border-2 border-ink bg-surface px-2 py-1 text-right font-mono text-sm text-ink tabular-nums outline-none transition";
 
 export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }) {
   const [rows, setRows] = useState<Row[]>(() => [
@@ -63,9 +63,9 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
   }
 
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+    <section className="overflow-hidden border-2 border-ink bg-surface">
       <div className="border-b border-line px-6 py-4">
-        <h2 className="text-base font-semibold text-navy-900">DPU / DPO calculator</h2>
+        <h2 className="text-base font-semibold text-ink">DPU / DPO calculator</h2>
         <p className="mt-0.5 text-sm text-muted">
           One row per audited skill. DPU is a straight sum across every record; DPO weights each
           record by its own skill&apos;s attributes. Updates live — no submit needed.
@@ -75,13 +75,13 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
       <div className="overflow-x-auto">
         <table className="w-full min-w-[720px] border-collapse text-sm">
           <thead>
-            <tr className="border-b border-line bg-cream text-left">
-              <th className="px-6 py-2.5 font-semibold text-navy-800">Skill</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Audits</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Markdown</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-navy-800">#&lt;100</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Attributes</th>
-              <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Row attributes</th>
+            <tr className="border-b-2 border-ink bg-cream">
+              <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Skill</th>
+              <th className="px-3 py-2.5 font-semibold text-ink">Audits</th>
+              <th className="px-3 py-2.5 font-semibold text-ink">Markdown</th>
+              <th className="px-3 py-2.5 font-semibold text-ink">#&lt;100</th>
+              <th className="px-3 py-2.5 font-semibold text-ink">Attributes</th>
+              <th className="px-3 py-2.5 font-semibold text-ink">Row attributes</th>
               <th className="px-6 py-2.5" />
             </tr>
           </thead>
@@ -100,7 +100,7 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
                     <select
                       value={row.skill}
                       onChange={(e) => update(row.id, { skill: e.target.value })}
-                      className="w-48 rounded-md border border-line bg-surface px-2 py-1 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100"
+                      className="w-48 border-2 border-ink bg-surface px-2 py-1 text-sm text-ink outline-none transition"
                     >
                       {skills.map((skill) => (
                         <option key={skill.name} value={skill.name}>
@@ -109,7 +109,7 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
                       ))}
                     </select>
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2">
                     <input
                       type="number"
                       min="0"
@@ -119,7 +119,7 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
                       aria-label="Audits"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2">
                     <input
                       type="number"
                       min="0"
@@ -129,7 +129,7 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
                       aria-label="Markdown"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right">
+                  <td className="px-3 py-2">
                     <input
                       type="number"
                       min="0"
@@ -139,13 +139,13 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
                       aria-label="Under 100"
                     />
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-muted tabular-nums">
+                  <td className="px-3 py-2 font-mono text-xs text-muted tabular-nums">
                     {perAudit}
                   </td>
-                  <td className="px-3 py-2 text-right font-mono text-sm text-navy-900 tabular-nums">
+                  <td className="px-3 py-2 font-mono text-sm text-ink tabular-nums">
                     {rowAttrs}
                   </td>
-                  <td className="px-6 py-2 text-right">
+                  <td className="px-6 py-2">
                     <button
                       type="button"
                       onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
@@ -162,18 +162,18 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
           </tbody>
           <tfoot>
             <tr className="border-t border-line bg-cream/60 font-medium">
-              <td className="px-6 py-2 text-navy-900">Totals</td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-navy-900">
+              <td className="px-6 py-2 text-ink">Totals</td>
+              <td className="px-3 py-2 font-mono tabular-nums text-ink">
                 {totals.audits}
               </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-navy-900">
+              <td className="px-3 py-2 font-mono tabular-nums text-ink">
                 {totals.markdowns}
               </td>
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-navy-900">
+              <td className="px-3 py-2 font-mono tabular-nums text-ink">
                 {totals.imperfect}
               </td>
               <td className="px-3 py-2" />
-              <td className="px-3 py-2 text-right font-mono tabular-nums text-navy-900">
+              <td className="px-3 py-2 font-mono tabular-nums text-ink">
                 {totals.attributes}
               </td>
               <td className="px-6 py-2" />
@@ -186,7 +186,7 @@ export function QualityCalculator({ skills }: { skills: SkillAttributeOption[] }
         <button
           type="button"
           onClick={() => setRows((prev) => [...prev, blankRow(skills[0]?.name ?? "")])}
-          className="rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-navy-800 transition hover:border-orange-brand hover:text-orange-brand"
+          className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
         >
           Add skill row
         </button>
@@ -223,14 +223,12 @@ function Readout({
 }) {
   return (
     <div
-      className={`min-w-40 rounded-xl border p-3 ${
-        passing ? "border-pass/30 bg-pass-bg/40" : "border-line bg-cream/60"
+      className={`min-w-40 border p-3 ${passing ? "border-pass/30 bg-pass-bg/40" : "border-line bg-cream/60"
       }`}
     >
       <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
       <p
-        className={`mt-0.5 font-mono text-2xl font-semibold tabular-nums ${
-          passing ? "text-pass" : "text-navy-900"
+        className={`mt-0.5 font-mono text-2xl font-semibold tabular-nums ${passing ? "text-pass" : "text-ink"
         }`}
       >
         {value}

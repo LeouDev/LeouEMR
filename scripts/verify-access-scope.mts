@@ -11,7 +11,12 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import { employees, performanceIssues } from "../src/lib/db/schema";
 import type { CurrentUser } from "../src/lib/auth/session";
-import { getActionItems, getAttentionRows, getTeamSummary } from "../src/lib/queries/performance";
+import {
+  OPENS_ACTION_ITEMS,
+  getActionItems,
+  getAttentionRows,
+  getTeamSummary,
+} from "../src/lib/queries/performance";
 import { getRoster } from "../src/lib/queries/roster";
 
 function asUser(over: Partial<CurrentUser>): CurrentUser {
@@ -22,6 +27,7 @@ function asUser(over: Partial<CurrentUser>): CurrentUser {
     role: "agent",
     status: "active",
     employeeEid: null,
+    managerName: null,
     ...over,
   };
 }
@@ -94,13 +100,19 @@ const foreignRows = agentRows.filter((r) => r.employeeEid !== agentRow.eid).leng
 check("  attention rows belonging to others", foreignRows, 0);
 
 const agentItems = await getActionItems(agentUser, { openOnly: false, limit: 500 });
+// Counted with the same predicate the query applies: only KPIs that generate
+// action items. MBO is assessed monthly and deliberately does not, so counting
+// every issue row here would expect an item the app is right not to show.
 const [{ n: ownIssues }] = await db
   .select({ n: count() })
   .from(performanceIssues)
   .where(
-    inArray(
-      performanceIssues.employeeId,
-      db.select({ id: employees.id }).from(employees).where(eq(employees.eid, agentRow.eid)),
+    and(
+      inArray(
+        performanceIssues.employeeId,
+        db.select({ id: employees.id }).from(employees).where(eq(employees.eid, agentRow.eid)),
+      ),
+      OPENS_ACTION_ITEMS,
     ),
   );
 check("  action items visible", agentItems.length, ownIssues);

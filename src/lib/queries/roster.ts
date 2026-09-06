@@ -9,7 +9,7 @@ import {
   performanceIssues,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { OPEN_STATUSES } from "./performance";
+import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 
 export interface RosterFilters {
   search?: string;
@@ -104,6 +104,7 @@ export async function getRoster(
       and(
         inArray(performanceIssues.employeeId, ids),
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        OPENS_ACTION_ITEMS,
       ),
     )
     .groupBy(performanceIssues.employeeId);
@@ -193,6 +194,7 @@ export async function getSupervisorRollup(
       and(
         scope === "all" ? undefined : scope,
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        OPENS_ACTION_ITEMS,
       ),
     )
     .groupBy(employees.supervisorName, performanceIssues.status);
@@ -255,6 +257,7 @@ export async function getOverdueCount(user: CurrentUser, today: string): Promise
       and(
         scope === "all" ? undefined : scope,
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        OPENS_ACTION_ITEMS,
         sql`exists (
           select 1 from action_items ai
           where ai.performance_issue_id = ${performanceIssues.id}

@@ -2,7 +2,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
@@ -87,11 +87,11 @@ export default async function TwoOhOneFilePage() {
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/201-file" />
+      <PageBand title="201 file" subtitle="Personnel details for your direct reports" />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">201 file</h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted">
+          <p className="max-w-3xl text-sm text-muted">
             Personnel details for your direct reports. Records appear once the person has signed up
             — the details are captured at registration, not imported from the performance data.
           </p>
@@ -120,17 +120,17 @@ export default async function TwoOhOneFilePage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-cream text-left">
-                    <th className="sticky left-0 z-10 bg-cream px-6 py-2.5 font-semibold text-navy-800">
+                  <tr className="border-b-2 border-ink bg-cream">
+                    <th className="sticky left-0 z-10 bg-cream px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">
                       Name
                     </th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Employee ID</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">MSID</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Position</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Email</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Phone</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Address</th>
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">Emergency contact</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee ID</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">MSID</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Position</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Email</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Phone</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Address</th>
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Emergency contact</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -147,20 +147,21 @@ export default async function TwoOhOneFilePage() {
                       .join(", ");
 
                     return (
-                      <tr key={report.id} className="border-b border-line/70 last:border-0 hover:bg-cream/60">
+                      <tr key={report.id} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
                         <td className="sticky left-0 z-10 bg-surface px-6 py-2">
                           <Link
                             href={`/employees/${report.id}`}
-                            className="font-medium text-navy-900 underline-offset-4 hover:text-orange-brand hover:underline"
+                    prefetch={false}
+                            className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
                           >
                             {p.lastName}, {p.firstName}
                             {p.middleName ? ` ${p.middleName.charAt(0)}.` : ""}
                           </Link>
                           {report.site && <p className="text-xs text-muted">{report.site}</p>}
                         </td>
-                        <td className="px-3 py-2 font-mono text-xs text-navy-800">{p.employeeEid}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-ink">{p.employeeEid}</td>
                         <td className="px-3 py-2 font-mono text-xs text-muted">{p.msid ?? "—"}</td>
-                        <td className="px-3 py-2 text-navy-800">{p.position}</td>
+                        <td className="px-3 py-2 text-ink">{p.position}</td>
                         <td className="px-3 py-2 text-xs text-muted">{p.email}</td>
                         <td className="px-3 py-2 font-mono text-xs text-muted">
                           {p.phoneNumber ?? "—"}
@@ -169,7 +170,7 @@ export default async function TwoOhOneFilePage() {
                         <td className="px-6 py-2 text-xs text-muted">
                           {p.emergencyContactName ? (
                             <>
-                              <span className="text-navy-800">{p.emergencyContactName}</span>
+                              <span className="text-ink">{p.emergencyContactName}</span>
                               {p.emergencyContactRelationship && ` (${p.emergencyContactRelationship})`}
                               {p.emergencyContactNumber && (
                                 <span className="block font-mono">{p.emergencyContactNumber}</span>

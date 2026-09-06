@@ -333,3 +333,205 @@ describe("PAR weighting basis", () => {
     expect(result.skillWeeks[0]).toMatchObject({ hours: 2, weightHours: 2 });
   });
 });
+
+describe("NPS response mix", () => {
+  const row = (eid: string, date: string, nps: number) => ({
+    EID: eid,
+    Weekly: "WE 08/28/26",
+    Date: date,
+    NPS: nps,
+  });
+
+  it("tallies promoters, passives and detractors per employee-day", () => {
+    const result = aggregateWorkbook({
+      NPS: [
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-24", 0),
+        row("001895123", "2026-08-24", -100),
+      ],
+    });
+
+    expect(result.npsFacts).toHaveLength(1);
+    expect(result.npsFacts[0]).toMatchObject({
+      eid: "001895123",
+      factDate: "2026-08-24",
+      promoters: 2,
+      passives: 1,
+      detractors: 1,
+    });
+  });
+
+  it("keeps each employee-day separate", () => {
+    const result = aggregateWorkbook({
+      NPS: [
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-25", -100),
+        row("002258045", "2026-08-24", 0),
+      ],
+    });
+
+    expect(result.npsFacts).toHaveLength(3);
+    const byKey = new Map(result.npsFacts.map((f) => [`${f.eid}|${f.factDate}`, f]));
+    expect(byKey.get("001895123|2026-08-24")).toMatchObject({ promoters: 1, detractors: 0 });
+    expect(byKey.get("001895123|2026-08-25")).toMatchObject({ promoters: 0, detractors: 1 });
+    expect(byKey.get("002258045|2026-08-24")).toMatchObject({ passives: 1 });
+  });
+
+  it("agrees with the score the same rows produce", () => {
+    // 3 promoters, 1 detractor of 5 → (3-1)/5 = 40
+    const result = aggregateWorkbook({
+      NPS: [
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-24", 100),
+        row("001895123", "2026-08-24", 0),
+        row("001895123", "2026-08-24", -100),
+      ],
+    });
+
+    const mix = result.npsFacts[0];
+    const score = ((mix.promoters - mix.detractors) / (mix.promoters + mix.passives + mix.detractors)) * 100;
+    const reported = result.metrics.find((m) => m.kpiCode === "NPS");
+    expect(score).toBe(40);
+    expect(reported?.actualValue).toBeCloseTo(40, 6);
+  });
+
+  it("ignores rows with no readable date, since a fact needs a day", () => {
+    const result = aggregateWorkbook({
+      NPS: [{ EID: "001895123", Weekly: "WE 08/28/26", NPS: 100 }],
+    });
+    expect(result.npsFacts).toHaveLength(0);
+  });
+});
+
+describe("CPH and AHT follow the skill's own formula", () => {
+  const metrics = new Map<string, "cph" | "aht" | "case_rate">([
+    ["edits", "cph"],
+    ["partdphones", "aht"],
+    ["fax", "case_rate"],
+  ]);
+
+  const row = (skill: string) => ({
+    EID: "001524032",
+    Weekly: "WE 08/28/26",
+    "Date Completed": "2026-08-24",
+    SkillType: skill,
+    "Cases Completed": 100,
+    "Productivity Hour": 12.5,
+    "CPH Target": 8,
+    "AHT Target": 450,
+  });
+
+  const codesFor = (skill: string) => {
+    const result = aggregateWorkbook({ Productivity: [row(skill)] }, metrics);
+    return new Set(result.metrics.map((m) => m.kpiCode));
+  };
+
+  it("scores a cases-per-hour skill on CPH only", () => {
+    const codes = codesFor("Edits");
+    expect(codes.has("CPH")).toBe(true);
+    // 12.5 hours over 100 cases is 450 seconds per case — arithmetically real,
+    // but not what an Edits agent is measured on, and it opened action items.
+    expect(codes.has("AHT")).toBe(false);
+  });
+
+  it("scores a handle-time skill on AHT only", () => {
+    const codes = codesFor("PartD_Phones");
+    expect(codes.has("AHT")).toBe(true);
+    expect(codes.has("CPH")).toBe(false);
+  });
+
+  it("scores a case-rate skill on neither, since PAR carries its production", () => {
+    const codes = codesFor("Fax");
+    expect(codes.has("CPH")).toBe(false);
+    expect(codes.has("AHT")).toBe(false);
+  });
+
+  it("matches skill labels regardless of case and punctuation", () => {
+    expect(codesFor("partd phones").has("AHT")).toBe(true);
+    expect(codesFor("PARTD-PHONES").has("CPH")).toBe(false);
+  });
+
+  it("keeps both for an unmapped skill rather than silently dropping it", () => {
+    // Losing data for a label we have simply not mapped would hide the gap
+    // instead of correcting it.
+    const codes = codesFor("Some New Queue");
+    expect(codes.has("CPH")).toBe(true);
+    expect(codes.has("AHT")).toBe(true);
+  });
+
+  it("keeps both when no skill map is supplied at all", () => {
+    const result = aggregateWorkbook({ Productivity: [row("Edits")] });
+    const codes = new Set(result.metrics.map((m) => m.kpiCode));
+    expect(codes.has("CPH")).toBe(true);
+    expect(codes.has("AHT")).toBe(true);
+  });
+
+  it("still records per-skill production for PAR on a case-rate skill", () => {
+    const result = aggregateWorkbook({ Productivity: [row("Fax")] }, metrics);
+    expect(result.skillWeeks.length).toBe(1);
+    expect(result.skillWeeks[0].cases).toBe(100);
+  });
+})
+
+/**
+ * Per-week org structure, the raw material for dated assignment history.
+ *
+ * The source repeats the supervisor on every weekly row, so a realignment is
+ * already stated in the file. The aggregator used to collapse those to one
+ * value per person and throw the dates away, which is what let a realignment
+ * retroactively move a month of results to the new supervisor.
+ */
+describe("aggregateWorkbook org history", () => {
+  const row = (weekly: string, supervisor: string, supEid: string) => ({
+    EID: "1",
+    EMPLOYEENAME: "A",
+    Weekly: weekly,
+    "Current Supervisor": supervisor,
+    "Current Sup EID": supEid,
+    "Deputy Manager": "Leou",
+    Site: "Manila",
+    CASESCOMPLETED: 10,
+    PRODUCTIVITYHOUR: 1,
+  });
+
+  it("keeps the structure each week stated, not just the last one seen", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        row("WE 08/07/26", "Lea", "S1"),
+        row("WE 08/14/26", "Lea", "S1"),
+        row("WE 08/21/26", "Lovely", "S2"),
+      ],
+    });
+
+    expect(result.orgWeeks).toHaveLength(3);
+    expect(result.orgWeeks.map((w) => [w.weekStart, w.supervisorName])).toEqual([
+      ["2026-08-01", "Lea"],
+      ["2026-08-08", "Lea"],
+      ["2026-08-15", "Lovely"],
+    ]);
+    // The roster row still carries the latest value, which is what drives
+    // authorization and everyday work.
+    expect(result.employees[0].supervisorName).toBe("Lovely");
+  });
+
+  it("does not let a sheet without org columns erase what another stated", () => {
+    // Quality sheets carry no supervisor. Processing one after Productivity
+    // must not blank out the structure already recorded for that week.
+    const result = aggregateWorkbook({
+      Productivity: [row("WE 08/07/26", "Lea", "S1")],
+      Quality: [{ EID: "1", AgentName: "A", Weekly: "WE 08/07/26", Score: 1 }],
+    });
+
+    expect(result.orgWeeks).toHaveLength(1);
+    expect(result.orgWeeks[0].supervisorName).toBe("Lea");
+  });
+
+  it("records nothing for a workbook that names no structure at all", () => {
+    const result = aggregateWorkbook({
+      Quality: [{ EID: "1", AgentName: "A", Weekly: "WE 08/07/26", Score: 1 }],
+    });
+    expect(result.orgWeeks).toEqual([]);
+  });
+});

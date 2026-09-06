@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 const control =
-  "rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100";
+  "border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition";
 
 export function RosterFilters({
   supervisors,
@@ -46,10 +46,10 @@ export function RosterFilters({
         e.preventDefault();
         apply(values);
       }}
-      className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-4 shadow-sm"
+      className="flex flex-wrap items-end gap-3 border-2 border-ink bg-surface p-4"
     >
       <label className="min-w-56 flex-1">
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">Search</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Search</span>
         <input
           type="search"
           value={values.q}
@@ -60,7 +60,7 @@ export function RosterFilters({
       </label>
 
       <label>
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">Supervisor</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Supervisor</span>
         <select
           value={values.supervisor}
           onChange={(e) => apply({ ...values, supervisor: e.target.value })}
@@ -76,7 +76,7 @@ export function RosterFilters({
       </label>
 
       <label>
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">Site</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Site</span>
         <select
           value={values.site}
           onChange={(e) => apply({ ...values, site: e.target.value })}
@@ -92,7 +92,7 @@ export function RosterFilters({
       </label>
 
       <label>
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">Standing</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Standing</span>
         <select
           value={values.standing}
           onChange={(e) => apply({ ...values, standing: e.target.value })}
@@ -106,7 +106,7 @@ export function RosterFilters({
       </label>
 
       <label>
-        <span className="mb-1.5 block text-sm font-medium text-navy-800">EWS risk</span>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">EWS risk</span>
         <select
           value={values.risk}
           onChange={(e) => apply({ ...values, risk: e.target.value })}
@@ -122,7 +122,7 @@ export function RosterFilters({
 
       <button
         type="submit"
-        className="rounded-lg bg-navy-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-900"
+        className="btn-primary px-5 py-3 text-sm"
       >
         Search
       </button>
@@ -131,7 +131,7 @@ export function RosterFilters({
         <button
           type="button"
           onClick={() => apply({ q: "", supervisor: "", site: "", risk: "", standing: "" })}
-          className="rounded-lg border border-line px-3 py-2 text-sm font-medium text-muted transition hover:text-navy-900"
+          className="border border-line px-3 py-2 text-sm font-medium text-muted transition hover:text-ink"
         >
           Clear
         </button>

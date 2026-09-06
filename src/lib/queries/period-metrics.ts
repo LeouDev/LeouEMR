@@ -7,7 +7,7 @@ import {
   skillFacts,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { evaluateKpi } from "@/lib/kpi-engine/evaluate";
+import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
@@ -18,6 +18,12 @@ export interface PeriodMetric {
   employeeId: string;
   kpiCode: string;
   kpiName: string;
+  /**
+   * From the KPI definition, so callers never hardcode which way is good.
+   * `range` and `boolean_match` exist in the enum but have no single good
+   * direction, and callers treat them as "no improvement arrow".
+   */
+  direction: "higher_is_better" | "lower_is_better" | "range" | "boolean_match";
   actualValue: number;
   targetValue: number | null;
   status: KpiStatus;
@@ -72,6 +78,45 @@ export async function getPeriodMetrics(
 
   const byId = new Map(definitions.map((d) => [d.id, d]));
 
+  /**
+   * The target each employee was actually measured against.
+   *
+   * CPH and AHT targets come per employee from the source workbook — a
+   * ramping agent and an Edits agent do not share the KPI's default. The
+   * weekly ledger snapshots that target, so the period's target is the mean
+   * of the weeks it covers. Without this, re-aggregating a month scored
+   * everyone against the KPI default (11 cases per hour) and marked agents
+   * on an 8 target as failing while they were comfortably above it.
+   */
+  const targetRows = await db
+    .select({
+      employeeId: weeklyMetricResults.employeeId,
+      kpiId: weeklyMetricResults.kpiId,
+      target: sql<number | null>`avg(${weeklyMetricResults.targetValue})`,
+    })
+    .from(weeklyMetricResults)
+    .where(
+      and(
+        inArray(weeklyMetricResults.employeeId, employeeIds),
+        // Any week OVERLAPPING the period, not only one starting inside it.
+        // Weeks run Saturday-Friday against calendar months, so the week that
+        // straddles a month boundary starts in the previous month while its
+        // daily facts land in this one. Matching on the start alone dropped
+        // that week's target, and a month whose only data is the straddling
+        // week fell back to the KPI default — reintroducing the very bug this
+        // per-employee lookup exists to fix.
+        gte(weeklyMetricResults.weekEnd, period.start),
+        lte(weeklyMetricResults.weekStart, period.end),
+      ),
+    )
+    .groupBy(weeklyMetricResults.employeeId, weeklyMetricResults.kpiId);
+
+  const targetFor = new Map(
+    targetRows
+      .filter((r) => r.target !== null)
+      .map((r) => [`${r.employeeId}|${r.kpiId}`, Number(r.target)]),
+  );
+
   for (const fact of facts) {
     const definition = byId.get(fact.kpiId);
     if (!definition) continue;
@@ -80,7 +125,13 @@ export async function getPeriodMetrics(
     if (value === null) continue;
 
     results.push(
-      evaluated(fact.employeeId, definition, value, fact.sampleSize),
+      evaluated(
+        fact.employeeId,
+        definition,
+        value,
+        fact.sampleSize,
+        targetFor.get(`${fact.employeeId}|${fact.kpiId}`),
+      ),
     );
   }
 
@@ -98,6 +149,7 @@ async function getWeekMetrics(employeeIds: string[], weekStart: string): Promise
       employeeId: weeklyMetricResults.employeeId,
       kpiCode: kpiDefinitions.code,
       kpiName: kpiDefinitions.name,
+      direction: kpiDefinitions.direction,
       actualValue: weeklyMetricResults.actualValue,
       targetValue: weeklyMetricResults.targetValue,
       status: weeklyMetricResults.status,
@@ -116,6 +168,7 @@ async function getWeekMetrics(employeeIds: string[], weekStart: string): Promise
     employeeId: row.employeeId,
     kpiCode: row.kpiCode,
     kpiName: row.kpiName,
+    direction: row.direction,
     actualValue: row.actualValue,
     targetValue: row.targetValue,
     status: row.status.toUpperCase() as KpiStatus,
@@ -147,26 +200,32 @@ function evaluated(
   definition: typeof kpiDefinitions.$inferSelect,
   value: number,
   sampleSize: number,
+  /** The employee's own target, where the source supplies one. */
+  sourceTarget?: number,
 ): PeriodMetric {
-  const kpi: KpiDefinition = {
-    code: definition.code,
-    name: definition.name,
-    type: definition.type,
-    direction: definition.direction,
-    target: definition.target ?? undefined,
-    warningThreshold: definition.warningThreshold ?? undefined,
-    failureThreshold: definition.failureThreshold ?? undefined,
-    rangeMin: definition.rangeMin ?? undefined,
-    rangeMax: definition.rangeMax ?? undefined,
-    expected: definition.expectedBoolean ?? undefined,
-  };
+  const kpi: KpiDefinition = applySourceTarget(
+    {
+      code: definition.code,
+      name: definition.name,
+      type: definition.type,
+      direction: definition.direction,
+      target: definition.target ?? undefined,
+      warningThreshold: definition.warningThreshold ?? undefined,
+      failureThreshold: definition.failureThreshold ?? undefined,
+      rangeMin: definition.rangeMin ?? undefined,
+      rangeMax: definition.rangeMax ?? undefined,
+      expected: definition.expectedBoolean ?? undefined,
+    },
+    sourceTarget,
+  );
 
   return {
     employeeId,
     kpiCode: definition.code,
     kpiName: definition.name,
+    direction: definition.direction,
     actualValue: value,
-    targetValue: definition.target ?? null,
+    targetValue: kpi.target ?? null,
     status: evaluateKpi(value, kpi).status,
     sampleSize,
   };

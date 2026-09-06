@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { importBatches, users } from "@/lib/db/schema";
@@ -31,14 +31,31 @@ export default async function ImportPage() {
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/import" />
 
+      <PageBand
+        title="Import performance data"
+        subtitle="Administrators are the only role that can upload raw data"
+      />
+
       <main className="mx-auto max-w-4xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">Import performance data</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Uploading a week that already exists replaces that week&apos;s computed values and leaves
-            earlier weeks untouched, so a corrected file can be re-imported safely.
-          </p>
-        </div>
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
+            <div className="max-w-xl">
+              <p className="text-sm font-medium text-ink">Start from the template</p>
+              <p className="mt-1 text-sm text-muted">
+                A blank workbook with every sheet and column the importer reads, plus one example row
+                each. Uploading a week that already exists replaces that week&apos;s computed values
+                and leaves earlier weeks untouched, so a corrected file can be re-imported safely.
+              </p>
+            </div>
+            <a
+              href="/import/template"
+              download
+              className="btn-primary shrink-0 px-5 py-3 text-sm"
+            >
+              Download Excel template
+            </a>
+          </div>
+        </Card>
 
         <ImportWizard />
 
@@ -53,7 +70,7 @@ export default async function ImportPage() {
                 return (
                   <li key={batch.id} className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
                     <div>
-                      <p className="text-sm font-medium text-navy-900">{batch.fileName}</p>
+                      <p className="text-sm font-medium text-ink">{batch.fileName}</p>
                       <p className="text-xs text-muted">
                         {batch.uploadedAt.toLocaleString("en-US", {
                           dateStyle: "medium",
@@ -64,12 +81,11 @@ export default async function ImportPage() {
                       </p>
                     </div>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                        batch.status === "committed"
+                      className={`px-2 py-0.5 text-xs font-semibold ${batch.status === "committed"
                           ? "bg-pass-bg text-pass"
                           : batch.status === "failed"
                             ? "bg-fail-bg text-fail"
-                            : "bg-cream-dark text-muted"
+                            : "bg-line text-muted"
                       }`}
                     >
                       {batch.status}

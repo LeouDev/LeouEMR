@@ -47,9 +47,16 @@ export const EMPTY_SIGNUP: SignupDetails = {
   emergencyContactRelationship: "",
 };
 
-const field =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100";
-const label = "mb-1.5 block text-sm font-medium text-navy-800";
+/** Modernist Navy input: white, 2px ink border, 16px text, square. */
+export const fieldClass =
+  "w-full border-2 border-ink bg-surface px-4 py-3.5 text-base text-ink outline-none placeholder:text-ink-faint";
+
+/** Field label: 12px, 600, uppercase, wide tracking. */
+export const labelClass =
+  "text-xs font-semibold tracking-[0.08em] text-ink uppercase";
+
+const field = fieldClass;
+const label = `mb-2 block ${labelClass}`;
 
 function Text({
   name,
@@ -106,7 +113,7 @@ export function SignupFields({
   return (
     <div className="space-y-5">
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-navy-900">Identity</legend>
+        <legend className="border-b-2 border-line pb-2 text-[11px] font-bold tracking-[0.16em] text-orange-brand uppercase">Identity</legend>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Text
@@ -154,7 +161,7 @@ export function SignupFields({
       </fieldset>
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-navy-900">Address</legend>
+        <legend className="border-b-2 border-line pb-2 text-[11px] font-bold tracking-[0.16em] text-orange-brand uppercase">Address</legend>
         <Text name="addressLine1" title="Address line 1" value={values.addressLine1} onChange={onChange} />
         <Text name="addressLine2" title="Address line 2" value={values.addressLine2} onChange={onChange} />
         <div className="grid gap-4 sm:grid-cols-3">
@@ -173,7 +180,7 @@ export function SignupFields({
       </fieldset>
 
       <fieldset className="space-y-4">
-        <legend className="text-sm font-semibold text-navy-900">Emergency contact</legend>
+        <legend className="border-b-2 border-line pb-2 text-[11px] font-bold tracking-[0.16em] text-orange-brand uppercase">Emergency contact</legend>
         <div className="grid gap-4 sm:grid-cols-3">
           <Text name="emergencyContactName" title="Name" value={values.emergencyContactName} onChange={onChange} />
           <Text

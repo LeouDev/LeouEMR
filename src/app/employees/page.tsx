@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { Card, CardHeader, EmptyState, formatWeek } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand, formatWeek } from "@/components/ui";
 import { EwsRiskBadge } from "@/app/employees/[employeeId]/ews-panel";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getAvailableWeeks, getLatestWeek } from "@/lib/queries/performance";
@@ -48,11 +48,11 @@ export default async function EmployeesPage({
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/employees" />
+      <PageBand title="Employees" subtitle="Roster and weekly standing" />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">Employees</h1>
-          <p className="mt-1 text-sm text-muted">
+          <p className="text-sm text-muted">
             {week ? `Standing for the week of ${formatWeek(week)}` : "No performance data yet"}
           </p>
         </div>
@@ -84,43 +84,42 @@ export default async function EmployeesPage({
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] border-collapse text-sm">
                 <thead>
-                  <tr className="border-b border-line bg-cream text-left">
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">Employee</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Supervisor</th>
-                    <th className="px-3 py-2.5 font-semibold text-navy-800">Site</th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-navy-800">
+                  <tr className="border-b-2 border-ink bg-cream">
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Supervisor</th>
+                    <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Site</th>
+                    <th className="px-3 py-2.5 font-semibold text-ink">
                       Failing KPIs
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-navy-800">
+                    <th className="px-3 py-2.5 font-semibold text-ink">
                       Open items
                     </th>
-                    <th className="px-6 py-2.5 font-semibold text-navy-800">EWS risk</th>
+                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">EWS risk</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((row) => (
-                    <tr key={row.id} className="border-b border-line/70 last:border-0 hover:bg-cream/60">
+                    <tr key={row.id} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
                       <td className="px-6 py-2">
                         <Link
                           href={`/employees/${row.id}${week ? `?week=${week}` : ""}`}
-                          className="font-medium text-navy-900 underline-offset-4 hover:text-orange-brand hover:underline"
+                          prefetch={false}
+                          className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
                         >
                           {row.name}
                         </Link>
                         <span className="ml-2 font-mono text-xs text-muted">{row.eid}</span>
                       </td>
-                      <td className="px-3 py-2 text-navy-800">{row.supervisorName ?? "—"}</td>
+                      <td className="px-3 py-2 text-ink">{row.supervisorName ?? "—"}</td>
                       <td className="px-3 py-2 text-muted">{row.site ?? "—"}</td>
                       <td
-                        className={`px-3 py-2 text-right font-mono tabular-nums ${
-                          row.failingKpis > 0 ? "text-fail" : "text-muted"
+                        className={`px-3 py-2 font-mono tabular-nums ${row.failingKpis > 0 ?"text-fail" : "text-muted"
                         }`}
                       >
                         {row.failingKpis || "—"}
                       </td>
                       <td
-                        className={`px-3 py-2 text-right font-mono tabular-nums ${
-                          row.openIssues > 0 ? "text-navy-900" : "text-muted"
+                        className={`px-3 py-2 font-mono tabular-nums ${row.openIssues > 0 ?"text-ink" : "text-muted"
                         }`}
                       >
                         {row.openIssues || "—"}

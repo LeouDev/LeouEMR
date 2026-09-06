@@ -36,7 +36,7 @@ function TargetCell({
   const [error, setError] = useState<string | null>(null);
 
   if (!editable) {
-    return <span className="font-mono text-sm text-navy-900 tabular-nums">{skill.target}</span>;
+    return <span className="font-mono text-sm text-ink tabular-nums">{skill.target}</span>;
   }
 
   async function commit() {
@@ -83,7 +83,7 @@ function TargetCell({
           }
         }}
         aria-label={`Target for ${skill.name}`}
-        className="w-24 rounded-md border border-line bg-surface px-2 py-1 text-right font-mono text-sm text-navy-900 tabular-nums outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100 disabled:opacity-50"
+        className="w-24 border-2 border-ink bg-surface px-2 py-1 text-right font-mono text-sm text-ink tabular-nums outline-none transition disabled:opacity-50"
       />
       {error && <span className="mt-0.5 text-[11px] text-fail">{error}</span>}
     </span>
@@ -119,10 +119,10 @@ export function SkillWorkspace({
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+      <section className="overflow-hidden border-2 border-ink bg-surface">
         <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-6 py-4">
           <div>
-            <h2 className="text-base font-semibold text-navy-900">Skill reference</h2>
+            <h2 className="text-base font-semibold text-ink">Skill reference</h2>
             <p className="mt-0.5 text-sm text-muted">
               {canEditTargets
                 ? "Targets are editable. Rating thresholds are locked scoring policy."
@@ -137,16 +137,16 @@ export function SkillWorkspace({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse text-sm">
             <thead>
-              <tr className="border-b border-line bg-cream text-left">
-                <th className="px-6 py-2.5 font-semibold text-navy-800">Skill</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Target</th>
-                <th className="px-3 py-2.5 text-center font-semibold text-navy-800">
+              <tr className="border-b-2 border-ink bg-cream">
+                <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Skill</th>
+                <th className="px-3 py-2.5 font-semibold text-ink">Target</th>
+                <th className="px-3 py-2.5 font-semibold text-ink">
                   Lower is better
                 </th>
                 {(["r5", "r4", "r3", "r2", "r1"] as const).map((key) => (
                   <th
                     key={key}
-                    className="px-3 py-2.5 text-right font-semibold text-navy-800"
+                    className="px-3 py-2.5 font-semibold text-ink"
                     title="Locked"
                   >
                     Rating {key.slice(1)}
@@ -156,18 +156,18 @@ export function SkillWorkspace({
             </thead>
             <tbody>
               {skills.map((skill) => (
-                <tr key={skill.id} className="border-b border-line/70 last:border-0 hover:bg-cream/60">
-                  <td className="px-6 py-2 font-medium text-navy-900">{skill.name}</td>
-                  <td className="px-3 py-2 text-right">
+                <tr key={skill.id} className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100">
+                  <td className="px-6 py-2 font-medium text-ink">{skill.name}</td>
+                  <td className="px-3 py-2">
                     <TargetCell
                       skill={skill}
                       editable={canEditTargets}
                       onSaved={(target) => handleTargetSaved(skill.id, target)}
                     />
                   </td>
-                  <td className="px-3 py-2 text-center">
+                  <td className="px-3 py-2">
                     {skill.lowerIsBetter ? (
-                      <span className="rounded-full bg-orange-brand-100 px-2 py-0.5 text-xs font-semibold text-orange-brand-dark">
+                      <span className="bg-orange-brand-100 px-2 py-0.5 text-xs font-semibold text-orange-brand-dark">
                         Yes
                       </span>
                     ) : (
@@ -177,7 +177,7 @@ export function SkillWorkspace({
                   {(["r5", "r4", "r3", "r2", "r1"] as const).map((key) => (
                     <td
                       key={key}
-                      className="px-3 py-2 text-right font-mono text-xs text-muted tabular-nums"
+                      className="px-3 py-2 font-mono text-xs text-muted tabular-nums"
                     >
                       {asPercent(skill[key])}
                     </td>
@@ -189,9 +189,9 @@ export function SkillWorkspace({
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+      <section className="overflow-hidden border-2 border-ink bg-surface">
         <div className="border-b border-line px-6 py-4">
-          <h2 className="text-base font-semibold text-navy-900">Rating calculator</h2>
+          <h2 className="text-base font-semibold text-ink">Rating calculator</h2>
           <p className="mt-0.5 text-sm text-muted">
             Updates live as you type — no submit needed.
           </p>
@@ -200,11 +200,11 @@ export function SkillWorkspace({
         <div className="grid gap-6 px-6 py-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <div className="space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-navy-800">Skill</span>
+              <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Skill</span>
               <select
                 value={selectedId}
                 onChange={(e) => setSelectedId(e.target.value)}
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100"
+                className="w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition"
               >
                 {skills.map((skill) => (
                   <option key={skill.id} value={skill.id}>
@@ -215,7 +215,7 @@ export function SkillWorkspace({
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-navy-800">Actual</span>
+              <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Actual</span>
               <input
                 type="number"
                 step="any"
@@ -223,7 +223,7 @@ export function SkillWorkspace({
                 value={actual}
                 onChange={(e) => setActual(e.target.value)}
                 placeholder="Enter actual performance"
-                className="w-full rounded-lg border border-line bg-surface px-3 py-2 font-mono text-sm text-navy-900 tabular-nums outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100"
+                className="w-full border-2 border-ink bg-surface px-3 py-2 font-mono text-sm text-ink tabular-nums outline-none transition"
               />
               {selected && (
                 <span className="mt-1.5 block text-xs text-muted">
@@ -264,22 +264,20 @@ function Readout({
 }) {
   return (
     <div
-      className={`rounded-xl border p-4 ${
-        accent ? "border-orange-brand/40 bg-orange-brand-100/40" : "border-line bg-cream/60"
+      className={`border p-4 ${accent ? "border-orange-brand/40 bg-orange-brand-100/40" : "border-line bg-cream/60"
       }`}
     >
       <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
       <p
-        className={`mt-1.5 font-mono text-2xl font-semibold tabular-nums ${
-          accent ? "text-orange-brand-dark" : "text-navy-900"
+        className={`mt-1.5 font-mono text-2xl font-semibold tabular-nums ${accent ? "text-orange-brand-dark" : "text-ink"
         }`}
       >
         {value}
       </p>
       {scale !== undefined && (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-cream-dark">
+        <div className="mt-2 h-1.5 bg-line">
           <div
-            className="h-full rounded-full bg-orange-brand transition-all"
+            className="h-full bg-orange-brand transition-all"
             style={{ width: `${((scale - 1) / 4) * 100}%` }}
           />
         </div>

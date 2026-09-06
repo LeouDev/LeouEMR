@@ -1,0 +1,498 @@
+import { type SQL, and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { db } from "@/lib/db/client";
+import {
+  employeeAssignments,
+  employees,
+  kpiDefinitions,
+  performanceIssues,
+  weeklyMetricResults,
+} from "@/lib/db/schema";
+import {
+  assignmentAt,
+  managerOfRecord,
+  siteOfRecord,
+  supervisorOfRecord,
+} from "./org-history";
+import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
+import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
+import type { Period } from "./period";
+
+/** Today in UTC, the fallback when there is no data to bound the period. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export interface KpiBreakdown {
+  code: string;
+  name: string;
+  total: number;
+  failing: number;
+  failRate: number;
+}
+
+export interface TrendPoint {
+  week: string;
+  evaluated: number;
+  failing: number;
+  failRate: number;
+}
+
+export interface GroupBreakdown {
+  label: string;
+  employees: number;
+  failing: number;
+  failRate: number;
+  openIssues: number;
+}
+
+export interface StatusBreakdown {
+  status: string;
+  count: number;
+}
+
+export interface AnalyticsSnapshot {
+  /** Everyone matching the site/manager filters, regardless of the dates. */
+  totalEmployees: number;
+  /** Of those, how many have any evaluated result inside the range. */
+  employeesWithData: number;
+  evaluatedEmployees: number;
+  failingEmployees: number;
+  openIssues: number;
+  kpis: KpiBreakdown[];
+  trend: TrendPoint[];
+  bySite: GroupBreakdown[];
+  byManager: GroupBreakdown[];
+  bySupervisor: GroupBreakdown[];
+  statuses: StatusBreakdown[];
+}
+
+/**
+ * Organization-wide analytics for the administrator's view.
+ *
+ * Deliberately read-only and aggregate: an administrator oversees the whole
+ * operation rather than working individual action items, so this answers
+ * "where is the organization struggling" rather than listing rows to act on.
+ *
+ * Only KPIs that open action items are counted, so the PAR components do
+ * not double-count against the composite MBO result they feed.
+ */
+export type TrendGrain = "week" | "month";
+
+export interface AnalyticsFilters {
+  site?: string;
+  manager?: string;
+  /** Inclusive ISO dates bounding the weeks included. */
+  weekFrom?: string;
+  weekTo?: string;
+  /** How the trend series is bucketed. Everything else is unaffected. */
+  grain?: TrendGrain;
+}
+
+export async function getAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSnapshot> {
+  // Everything below is cut by the org structure as it stood at the END of the
+  // period being viewed, not as it stands today. Without this a realignment
+  // retroactively moves a whole month's results to the new supervisor.
+  const asOf = filters.weekTo ?? (await getFactDateRange())?.last ?? todayIso();
+
+  const scope = [
+    filters.site ? eq(siteOfRecord, filters.site) : undefined,
+    filters.manager ? eq(managerOfRecord, filters.manager) : undefined,
+  ].filter(Boolean);
+
+  const scopedEmployees = await db
+    .select({ id: employees.id })
+    .from(employees)
+    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    .where(scope.length ? and(...scope) : undefined);
+
+  const ids = scopedEmployees.map((e) => e.id);
+  const empty: AnalyticsSnapshot = {
+    totalEmployees: ids.length,
+    employeesWithData: 0,
+    evaluatedEmployees: 0,
+    failingEmployees: 0,
+    openIssues: 0,
+    kpis: [],
+    trend: [],
+    bySite: [],
+    byManager: [],
+    bySupervisor: [],
+    statuses: [],
+  };
+  if (ids.length === 0) return empty;
+
+  const window = [
+    inArray(weeklyMetricResults.employeeId, ids),
+    eq(kpiDefinitions.generatesActionItems, true),
+    filters.weekFrom ? gte(weeklyMetricResults.weekStart, filters.weekFrom) : undefined,
+    filters.weekTo ? lte(weeklyMetricResults.weekStart, filters.weekTo) : undefined,
+  ].filter(Boolean);
+
+  const kpiRowsPromise = db
+    .select({
+      code: kpiDefinitions.code,
+      name: kpiDefinitions.name,
+      total: count(),
+      failing: sql<number>`count(*) filter (where ${weeklyMetricResults.status} = 'fail')::int`,
+    })
+    .from(weeklyMetricResults)
+    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+    .where(and(...window))
+    .groupBy(kpiDefinitions.code, kpiDefinitions.name);
+
+  // A month bucket is keyed by its first day, so the same "start date"
+  // contract holds for both grains and the chart needs no special case.
+  const bucket =
+    filters.grain === "month"
+      ? sql<string>`date_trunc('month', ${weeklyMetricResults.weekStart})::date::text`
+      : sql<string>`${weeklyMetricResults.weekStart}::text`;
+
+  const trendRowsPromise = db
+    .select({
+      week: bucket,
+      evaluated: sql<number>`count(distinct ${weeklyMetricResults.employeeId})::int`,
+      failing: sql<number>`count(distinct ${weeklyMetricResults.employeeId}) filter (where ${weeklyMetricResults.status} = 'fail')::int`,
+    })
+    .from(weeklyMetricResults)
+    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+    .where(and(...window))
+    .groupBy(bucket)
+    .orderBy(asc(bucket));
+
+  // Action items are dated by the week whose failure opened them, so the
+  // range filters on that. Without this the counts stayed at their all-time
+  // totals while every figure beside them moved with the picker.
+  const issueScope = [
+    ...scope,
+    OPENS_ACTION_ITEMS,
+    filters.weekFrom ? gte(performanceIssues.openedWeek, filters.weekFrom) : undefined,
+    filters.weekTo ? lte(performanceIssues.openedWeek, filters.weekTo) : undefined,
+  ].filter(Boolean);
+
+  // "Has data in range" counts any evaluated KPI, not only the ones that
+  // open action items — someone with attendance but no production still has
+  // data, and calling them absent would misrepresent the roster.
+  const withDataPromise = db
+    .select({ n: sql<number>`count(distinct ${weeklyMetricResults.employeeId})::int` })
+    .from(weeklyMetricResults)
+    .where(
+      and(
+        ...[
+          inArray(weeklyMetricResults.employeeId, ids),
+          filters.weekFrom ? gte(weeklyMetricResults.weekStart, filters.weekFrom) : undefined,
+          filters.weekTo ? lte(weeklyMetricResults.weekStart, filters.weekTo) : undefined,
+        ].filter(Boolean),
+      ),
+    );
+
+  // The grouped tables below count failures in the most recent *week*, so that
+  // value has to be a real week start. Deriving it from the trend's last
+  // bucket breaks under the monthly grain, where the key is the first of the
+  // month: weeks run Saturday-Friday, so the two coincide only in the roughly
+  // one month in seven that begins on a Saturday. Every other month the join
+  // matched nothing and each fail rate silently read 0% on a fully populated
+  // table — which looks like good news rather than a bug.
+  const latestWeekPromise = db
+    .select({ week: sql<string | null>`max(${weeklyMetricResults.weekStart})::text` })
+    .from(weeklyMetricResults)
+    .where(
+      and(
+        ...[
+          inArray(weeklyMetricResults.employeeId, ids),
+          filters.weekFrom ? gte(weeklyMetricResults.weekStart, filters.weekFrom) : undefined,
+          filters.weekTo ? lte(weeklyMetricResults.weekStart, filters.weekTo) : undefined,
+        ].filter(Boolean),
+      ),
+    );
+
+  const statusRowsPromise = db
+    .select({ status: performanceIssues.status, n: count() })
+    .from(performanceIssues)
+    .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
+    .where(issueScope.length ? and(...issueScope) : undefined)
+    .groupBy(performanceIssues.status);
+
+  // Three independent aggregates: issue them together and pay one round
+  // trip's latency instead of three.
+  const [kpiRows, trendRows, statusRows, [withData], [latestWeekRow]] = await Promise.all([
+    kpiRowsPromise,
+    trendRowsPromise,
+    statusRowsPromise,
+    withDataPromise,
+    latestWeekPromise,
+  ]);
+
+  const latestWeek = latestWeekRow?.week ?? undefined;
+
+  const groupBy = async (column: SQL<string | null>) => {
+    const rowsPromise = db
+      .select({
+        label: column,
+        employees: sql<number>`count(distinct ${employees.id})::int`,
+        // Only KPIs that open action items count as a failure here, matching
+        // the KPI breakdown above — otherwise a PAR component and the MBO it
+        // feeds would both mark the same person failing.
+        failing: sql<number>`count(distinct ${employees.id}) filter (where ${weeklyMetricResults.status} = 'fail' and ${kpiDefinitions.generatesActionItems})::int`,
+      })
+      .from(employees)
+      .leftJoin(
+        weeklyMetricResults,
+        and(
+          eq(weeklyMetricResults.employeeId, employees.id),
+          latestWeek ? eq(weeklyMetricResults.weekStart, latestWeek) : undefined,
+        ),
+      )
+      .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+      .leftJoin(employeeAssignments, assignmentAt(asOf))
+      .where(scope.length ? and(...scope) : undefined)
+      .groupBy(column);
+
+    const issuesPromise = db
+      .select({
+        label: column,
+        openIssues: sql<number>`count(*) filter (where ${performanceIssues.status} in ('OPEN','AWAITING_AGENT_ACKNOWLEDGEMENT','ACKNOWLEDGED','MONITORING','SUSTAINED','REOPENED'))::int`,
+      })
+      .from(performanceIssues)
+      .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
+      .leftJoin(employeeAssignments, assignmentAt(asOf))
+      .where(issueScope.length ? and(...issueScope) : undefined)
+      .groupBy(column);
+
+    const [rows, issues] = await Promise.all([rowsPromise, issuesPromise]);
+    const issuesBy = new Map(issues.map((i) => [i.label, i.openIssues]));
+
+    return rows
+      .filter((r) => r.label)
+      .map((r) => ({
+        label: r.label as string,
+        employees: r.employees,
+        failing: r.failing,
+        failRate: r.employees > 0 ? (r.failing / r.employees) * 100 : 0,
+        openIssues: issuesBy.get(r.label) ?? 0,
+      }))
+      .sort((a, b) => b.failRate - a.failRate);
+  };
+
+  const [bySite, byManager, bySupervisor] = await Promise.all([
+    groupBy(siteOfRecord),
+    groupBy(managerOfRecord),
+    groupBy(supervisorOfRecord),
+  ]);
+
+  const latest = trendRows.at(-1);
+
+  return {
+    totalEmployees: ids.length,
+    employeesWithData: withData?.n ?? 0,
+    evaluatedEmployees: latest?.evaluated ?? 0,
+    failingEmployees: latest?.failing ?? 0,
+    openIssues: statusRows
+      .filter((s) => OPEN_STATUSES.includes(s.status as never))
+      .reduce((sum, s) => sum + s.n, 0),
+    kpis: kpiRows
+      .map((r) => ({
+        code: r.code,
+        name: r.name,
+        total: r.total,
+        failing: r.failing,
+        failRate: r.total > 0 ? (r.failing / r.total) * 100 : 0,
+      }))
+      .sort((a, b) => b.failRate - a.failRate),
+    trend: trendRows.map((r) => ({
+      week: r.week,
+      evaluated: r.evaluated,
+      failing: r.failing,
+      failRate: r.evaluated > 0 ? (r.failing / r.evaluated) * 100 : 0,
+    })),
+    bySite,
+    byManager,
+    bySupervisor,
+    statuses: statusRows.map((s) => ({ status: s.status, count: s.n })),
+  };
+}
+
+export interface MboNode {
+  label: string;
+  /** Mean MBO percentage across the people beneath this node. */
+  mbo: number | null;
+  /** Share of scored people who cleared every gate — the business's "pass rate". */
+  passRate: number | null;
+  /** How many of them cleared every applicable gate. */
+  passing: number;
+  scored: number;
+  headcount: number;
+  employeeId?: string;
+  eid?: string;
+  children: MboNode[];
+}
+
+export interface MboOverview {
+  sites: MboNode[];
+  /** Mean MBO attainment across scored people. */
+  overall: number | null;
+  /** Share of scored people clearing every gate. This is the headline figure. */
+  passRate: number | null;
+  scored: number;
+  passing: number;
+}
+
+/**
+ * MBO attainment rolled up site → manager → supervisor → employee.
+ *
+ * MBO is stored per employee-week as the share of applicable gates met, so
+ * a group's figure is the mean of its members' own percentages: averaging
+ * the weekly values first keeps a person with more weeks of data from
+ * counting more than once at the group level.
+ *
+ * People with no MBO result in the window still appear in the headcount but
+ * are left out of the average — absent data is not a failing score.
+ */
+export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOverview> {
+  // Re-aggregate the whole range once and apply the gates to that, rather
+  // than averaging each week's gate-share and demanding the average be 100.
+  // Those are not the same measure: someone who missed one gate in one week
+  // of four averages 91.7% and fails the second test while comfortably
+  // passing the first. The business's own figure is the first one.
+  // Each bound is honoured independently, matching getAnalytics. Requiring
+  // both meant a one-sided filter — "since 1 September", with the To field left
+  // empty — silently fell back to the entire imported history, so the MBO card
+  // and tree reported all-time figures beside cards labelled as September.
+  const factRange = await getFactDateRange();
+  const range =
+    filters.weekFrom || filters.weekTo
+      ? {
+          start: filters.weekFrom ?? factRange?.first ?? null,
+          end: filters.weekTo ?? factRange?.last ?? null,
+        }
+      : factRange
+        ? { start: factRange.first, end: factRange.last }
+        : null;
+
+  if (!range || range.start === null || range.end === null) {
+    return { sites: [], overall: null, scored: 0, passing: 0, passRate: null };
+  }
+
+  const period: Period = {
+    // Anything but "week" re-aggregates from daily facts; "week" would read
+    // the labelled weekly ledger and reintroduce the averaging.
+    granularity: "month",
+    start: range.start,
+    end: range.end,
+    label: `${range.start} to ${range.end}`,
+  };
+
+  // The tree is built from the structure as it stood at the end of the range,
+  // so a realignment does not retroactively move a month of results to the
+  // supervisor who inherited the person afterwards.
+  const asOf = range.end;
+  const roster = await db
+    .select({
+      employeeId: employees.id,
+      eid: employees.eid,
+      name: employees.name,
+      site: siteOfRecord,
+      manager: managerOfRecord,
+      supervisor: supervisorOfRecord,
+    })
+    .from(employees)
+    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    .where(
+      and(
+        ...[
+          filters.site ? eq(siteOfRecord, filters.site) : undefined,
+          filters.manager ? eq(managerOfRecord, filters.manager) : undefined,
+        ].filter(Boolean),
+      ),
+    );
+
+  const metrics = await getPeriodMetrics(roster.map((r) => r.employeeId), period);
+  const mboByEmployee = new Map(
+    metrics.filter((m) => m.kpiCode === "MBO").map((m) => [m.employeeId, m.actualValue]),
+  );
+  const rows = roster.map((r) => ({ ...r, mbo: mboByEmployee.get(r.employeeId) ?? null }));
+
+  const UNASSIGNED = "Unassigned";
+
+  const leaf = (r: (typeof rows)[number]): MboNode => {
+    const mbo = r.mbo === null ? null : Number(r.mbo);
+    const passes = mbo !== null && mbo >= 100;
+    return {
+      label: r.name,
+      mbo,
+      passRate: mbo === null ? null : passes ? 100 : 0,
+      passing: passes ? 1 : 0,
+      scored: mbo !== null ? 1 : 0,
+      headcount: 1,
+      employeeId: r.employeeId,
+      eid: r.eid,
+      children: [],
+    };
+  };
+
+  /** Roll children up into a parent, averaging only the members that scored. */
+  const summarize = (label: string, children: MboNode[]): MboNode => {
+    const scored = children.reduce((n, c) => n + c.scored, 0);
+    const weighted = children.reduce((sum, c) => sum + (c.mbo ?? 0) * c.scored, 0);
+    const passing = children.reduce((n, c) => n + c.passing, 0);
+    return {
+      label,
+      mbo: scored > 0 ? weighted / scored : null,
+      passRate: scored > 0 ? (passing / scored) * 100 : null,
+      passing,
+      scored,
+      headcount: children.reduce((n, c) => n + c.headcount, 0),
+      children: children.sort((a, b) => (b.mbo ?? -1) - (a.mbo ?? -1)),
+    };
+  };
+
+  const bySite = new Map<string, Map<string, Map<string, MboNode[]>>>();
+  for (const row of rows) {
+    const site = row.site || UNASSIGNED;
+    const manager = row.manager || UNASSIGNED;
+    const supervisor = row.supervisor || UNASSIGNED;
+
+    const managers = bySite.get(site) ?? new Map();
+    bySite.set(site, managers);
+    const supervisors = managers.get(manager) ?? new Map();
+    managers.set(manager, supervisors);
+    supervisors.set(supervisor, [...(supervisors.get(supervisor) ?? []), leaf(row)]);
+  }
+
+  const sites = [...bySite.entries()]
+    .map(([site, managers]) =>
+      summarize(
+        site,
+        [...managers.entries()].map(([manager, supervisors]) =>
+          summarize(
+            manager,
+            [...supervisors.entries()].map(([supervisor, people]) =>
+              summarize(supervisor, people),
+            ),
+          ),
+        ),
+      ),
+    )
+    .sort((a, b) => (b.passRate ?? -1) - (a.passRate ?? -1));
+
+  const scored = sites.reduce((n, s) => n + s.scored, 0);
+  const passing = sites.reduce((n, s) => n + s.passing, 0);
+  return {
+    sites,
+    overall: scored > 0 ? sites.reduce((sum, s) => sum + (s.mbo ?? 0) * s.scored, 0) / scored : null,
+    passRate: scored > 0 ? (passing / scored) * 100 : null,
+    scored,
+    passing,
+  };
+}
+
+/** Distinct sites and managers, for the analytics filters. */
+export async function getAnalyticsFacets() {
+  const rows = await db
+    .selectDistinct({ site: employees.site, manager: employees.managerName })
+    .from(employees);
+
+  return {
+    sites: [...new Set(rows.map((r) => r.site).filter(Boolean))].sort() as string[],
+    managers: [...new Set(rows.map((r) => r.manager).filter(Boolean))].sort() as string[],
+  };
+}

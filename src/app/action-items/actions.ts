@@ -14,6 +14,7 @@ import {
   notifications,
   performanceIssues,
   rcaEntries,
+  rcaNotes,
   users,
 } from "@/lib/db/schema";
 import {
@@ -21,6 +22,7 @@ import {
   submitRcaAndActionPlan,
 } from "@/lib/action-item-engine/engine";
 import { actionPlanSchema, rcaSchema } from "@/lib/rca-action-plan/validation";
+import { z } from "zod";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -308,4 +310,65 @@ async function notifyAgent(
       payload: { actionItemId: payload.actionItemId },
     })),
   );
+}
+
+
+const rcaNoteSchema = z.object({
+  actionItemId: z.string().uuid(),
+  week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick the week the note is about"),
+  note: z.string().trim().min(1, "Enter a note").max(2000),
+});
+
+/**
+ * Adds a dated note against an item's root cause.
+ *
+ * An item carries one RCA because a root cause describes the underlying
+ * problem rather than the calendar. But an episode can run for weeks and the
+ * circumstances can change part-way, and without this the original RCA
+ * silently stands for weeks it no longer explains.
+ *
+ * Append-only: notes are part of a performance record, so there is no edit or
+ * delete. A correction is another note.
+ */
+export async function addRcaNote(input: unknown): Promise<ActionResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (!canManageActionItems(user)) {
+    return { ok: false, error: "Only supervisors and administrators can add a note" };
+  }
+
+  const parsed = rcaNoteSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid note" };
+  }
+
+  // Role alone is not enough — the item must be inside this caller's scope.
+  const scoped = await loadScopedItem(user, parsed.data.actionItemId);
+  if (!scoped) return { ok: false, error: "Action item not found" };
+
+  const [rca] = await db
+    .select({ id: rcaEntries.id })
+    .from(rcaEntries)
+    .where(eq(rcaEntries.actionItemId, parsed.data.actionItemId))
+    .limit(1);
+  if (!rca) return { ok: false, error: "Record the root cause before adding notes to it" };
+
+  await db.insert(rcaNotes).values({
+    actionItemId: parsed.data.actionItemId,
+    week: parsed.data.week,
+    note: parsed.data.note,
+    createdBy: user.id,
+  });
+
+  await db.insert(auditLog).values({
+    actorId: user.id,
+    action: "rca_note.added",
+    entityType: "action_item",
+    entityId: parsed.data.actionItemId,
+    after: { week: parsed.data.week },
+  });
+
+  revalidatePath(`/action-items/${parsed.data.actionItemId}`);
+  revalidatePath(`/employees/${scoped.employee.id}`);
+  return { ok: true };
 }

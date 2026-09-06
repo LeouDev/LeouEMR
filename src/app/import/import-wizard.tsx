@@ -86,9 +86,9 @@ export function ImportWizard() {
 
   return (
     <div className="space-y-6">
-      <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+      <div className="overflow-hidden border-2 border-ink bg-surface">
         <div className="border-b border-line px-6 py-4">
-          <h2 className="text-base font-semibold text-navy-900">Upload workbook</h2>
+          <h2 className="text-base font-semibold text-ink">Upload workbook</h2>
           <p className="mt-0.5 text-sm text-muted">
             .xlsx, .xls or .csv. Nothing is written until you review the analysis and confirm.
           </p>
@@ -105,13 +105,13 @@ export function ImportWizard() {
               setResult(null);
               setError(null);
             }}
-            className="block w-full text-sm text-navy-800 file:mr-3 file:rounded-lg file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
+            className="block w-full text-sm text-ink file:mr-3 file: file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
           />
 
           {fileName && <p className="text-sm text-muted">Selected: {fileName}</p>}
 
           {error && (
-            <p role="alert" className="rounded-lg bg-fail-bg px-3 py-2 text-sm text-fail">
+            <p role="alert" className="bg-fail-bg px-3 py-2 text-sm text-fail">
               {error}
             </p>
           )}
@@ -121,7 +121,7 @@ export function ImportWizard() {
               type="button"
               onClick={analyze}
               disabled={busy !== null}
-              className="rounded-lg border border-line px-4 py-2 text-sm font-semibold text-navy-800 transition hover:border-navy disabled:opacity-50"
+              className="border border-line px-4 py-2 text-sm font-semibold text-ink transition hover:border-navy disabled:opacity-50"
             >
               {busy === "analyzing" ? "Analyzing…" : "Analyze"}
             </button>
@@ -131,7 +131,7 @@ export function ImportWizard() {
                 type="button"
                 onClick={commit}
                 disabled={busy !== null}
-                className="rounded-lg bg-orange-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-orange-brand-dark disabled:opacity-50"
+                className="btn-primary px-5 py-3 text-sm"
               >
                 {busy === "importing" ? "Importing…" : `Import ${preview.metricCount} metrics`}
               </button>
@@ -141,9 +141,9 @@ export function ImportWizard() {
       </div>
 
       {preview && (
-        <div className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+        <div className="overflow-hidden border-2 border-ink bg-surface">
           <div className="border-b border-line px-6 py-4">
-            <h2 className="text-base font-semibold text-navy-900">Analysis</h2>
+            <h2 className="text-base font-semibold text-ink">Analysis</h2>
             <p className="mt-0.5 text-sm text-muted">
               Review before importing — nothing has been written yet
             </p>
@@ -156,23 +156,23 @@ export function ImportWizard() {
           </div>
 
           <div className="border-t border-line px-6 py-5">
-            <h3 className="mb-2 text-sm font-semibold text-navy-900">Sheets</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">Sheets</h3>
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line text-left">
                   <th className="py-1.5 font-medium text-muted">Sheet</th>
-                  <th className="py-1.5 text-right font-medium text-muted">Read</th>
-                  <th className="py-1.5 text-right font-medium text-muted">Used</th>
-                  <th className="py-1.5 text-right font-medium text-muted">Skipped</th>
+                  <th className="py-1.5 font-medium text-muted">Read</th>
+                  <th className="py-1.5 font-medium text-muted">Used</th>
+                  <th className="py-1.5 font-medium text-muted">Skipped</th>
                 </tr>
               </thead>
               <tbody>
                 {preview.sheets.map((sheet) => (
                   <tr key={sheet.sheet} className="border-b border-line/60 last:border-0">
-                    <td className="py-1.5 text-navy-900">{sheet.sheet}</td>
-                    <td className="py-1.5 text-right font-mono tabular-nums text-muted">{sheet.rowsRead}</td>
-                    <td className="py-1.5 text-right font-mono tabular-nums text-pass">{sheet.rowsUsed}</td>
-                    <td className="py-1.5 text-right font-mono tabular-nums text-muted">
+                    <td className="py-1.5 text-ink">{sheet.sheet}</td>
+                    <td className="py-1.5 font-mono tabular-nums text-muted">{sheet.rowsRead}</td>
+                    <td className="py-1.5 font-mono tabular-nums text-pass">{sheet.rowsUsed}</td>
+                    <td className="py-1.5 font-mono tabular-nums text-muted">
                       {sheet.rowsSkipped}
                     </td>
                   </tr>
@@ -189,12 +189,12 @@ export function ImportWizard() {
 
           {(errors.length > 0 || warnings.length > 0) && (
             <div className="border-t border-line px-6 py-5">
-              <h3 className="mb-2 text-sm font-semibold text-navy-900">Validation</h3>
+              <h3 className="mb-2 text-sm font-semibold text-ink">Validation</h3>
               <ul className="space-y-1.5 text-sm">
                 {errors.map((issue, index) => (
                   <li key={`e${index}`} className="flex gap-2">
                     <span className="font-semibold text-fail">Error</span>
-                    <span className="text-navy-800">
+                    <span className="text-ink">
                       {issue.sheet}: {issue.message}
                       {issue.count > 0 && ` (${issue.count} rows)`}
                     </span>
@@ -203,7 +203,7 @@ export function ImportWizard() {
                 {warnings.map((issue, index) => (
                   <li key={`w${index}`} className="flex gap-2">
                     <span className="font-semibold text-warn">Warning</span>
-                    <span className="text-navy-800">
+                    <span className="text-ink">
                       {issue.sheet}: {issue.message}
                       {issue.count > 0 && ` (${issue.count} rows)`}
                     </span>
@@ -217,12 +217,12 @@ export function ImportWizard() {
           )}
 
           <div className="border-t border-line px-6 py-5">
-            <h3 className="mb-2 text-sm font-semibold text-navy-900">Metrics by KPI</h3>
+            <h3 className="mb-2 text-sm font-semibold text-ink">Metrics by KPI</h3>
             <div className="flex flex-wrap gap-2">
               {preview.metricsByKpi.map((entry) => (
                 <span
                   key={entry.kpiCode}
-                  className="rounded-full bg-cream px-3 py-1 text-xs font-medium text-navy-800"
+                  className="bg-cream px-3 py-1 text-xs font-medium text-ink"
                 >
                   {entry.kpiCode}: {entry.count}
                 </span>
@@ -234,10 +234,10 @@ export function ImportWizard() {
       )}
 
       {result && (
-        <div className="overflow-hidden rounded-xl border border-pass/30 bg-pass-bg/40 shadow-sm">
+        <div className="overflow-hidden border border-pass/30 bg-pass-bg/40">
           <div className="px-6 py-5">
-            <h2 className="text-base font-semibold text-navy-900">Import complete</h2>
-            <ul className="mt-2 space-y-1 text-sm text-navy-800">
+            <h2 className="text-base font-semibold text-ink">Import complete</h2>
+            <ul className="mt-2 space-y-1 text-sm text-ink">
               <li>{result.metricsWritten} weekly metrics written</li>
               <li>
                 {result.employeesCreated} employees created, {result.employeesUpdated} updated
@@ -261,9 +261,9 @@ export function ImportWizard() {
 
 function Figure({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-line bg-cream/60 p-4">
+    <div className="border border-line bg-cream/60 p-4">
       <p className="text-xs font-medium tracking-wide text-muted uppercase">{label}</p>
-      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-navy-900">{value}</p>
+      <p className="mt-1 font-mono text-2xl font-semibold tabular-nums text-ink">{value}</p>
     </div>
   );
 }

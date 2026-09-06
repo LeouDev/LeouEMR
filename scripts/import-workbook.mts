@@ -11,6 +11,7 @@ import { db } from "../src/lib/db/client";
 import { importBatches } from "../src/lib/db/schema";
 import { commitImport } from "../src/lib/import-pipeline/commit";
 import { parseWorkbookBuffer } from "../src/lib/import-pipeline/parse-workbook";
+import { loadSkillMetrics } from "../src/lib/import-pipeline/par-scoring";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -19,7 +20,7 @@ if (!filePath) {
 }
 
 const buffer = readFileSync(filePath);
-const parsed = parseWorkbookBuffer(buffer);
+const parsed = parseWorkbookBuffer(buffer, await loadSkillMetrics());
 
 console.log("--- parse ---");
 console.log("weeks:", parsed.weeks.join(", "));

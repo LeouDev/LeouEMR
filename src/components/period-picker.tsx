@@ -43,15 +43,14 @@ export function PeriodPicker({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <div className="flex rounded-lg border border-line bg-surface p-0.5">
+      <div className="flex border-2 border-ink bg-surface p-0.5">
         {GRANULARITIES.map((option) => (
           <button
             key={option}
             type="button"
             onClick={() => router.push(urlFor({ granularity: option }))}
             aria-pressed={option === granularity}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
-              option === granularity ? "bg-navy-800 text-white" : "text-muted hover:text-navy-900"
+            className={`px-2.5 py-1 text-xs font-medium transition ${option === granularity ? "bg-ink text-white" : "text-ink hover:bg-orange-brand-100"
             }`}
           >
             {GRANULARITY_LABELS[option]}
@@ -63,7 +62,7 @@ export function PeriodPicker({
         value={selected.start}
         onChange={(e) => router.push(urlFor({ start: e.target.value }))}
         aria-label={`${GRANULARITY_LABELS[granularity]} to show`}
-        className="rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-navy-900 outline-none transition focus:border-navy focus:ring-2 focus:ring-navy-100"
+        className="border-2 border-ink bg-surface px-3 py-1.5 text-sm text-ink outline-none transition"
       >
         {periods.map((period) => (
           <option key={period.start} value={period.start}>

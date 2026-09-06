@@ -2,6 +2,7 @@ import { relations } from "drizzle-orm";
 import {
   boolean,
   date,
+  index,
   integer,
   jsonb,
   numeric,
@@ -55,6 +56,17 @@ export const kpiAggregationEnum = pgEnum("kpi_aggregation", [
 
 export const weeklyResultEnum = pgEnum("weekly_result", ["pass", "fail"]);
 
+export const ptoTypeEnum = pgEnum("pto_type", [
+  "vacation",
+  "sick",
+  "emergency",
+  "bereavement",
+  "unpaid",
+]);
+
+/** A request is decided once; "cancelled" is the requester withdrawing it. */
+export const ptoStatusEnum = pgEnum("pto_status", ["pending", "approved", "denied", "cancelled"]);
+
 export const importStatusEnum = pgEnum("import_status", [
   "pending",
   "previewing",
@@ -96,6 +108,18 @@ export const users = pgTable("users", {
    * supervisorEid matches it. Null until an admin links the account.
    */
   employeeEid: text("employee_eid").unique(),
+  /**
+   * Links a manager login to the manager name used in the source data.
+   *
+   * The workbook carries no manager EID — managers appear only as a name
+   * string on their reports' rows — so a manager's span cannot be keyed on
+   * an ID like a supervisor's is. Matching on the account's display name
+   * instead looks equivalent but is not: it silently returns nobody when the
+   * two spellings differ at all, and it would collide outright for two
+   * managers with the same name. This makes the link explicit and set by an
+   * administrator, chosen from the names actually present in the data.
+   */
+  managerName: text("manager_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -164,6 +188,36 @@ export const employees = pgTable("employees", {
   userId: uuid("user_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Who someone reported to during a period, as opposed to right now.
+ *
+ * `employees` holds one current row, which is what authorization and everyday
+ * work should use — you manage the people you manage today. It cannot answer
+ * "whose team was this agent on in August", so a realignment silently moved
+ * last month's numbers to a supervisor who did not earn them. Reporting
+ * roll-ups read this table instead, keyed on the week being reported.
+ *
+ * Populated from the source workbook, which already carries the supervisor on
+ * every weekly row — the import used to collapse them to one value and throw
+ * the dates away. A null `effectiveTo` means the assignment is current; the
+ * database enforces that two assignments never cover the same day.
+ */
+export const employeeAssignments = pgTable("employee_assignments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  employeeId: uuid("employee_id")
+    .notNull()
+    .references(() => employees.id, { onDelete: "cascade" }),
+  effectiveFrom: date("effective_from").notNull(),
+  /** Null means still current. */
+  effectiveTo: date("effective_to"),
+  supervisorEid: text("supervisor_eid"),
+  supervisorName: text("supervisor_name"),
+  managerName: text("manager_name"),
+  site: text("site"),
+  sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // ---------------------------------------------------------------------------
@@ -352,6 +406,31 @@ export const skillFacts = pgTable(
   ],
 );
 
+/**
+ * Per-day NPS response mix.
+ *
+ * The NPS score alone cannot be decomposed: a day's sum and response count
+ * give two equations for three unknowns, so promoters, passives and
+ * detractors are counted at import time instead of derived later. Without
+ * this the agent's own NPS breakdown — and "how many promoters to reach
+ * target" — cannot be answered from stored data at all.
+ */
+export const npsFacts = pgTable(
+  "nps_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    factDate: date("fact_date").notNull(),
+    promoters: integer("promoters").notNull().default(0),
+    passives: integer("passives").notNull().default(0),
+    detractors: integer("detractors").notNull().default(0),
+    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  },
+  (table) => [
+    uniqueIndex("nps_facts_employee_date_idx").on(table.employeeId, table.factDate),
+  ],
+);
+
 /** Per-skill audit tallies, the input to DPU and DPO at any period. */
 export const qualityFacts = pgTable(
   "quality_facts",
@@ -475,6 +554,37 @@ export const rcaEntries = pgTable("rca_entries", {
   updatedBy: uuid("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Dated notes against a root cause.
+ *
+ * An action item is one persistent thread per (employee, KPI) and carries a
+ * single RCA, because a root cause describes the underlying problem rather
+ * than the calendar. But an episode can run for weeks and the circumstances
+ * can change part-way — August's absences being a scheduling problem and
+ * September's an illness, say. Without somewhere to record that, the original
+ * RCA silently stands for weeks it no longer explains.
+ *
+ * Append-only on purpose: this is part of a performance record, so a note is
+ * never edited or removed once written.
+ */
+export const rcaNotes = pgTable(
+  "rca_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actionItemId: uuid("action_item_id")
+      .notNull()
+      .references(() => actionItems.id),
+    /** The reporting week the note is about. */
+    week: date("week").notNull(),
+    note: text("note").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("rca_notes_item_week_idx").on(table.actionItemId, table.week)],
+);
 
 export const actionPlans = pgTable("action_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -610,3 +720,48 @@ export const actionItemsRelations = relations(actionItems, ({ one, many }) => ({
   actionPlan: one(actionPlans, { fields: [actionItems.id], references: [actionPlans.actionItemId] }),
   acknowledgements: many(acknowledgements),
 }));
+
+
+/**
+ * Paid time off, requested by the person taking it and decided by their leader.
+ *
+ * Dates are inclusive and stored as plain dates rather than timestamps: a day
+ * off is a calendar day in the employee's own locale, and a timestamp would
+ * make it drift across a timezone boundary.
+ *
+ * The employee is referenced rather than the user account, because the roster
+ * is the source of who reports to whom — an account can exist before it is
+ * linked, and leave still belongs to the person.
+ */
+export const ptoRequests = pgTable(
+  "pto_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Stable human-facing identifier, e.g. PTO-2026-000042. */
+    code: text("code").notNull().unique(),
+    /**
+     * The person taking the leave, when they exist in the imported roster.
+     *
+     * Null for a supervisor or manager: the workbook contains only agents, so
+     * a leader has no employee row and is identified by `requestedBy` instead.
+     */
+    employeeId: uuid("employee_id").references(() => employees.id),
+    /** The account that submitted it; for a leader, also the subject. */
+    requestedBy: uuid("requested_by").references(() => users.id),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    type: ptoTypeEnum("type").notNull().default("vacation"),
+    reason: text("reason"),
+    status: ptoStatusEnum("status").notNull().default("pending"),
+    /** Null until decided. A decision is never made by the requester. */
+    decidedBy: uuid("decided_by").references(() => users.id),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("pto_requests_employee_idx").on(table.employeeId, table.startDate),
+    index("pto_requests_range_idx").on(table.startDate, table.endDate),
+  ],
+);

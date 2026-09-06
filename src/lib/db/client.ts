@@ -28,19 +28,25 @@ function connect(): Database {
   }
 
   /**
-   * Serverless platforms run many short-lived instances, each opening its
-   * own pool, so a size that is fine locally exhausts the database's client
-   * limit in production.
-   *
    * `prepare: false` is required for Supabase's transaction-mode pooler
-   * (port 6543), which production should use — session mode holds a
-   * connection per client and runs out under serverless concurrency.
+   * (port 6543), which production uses — session mode holds a connection per
+   * client and runs out under serverless concurrency.
+   *
+   * The pool must be larger than the most queries any one page issues at
+   * once. postgres-js pipelines concurrent queries down a single connection,
+   * and the transaction pooler does not tolerate that: with `max: 1` the
+   * first query succeeds and every later one hangs forever behind a wedged
+   * connection. Giving concurrent queries a connection each avoids the
+   * pipelining entirely.
+   *
+   * Eight covers the widest fan-out in the app (the admin dashboard peaks at
+   * six) with headroom. Transaction pooling reuses server-side connections
+   * per statement, so this costs far less than the same number would in
+   * session mode.
    */
-  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
   instance = drizzle(
     postgres(url, {
-      max: isServerless ? 1 : 4,
+      max: 8,
       idle_timeout: 20,
       connect_timeout: 10,
       prepare: false,

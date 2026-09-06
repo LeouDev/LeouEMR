@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { periodContaining, periodsBetween } from "./period";
+import {
+  GRANULARITIES,
+  periodContaining,
+  periodsBetween,
+  previousPeriod,
+  type Granularity,
+} from "./period";
 
 describe("periodContaining", () => {
   it("returns the single day for day granularity", () => {
@@ -87,5 +93,52 @@ describe("periodsBetween", () => {
 
   it("returns a single day period for a one-day span", () => {
     expect(periodsBetween("day", "2026-08-12", "2026-08-12")).toHaveLength(1);
+  });
+});
+
+describe("previousPeriod", () => {
+  const prev = (granularity: Granularity, date: string) =>
+    previousPeriod(periodContaining(granularity, date));
+
+  it("steps back a day", () => {
+    expect(prev("day", "2026-09-01").start).toBe("2026-08-31");
+  });
+
+  it("steps back a week, keeping the Saturday start", () => {
+    const p = prev("week", "2026-09-02");
+    expect(p.start).toBe("2026-08-22");
+    expect(p.end).toBe("2026-08-28");
+  });
+
+  it("steps back a month across a year boundary", () => {
+    const p = prev("month", "2026-01-15");
+    expect(p.start).toBe("2025-12-01");
+    expect(p.end).toBe("2025-12-31");
+  });
+
+  it("handles months of different lengths", () => {
+    // March back to February, which is shorter — arithmetic on "30 days ago"
+    // would land in the wrong month here.
+    const p = prev("month", "2026-03-31");
+    expect(p.start).toBe("2026-02-01");
+    expect(p.end).toBe("2026-02-28");
+  });
+
+  it("steps back a quarter", () => {
+    const p = prev("quarter", "2026-04-15");
+    expect(p.start).toBe("2026-01-01");
+    expect(p.end).toBe("2026-03-31");
+  });
+
+  it("steps back a year", () => {
+    const p = prev("year", "2026-06-01");
+    expect(p.start).toBe("2025-01-01");
+    expect(p.end).toBe("2025-12-31");
+  });
+
+  it("keeps the granularity it was given", () => {
+    for (const g of GRANULARITIES) {
+      expect(prev(g, "2026-05-15").granularity).toBe(g);
+    }
   });
 });

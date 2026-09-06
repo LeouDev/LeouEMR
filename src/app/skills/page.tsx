@@ -1,6 +1,7 @@
 import { asc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { skillReferences } from "@/lib/db/schema";
@@ -34,13 +35,11 @@ export default async function SkillsPage() {
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader user={user} current="/skills" />
+      <PageBand title="Skill reference" subtitle="Targets and the R1–R5 rating curve" />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-navy-900">
-            Skill reference &amp; rating calculator
-          </h1>
-          <p className="mt-1 max-w-3xl text-sm text-muted">
+          <p className="max-w-3xl text-sm text-muted">
             Each skill&apos;s target and its R1&ndash;R5 rating curve. Performance at target rates
             exactly 3.000; below target the rating steps in whole numbers, above target it
             interpolates smoothly to 5.000.
