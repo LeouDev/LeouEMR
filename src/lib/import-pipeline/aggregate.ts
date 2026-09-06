@@ -23,6 +23,7 @@ import {
   type ValidationIssue,
 } from "./types";
 import { classifyResponse } from "@/lib/kpi-engine/nps";
+import type { RampTargets } from "./par-scoring";
 
 export type SheetRows = Record<string, Array<Record<string, unknown>>>;
 
@@ -81,7 +82,11 @@ function accumulate(
  * compliance rows — so each is rolled up on its own terms rather than
  * through one generic path.
  */
-export function aggregateWorkbook(sheets: SheetRows, skillMetrics?: SkillMetrics): ParseResult {
+export function aggregateWorkbook(
+  sheets: SheetRows,
+  skillMetrics?: SkillMetrics,
+  rampTargets?: RampTargets,
+): ParseResult {
   const issues: ValidationIssue[] = [];
   const summaries: SheetSummary[] = [];
   const employees = new Map<string, ParsedEmployee>();
@@ -148,7 +153,7 @@ export function aggregateWorkbook(sheets: SheetRows, skillMetrics?: SkillMetrics
       captureEmployee(employees, eid, row, cols);
       captureOrgWeek(orgWeeks, eid, week, row, cols);
 
-      const consumed = consumeRow(canonical, row, cols, eid, week, skillMetrics, {
+      const consumed = consumeRow(canonical, row, cols, eid, week, skillMetrics, rampTargets, {
         means,
         counts,
         cases,
@@ -380,6 +385,7 @@ function consumeRow(
   eid: string,
   week: { weekStart: string; weekEnd: string },
   skillMetrics: SkillMetrics | undefined,
+  rampTargets: RampTargets | undefined,
   acc: Accumulators,
 ): boolean {
   const weekStart = week.weekStart;
@@ -389,11 +395,18 @@ function consumeRow(
       const hourCount = toNumber(cols.hours ? row[cols.hours] : undefined);
       if (caseCount === null || hourCount === null) return false;
 
-      const cphTarget = toNumber(cols.cphTarget ? row[cols.cphTarget] : undefined);
-      const ahtTarget = toNumber(cols.ahtTarget ? row[cols.ahtTarget] : undefined);
-
       const factDate = readDate(cols.factDate ? row[cols.factDate] : undefined);
       const rowSkill = toText(cols.skillType ? row[cols.skillType] : undefined);
+
+      // A ramp assignment overrides whatever target the row itself supplies
+      // — the whole point is that a supervisor's ramp setup, not a manually
+      // maintained column in the source file, decides a new hire's target.
+      // Someone with no active ramp assignment is unaffected: the row's own
+      // target (or the skill's steady default, further downstream) still
+      // applies exactly as it always has.
+      const ramp = rowSkill ? rampTargets?.get(`${eid}|${weekStart}|${normalizeSkillLabel(rowSkill)}`) : undefined;
+      const cphTarget = ramp?.cphTarget ?? toNumber(cols.cphTarget ? row[cols.cphTarget] : undefined);
+      const ahtTarget = ramp?.ahtTarget ?? toNumber(cols.ahtTarget ? row[cols.ahtTarget] : undefined);
 
       /**
        * Only score the KPI that matches how this skill is actually measured.

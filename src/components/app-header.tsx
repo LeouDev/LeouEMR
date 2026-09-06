@@ -39,6 +39,7 @@ const LEADER_ONLY_NAV = [
   { href: "/mbo", label: "MBO" },
   { href: "/skills", label: "Skills" },
   { href: "/ews", label: "EWS" },
+  { href: "/ramp", label: "Ramp" },
 ];
 
 /** Only roles with direct reports; an agent's own details are not a 201 file. */

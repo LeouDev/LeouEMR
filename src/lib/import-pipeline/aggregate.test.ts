@@ -535,3 +535,110 @@ describe("aggregateWorkbook org history", () => {
     expect(result.orgWeeks).toEqual([]);
   });
 });
+
+describe("ramp target overrides", () => {
+  const week = "WE 08/07/26";
+
+  function rampMap(entries: Record<string, { cphTarget?: number; ahtTarget?: number }>) {
+    return new Map(Object.entries(entries));
+  }
+
+  it("overrides the row's own target for an employee with an active ramp assignment", () => {
+    const result = aggregateWorkbook(
+      {
+        Productivity: [
+          {
+            EID: "1",
+            EMPLOYEENAME: "New Hire",
+            SKILLTYPE: "General Phone",
+            Weekly: week,
+            CASESCOMPLETED: 10,
+            PRODUCTIVITYHOUR: 1,
+            AHTTarget: 515, // the row's own (steady) target
+          },
+        ],
+      },
+      undefined,
+      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }), // Week 1 of ramp
+    );
+
+    expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 920 });
+    const aht = result.metrics.find((m) => m.kpiCode === "AHT");
+    expect(aht?.targetValue).toBe(920);
+  });
+
+  it("leaves an employee with no ramp assignment entirely unaffected", () => {
+    const result = aggregateWorkbook(
+      {
+        Productivity: [
+          {
+            EID: "2",
+            EMPLOYEENAME: "Tenured",
+            SKILLTYPE: "General Phone",
+            Weekly: week,
+            CASESCOMPLETED: 10,
+            PRODUCTIVITYHOUR: 1,
+            AHTTarget: 515,
+          },
+        ],
+      },
+      undefined,
+      // A ramp map with an entry for someone else's employee/week/skill key —
+      // proving the lookup is scoped precisely rather than applied broadly.
+      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+    );
+
+    expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 515 });
+  });
+
+  it("does not apply once the row's own week has moved past the ramp map's entries", () => {
+    // The ramp map only ever contains entries for weeks inside an active
+    // window (built by loadRampTargets); a week with no entry must fall
+    // through to the row's own target exactly as if there were no ramp map
+    // at all, matching a completed ramp or a week before it started.
+    const result = aggregateWorkbook(
+      {
+        Productivity: [
+          {
+            EID: "1",
+            EMPLOYEENAME: "New Hire",
+            SKILLTYPE: "General Phone",
+            Weekly: "WE 10/02/26",
+            CASESCOMPLETED: 10,
+            PRODUCTIVITYHOUR: 1,
+            AHTTarget: 515,
+          },
+        ],
+      },
+      undefined,
+      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+    );
+
+    expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 515 });
+  });
+
+  it("matches regardless of which normalized spelling the row uses", () => {
+    // loadRampTargets populates one entry per alias/code/name; the row here
+    // uses a different casing and spacing than the key above to prove the
+    // normalization, not an exact string match, is what connects them.
+    const result = aggregateWorkbook(
+      {
+        Productivity: [
+          {
+            EID: "1",
+            EMPLOYEENAME: "New Hire",
+            SKILLTYPE: "  General---Phone  ",
+            Weekly: week,
+            CASESCOMPLETED: 10,
+            PRODUCTIVITYHOUR: 1,
+            AHTTarget: 515,
+          },
+        ],
+      },
+      undefined,
+      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+    );
+
+    expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 920 });
+  });
+});

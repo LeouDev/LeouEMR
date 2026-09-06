@@ -1,12 +1,19 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { skillAliases, skillReferences } from "@/lib/db/schema";
+import {
+  employeeRampAssignments,
+  employees,
+  skillAliases,
+  skillRampSchedules,
+  skillReferences,
+} from "@/lib/db/schema";
 import {
   computeSkillRating,
   computeSkillRatio,
   type RatingThresholds,
 } from "@/lib/kpi-engine/par-mbo";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
+import { LAST_STAGE, rampStageForWeek, weekForStage } from "@/lib/ramp/engine";
 import type { AggregatedMetric, QualityWeek, SkillWeek } from "./types";
 
 export const PAR_KPI_CODES = {
@@ -41,7 +48,7 @@ interface SkillReference {
  * The workbook writes skills as free text ("Fax", "PartD_Phones"), so this
  * compares on a normalized form rather than requiring an exact match.
  */
-function normalize(value: string): string {
+export function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -312,4 +319,105 @@ export async function loadSkillMetrics(): Promise<Map<string, "cph" | "aht" | "c
   }
 
   return map;
+}
+
+/**
+ * Overrides the source row's own CPH/AHT target for employees with an
+ * active ramp assignment, keyed exactly the way the aggregator already
+ * looks up a row's skill: `${eid}|${weekStart}|${normalizedSkillLabel}`,
+ * using the same alias normalization as loadSkillReferences so it matches
+ * regardless of which spelling the row's skill column uses.
+ *
+ * A skill's own steady target already flows through the per-row
+ * `cphTarget`/`ahtTarget` override mechanism (see applySourceTarget and
+ * computeParMetrics's own use of `skill.cphTarget ?? reference.target`) —
+ * this only replaces what the row itself would have supplied, for exactly
+ * the weeks an active ramp window covers. An employee with no ramp
+ * assignment, or whose ramp has completed, is entirely unaffected: nothing
+ * is added to the map for them.
+ */
+export interface RampTargetOverride {
+  cphTarget?: number;
+  ahtTarget?: number;
+}
+
+/** `${eid}|${weekStart}|${normalizedSkillLabel}` -> the ramp-adjusted target for that row. */
+export type RampTargets = Map<string, RampTargetOverride>;
+
+export async function loadRampTargets(): Promise<RampTargets> {
+  const assignments = await db
+    .select({
+      eid: employees.eid,
+      rampStartWeek: employeeRampAssignments.rampStartWeek,
+      skillReferenceId: employeeRampAssignments.skillReferenceId,
+    })
+    .from(employeeRampAssignments)
+    .innerJoin(employees, eq(employees.id, employeeRampAssignments.employeeId));
+
+  if (assignments.length === 0) return new Map();
+
+  const schedules = await db.select().from(skillRampSchedules);
+  const targetByStage = new Map<string, number>();
+  for (const row of schedules) {
+    targetByStage.set(`${row.skillReferenceId}|${row.stage}`, row.target);
+  }
+
+  const references = await db.select().from(skillReferences);
+  const aliases = await db.select().from(skillAliases);
+  const labelsById = new Map<string, string[]>();
+  for (const ref of references) {
+    labelsById.set(ref.id, [normalize(ref.code), normalize(ref.name)]);
+  }
+  for (const alias of aliases) {
+    const labels = labelsById.get(alias.skillReferenceId);
+    if (labels) labels.push(normalize(alias.sourceLabel));
+  }
+  const lowerIsBetterById = new Map(references.map((r) => [r.id, r.lowerIsBetter]));
+
+  const map = new Map<string, RampTargetOverride>();
+  for (const assignment of assignments) {
+    const labels = labelsById.get(assignment.skillReferenceId);
+    const lowerIsBetter = lowerIsBetterById.get(assignment.skillReferenceId);
+    if (!labels || lowerIsBetter === undefined) continue;
+
+    for (let stage = 0; stage <= LAST_STAGE; stage++) {
+      const target = targetByStage.get(`${assignment.skillReferenceId}|${stage}`);
+      if (target === undefined) continue;
+
+      const weekStart = weekForStage(assignment.rampStartWeek, stage);
+      const override: RampTargetOverride = lowerIsBetter
+        ? { ahtTarget: target }
+        : { cphTarget: target };
+      for (const label of labels) {
+        map.set(`${assignment.eid}|${weekStart}|${label}`, override);
+      }
+    }
+  }
+
+  return map;
+}
+
+/**
+ * The employee's current ramp stage for `week`, or null if they have no
+ * active ramp assignment covering it. For display — the import pipeline
+ * itself only needs loadRampTargets.
+ */
+export async function currentRampStage(
+  eid: string,
+  week: string,
+): Promise<{ stage: number; skillName: string } | null> {
+  const [row] = await db
+    .select({
+      rampStartWeek: employeeRampAssignments.rampStartWeek,
+      skillName: skillReferences.name,
+    })
+    .from(employeeRampAssignments)
+    .innerJoin(employees, eq(employees.id, employeeRampAssignments.employeeId))
+    .innerJoin(skillReferences, eq(skillReferences.id, employeeRampAssignments.skillReferenceId))
+    .where(eq(employees.eid, eid))
+    .limit(1);
+  if (!row) return null;
+
+  const stage = rampStageForWeek(row.rampStartWeek, week);
+  return stage === null ? null : { stage, skillName: row.skillName };
 }

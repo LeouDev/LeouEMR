@@ -311,6 +311,62 @@ export const skillReferences = pgTable("skill_references", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A new-hire ramp schedule: one target per stage of onboarding for a skill.
+ * Stage 0 is Nesting, 1-8 are Week 1 through Week 8; past stage 8 an
+ * employee has completed ramp and the skill's own steady-state target
+ * (skillReferences.target) applies, exactly as it does for anyone with no
+ * ramp assignment. Organization policy, shared across every new hire on
+ * that skill — not per employee, unlike employeeRampAssignments below.
+ */
+export const skillRampSchedules = pgTable(
+  "skill_ramp_schedules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    skillReferenceId: uuid("skill_reference_id")
+      .notNull()
+      .references(() => skillReferences.id),
+    stage: integer("stage").notNull(),
+    target: numeric("target", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("skill_ramp_schedules_skill_stage_idx").on(table.skillReferenceId, table.stage),
+  ],
+);
+
+/**
+ * Which employee is ramping on which skill, and when their stage 0
+ * (Nesting) began. Upsert semantics — unique on (employee, skill) — because
+ * a supervisor correcting a mistaken start date is the normal case, not an
+ * audited event; see src/lib/ramp/engine.ts for how a date resolves to a
+ * stage and target.
+ */
+export const employeeRampAssignments = pgTable(
+  "employee_ramp_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id, { onDelete: "cascade" }),
+    skillReferenceId: uuid("skill_reference_id")
+      .notNull()
+      .references(() => skillReferences.id),
+    /** The Saturday that begins stage 0, matching the source data's own week convention. */
+    rampStartWeek: date("ramp_start_week").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("employee_ramp_assignments_employee_skill_idx").on(
+      table.employeeId,
+      table.skillReferenceId,
+    ),
+  ],
+);
+
 export const importBatches = pgTable("import_batches", {
   id: uuid("id").primaryKey().defaultRandom(),
   uploadedBy: uuid("uploaded_by").references(() => users.id),

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
+  employees,
   kpiDefinitions,
   metricFacts,
   qualityFacts,
@@ -11,7 +12,14 @@ import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
-import { loadAttributesBySkill, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
+import {
+  loadAttributesBySkill,
+  loadRampTargets,
+  loadSkillReferences,
+  MBO_GATES,
+  type RampTargets,
+} from "@/lib/import-pipeline/par-scoring";
+import { periodsBetween } from "./period";
 import type { Period } from "./period";
 
 export interface PeriodMetric {
@@ -241,6 +249,47 @@ async function computeDerived(
   const attributes = await loadAttributesBySkill();
   const out: PeriodMetric[] = [];
 
+  // A ramping employee's CPH/AHT target changes week to week (see
+  // loadRampTargets), but PRODUCTION_RATE here is scored from cases/hours
+  // summed across the whole period against a single ratio. Scoring that
+  // sum against the skill's flat steady target — as if every week in the
+  // period held them to the standard — is exactly the bug the standalone
+  // CPH/AHT target average above already exists to avoid; this gives PAR
+  // and MBO the same treatment: the plain average of whichever target
+  // applied each week the period covers. An employee with no ramp
+  // assignment gets the identical steady target back (the average of N
+  // copies of the same number), so this changes nothing for anyone not
+  // ramping.
+  const rampTargets: RampTargets = await loadRampTargets();
+  const weeksInPeriod = rampTargets.size > 0 ? periodsBetween("week", period.start, period.end) : [];
+  const eidById = new Map<string, string>();
+  if (weeksInPeriod.length > 0) {
+    const rows = await db
+      .select({ id: employees.id, eid: employees.eid })
+      .from(employees)
+      .where(inArray(employees.id, employeeIds));
+    for (const row of rows) eidById.set(row.id, row.eid);
+  }
+
+  function effectiveTarget(
+    employeeId: string,
+    skillLabel: string,
+    ref: { target: number; lowerIsBetter: boolean },
+  ): number {
+    const eid = eidById.get(employeeId);
+    if (!eid || weeksInPeriod.length === 0) return ref.target;
+
+    const label = normalizeSkill(skillLabel);
+    const sum = weeksInPeriod.reduce((total, week) => {
+      const override = rampTargets.get(`${eid}|${week.start}|${label}`);
+      const weekTarget = ref.lowerIsBetter
+        ? (override?.ahtTarget ?? ref.target)
+        : (override?.cphTarget ?? ref.target);
+      return total + weekTarget;
+    }, 0);
+    return sum / weeksInPeriod.length;
+  }
+
   const skills = await db
     .select({
       employeeId: skillFacts.employeeId,
@@ -288,10 +337,8 @@ async function computeDerived(
               : null;
       if (actual === null || !ref.target) continue;
 
-      const rating = computeSkillRating(
-        computeSkillRatio(actual, ref.target, ref.lowerIsBetter),
-        ref.thresholds,
-      );
+      const target = effectiveTarget(employeeId, row.skillLabel, ref);
+      const rating = computeSkillRating(computeSkillRatio(actual, target, ref.lowerIsBetter), ref.thresholds);
       const weight = row.weightHours > 0 ? row.weightHours : row.hours;
       scored.push({ rating, weight });
       totalWeight += weight;
