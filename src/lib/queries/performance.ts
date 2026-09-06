@@ -5,6 +5,7 @@ import {
   acknowledgements,
   actionPlans,
   employees,
+  ewsAssessments,
   kpiDefinitions,
   performanceIssues,
   rcaEntries,
@@ -404,4 +405,140 @@ export async function getAvailableWeeks(): Promise<string[]> {
     .from(weeklyMetricResults)
     .orderBy(desc(weeklyMetricResults.weekStart));
   return rows.map((r) => r.week);
+}
+
+export interface MatrixCell {
+  actualValue: number;
+  targetValue: number | null;
+  status: "pass" | "warning" | "fail";
+  sampleSize: number | null;
+}
+
+export interface EmployeeMatrix {
+  employee: typeof employees.$inferSelect;
+  weeks: string[];
+  kpis: Array<{ code: string; name: string; direction: string }>;
+  /** `${kpiCode}|${week}` -> cell */
+  cells: Map<string, MatrixCell>;
+  ews: Map<string, { riskLevel: string; score: number }>;
+  issues: Array<{
+    actionItemId: string;
+    actionItemCode: string;
+    kpiCode: string;
+    kpiName: string;
+    status: string;
+    openedWeek: string;
+    consecutivePassingWeeks: number;
+    hasRca: boolean;
+    hasActionPlan: boolean;
+    /** week -> pass/fail and the running count after that week */
+    history: Map<string, { result: "pass" | "fail"; consecutiveCountAfter: number }>;
+  }>;
+}
+
+/**
+ * Every week for one employee in a single result, so the development plan
+ * can be read as one continuous picture rather than a week at a time.
+ */
+export async function getEmployeeMatrix(
+  user: CurrentUser,
+  employeeId: string,
+): Promise<EmployeeMatrix | null> {
+  const ids = await scopedEmployeeIds(user);
+  if (ids === null || (Array.isArray(ids) && ids.length === 0)) return null;
+  if (ids !== "all" && !ids.includes(employeeId)) return null;
+
+  const [employee] = await db.select().from(employees).where(eq(employees.id, employeeId)).limit(1);
+  if (!employee) return null;
+
+  const rows = await db
+    .select({
+      week: weeklyMetricResults.weekStart,
+      kpiCode: kpiDefinitions.code,
+      kpiName: kpiDefinitions.name,
+      direction: kpiDefinitions.direction,
+      actualValue: weeklyMetricResults.actualValue,
+      targetValue: weeklyMetricResults.targetValue,
+      status: weeklyMetricResults.status,
+      sampleSize: weeklyMetricResults.sampleSize,
+    })
+    .from(weeklyMetricResults)
+    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+    .where(eq(weeklyMetricResults.employeeId, employeeId))
+    .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name);
+
+  const weeks = [...new Set(rows.map((r) => r.week))].sort();
+  const kpiOrder = new Map<string, { code: string; name: string; direction: string }>();
+  const cells = new Map<string, MatrixCell>();
+
+  for (const row of rows) {
+    kpiOrder.set(row.kpiCode, { code: row.kpiCode, name: row.kpiName, direction: row.direction });
+    cells.set(`${row.kpiCode}|${row.week}`, {
+      actualValue: row.actualValue,
+      targetValue: row.targetValue,
+      status: row.status,
+      sampleSize: row.sampleSize,
+    });
+  }
+
+  const assessments = await db
+    .select({
+      week: ewsAssessments.week,
+      riskLevel: ewsAssessments.riskLevel,
+      score: ewsAssessments.score,
+    })
+    .from(ewsAssessments)
+    .where(eq(ewsAssessments.employeeId, employeeId));
+
+  const issueRows = await db
+    .select({
+      actionItemId: actionItems.id,
+      actionItemCode: actionItems.code,
+      issueId: performanceIssues.id,
+      kpiCode: kpiDefinitions.code,
+      kpiName: kpiDefinitions.name,
+      status: performanceIssues.status,
+      openedWeek: performanceIssues.openedWeek,
+      consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
+      rcaId: rcaEntries.id,
+      planId: actionPlans.id,
+    })
+    .from(actionItems)
+    .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
+    .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
+    .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
+    .where(eq(performanceIssues.employeeId, employeeId))
+    .orderBy(desc(performanceIssues.openedWeek));
+
+  const historyRows = issueRows.length
+    ? await db
+        .select()
+        .from(weeklyIssueHistory)
+        .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId)))
+    : [];
+
+  return {
+    employee,
+    weeks,
+    kpis: [...kpiOrder.values()],
+    cells,
+    ews: new Map(assessments.map((a) => [a.week, { riskLevel: a.riskLevel, score: a.score }])),
+    issues: issueRows.map((row) => ({
+      actionItemId: row.actionItemId,
+      actionItemCode: row.actionItemCode,
+      kpiCode: row.kpiCode,
+      kpiName: row.kpiName,
+      status: row.status,
+      openedWeek: row.openedWeek,
+      consecutivePassingWeeks: row.consecutivePassingWeeks,
+      hasRca: row.rcaId !== null,
+      hasActionPlan: row.planId !== null,
+      history: new Map(
+        historyRows
+          .filter((h) => h.performanceIssueId === row.issueId)
+          .map((h) => [h.week, { result: h.result, consecutiveCountAfter: h.consecutiveCountAfter }]),
+      ),
+    })),
+  };
 }
