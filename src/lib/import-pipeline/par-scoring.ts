@@ -151,7 +151,9 @@ export async function computeParMetrics(
         const ratio = computeSkillRatio(actual, target, reference.lowerIsBetter);
         return {
           rating: computeSkillRating(ratio, reference.thresholds),
-          hours: skill.hours,
+          // Weighted by scheduled hours, not the productive hours the rate
+          // was measured over — see SkillWeek.weightHours.
+          hours: skill.weightHours > 0 ? skill.weightHours : skill.hours,
           skill,
         };
       })

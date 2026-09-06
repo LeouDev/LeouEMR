@@ -61,7 +61,19 @@ export interface SkillWeek {
   weekEnd: string;
   skillType: string;
   cases: number;
+  /**
+   * Productive hours, the denominator of the performance rate itself.
+   */
   hours: number;
+  /**
+   * Hours used to weight this skill in the employee's overall PAR rating.
+   *
+   * Deliberately a different basis from `hours`: the business scores the
+   * rate on productive time but weights each skill by IEX (scheduled)
+   * time, matching how the MBO calculation template is built. Falls back
+   * to `hours` when the source carries no IEX figure.
+   */
+  weightHours: number;
   /**
    * The employee's own targets from the source row, which take precedence
    * over the skill reference's defaults because the source carries

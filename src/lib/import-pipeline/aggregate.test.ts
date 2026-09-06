@@ -303,3 +303,33 @@ describe("target units", () => {
     expect(result.skillWeeks[0]).toMatchObject({ cphTarget: 6.99, ahtTarget: 515 });
   });
 });
+
+describe("PAR weighting basis", () => {
+  const week = "WE 08/07/26";
+
+  it("keeps productive hours and scheduled hours apart", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        {
+          EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "Fax", Weekly: week,
+          CASESCOMPLETED: 20, PRODUCTIVITYHOUR: 2, "IEX Prod Hours": 3, CPHTarget: 11,
+        },
+      ],
+    });
+
+    // The rate is measured over productive hours; the weighting uses IEX.
+    expect(result.skillWeeks[0]).toMatchObject({ cases: 20, hours: 2, weightHours: 3 });
+  });
+
+  it("falls back to productive hours when the source has no IEX figure", () => {
+    const result = aggregateWorkbook({
+      Productivity: [
+        {
+          EID: "1", EMPLOYEENAME: "A", SKILLTYPE: "Fax", Weekly: week,
+          CASESCOMPLETED: 20, PRODUCTIVITYHOUR: 2, CPHTarget: 11,
+        },
+      ],
+    });
+    expect(result.skillWeeks[0]).toMatchObject({ hours: 2, weightHours: 2 });
+  });
+});
