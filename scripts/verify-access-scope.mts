@@ -12,6 +12,7 @@ import { db } from "../src/lib/db/client";
 import { employees, performanceIssues } from "../src/lib/db/schema";
 import type { CurrentUser } from "../src/lib/auth/session";
 import { getActionItems, getAttentionRows, getTeamSummary } from "../src/lib/queries/performance";
+import { getRoster } from "../src/lib/queries/roster";
 
 function asUser(over: Partial<CurrentUser>): CurrentUser {
   return {
@@ -126,6 +127,34 @@ if (foreign) {
   const leaked = visible.filter((v) => v.issueCode === undefined).length;
   check("  another team's items leaked to supervisor", leaked, 0);
 }
+
+// Search and filters must only narrow within scope, never widen it.
+console.log("\nSEARCH AND FILTERS — must narrow within scope, never widen");
+const supUser = asUser({ role: "supervisor", employeeEid: sup.eid! });
+
+const supAll = await getRoster(supUser, week, {}, 1000);
+check("  supervisor roster size", supAll.length, supTeam);
+
+const outsiders = supAll.filter((r) => r.supervisorName !== sup.name).length;
+check("  roster rows from other teams", outsiders, 0);
+
+// Search for someone who exists, but on a different supervisor's team.
+const [foreignEmp] = await db
+  .select({ name: employees.name })
+  .from(employees)
+  .where(eq(employees.supervisorEid, "001918874"))
+  .limit(1);
+
+const searched = await getRoster(supUser, week, { search: foreignEmp.name }, 1000);
+check(`  searching another team's employee ("${foreignEmp.name}")`, searched.length, 0);
+
+// Filtering by another supervisor's name must also yield nothing.
+const filtered = await getRoster(supUser, week, { supervisor: "Alyana Marie Jose Dela Cruz" }, 1000);
+check("  filtering by another supervisor", filtered.length, 0);
+
+// An agent searching broadly still sees only themselves.
+const agentRoster = await getRoster(agentUser, week, { search: "a" }, 1000);
+check("  agent broad search returns only self", agentRoster.length, 1);
 
 console.log(failures === 0 ? "\nAll scope checks passed." : `\n${failures} scope check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

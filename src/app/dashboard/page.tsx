@@ -17,6 +17,12 @@ import {
   getLatestWeek,
   getTeamSummary,
 } from "@/lib/queries/performance";
+import { getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
+
+/** Today's date as YYYY-MM-DD, for overdue comparisons. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const ROLE_HEADLINE: Record<string, string> = {
   admin: "Organization overview",
@@ -41,6 +47,12 @@ export default async function DashboardPage({
 
   const summary = await getTeamSummary(user, week);
   const attention = await getAttentionRows(user, week, 50);
+
+  // Managers and admins get a per-supervisor breakdown; supervisors and
+  // agents have no one below them to roll up.
+  const showsRollup = user.role === "manager" || user.role === "admin";
+  const rollup = showsRollup ? await getSupervisorRollup(user, week) : [];
+  const overdue = await getOverdueCount(user, todayIso());
 
   const unscoped = user.role !== "admin" && !user.employeeEid && user.role !== "manager";
 
@@ -107,8 +119,81 @@ export default async function DashboardPage({
           />
           <StatCard label="Monitoring" value={summary.monitoring} />
           <StatCard label="Sustained" value={summary.sustained} tone="pass" />
-          <StatCard label="Completed" value={summary.completed} tone="pass" />
+          <StatCard
+            label="Overdue"
+            value={overdue}
+            tone={overdue > 0 ? "fail" : "default"}
+            hint={overdue > 0 ? "Past the action plan due date" : undefined}
+            href="/action-items"
+          />
         </div>
+
+        {showsRollup && rollup.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader
+              title="By supervisor"
+              subtitle="Where the open work sits across your organization"
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[620px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-line bg-cream text-left">
+                    <th className="px-6 py-2.5 font-semibold text-navy-800">Supervisor</th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-navy-800">Team</th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-navy-800">
+                      Failing this week
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-navy-800">
+                      Open items
+                    </th>
+                    <th className="px-6 py-2.5 text-right font-semibold text-navy-800">
+                      Awaiting ack
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rollup.map((row) => (
+                    <tr
+                      key={row.supervisorName}
+                      className="border-b border-line/70 last:border-0 hover:bg-cream/60"
+                    >
+                      <td className="px-6 py-2">
+                        <Link
+                          href={`/employees?supervisor=${encodeURIComponent(row.supervisorName)}${
+                            week ? `&week=${week}` : ""
+                          }`}
+                          className="font-medium text-navy-900 underline-offset-4 hover:text-orange-brand hover:underline"
+                        >
+                          {row.supervisorName}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-muted">
+                        {row.teamSize}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right font-mono tabular-nums ${
+                          row.failingThisWeek > 0 ? "text-fail" : "text-muted"
+                        }`}
+                      >
+                        {row.failingThisWeek || "—"}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono tabular-nums text-navy-900">
+                        {row.openIssues || "—"}
+                      </td>
+                      <td
+                        className={`px-6 py-2 text-right font-mono tabular-nums ${
+                          row.awaitingAcknowledgement > 0 ? "text-warn" : "text-muted"
+                        }`}
+                      >
+                        {row.awaitingAcknowledgement || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
 
         <Card className="mt-6">
           <CardHeader
