@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "set-role": "tsx --env-file=.env.local scripts/set-user-role.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",

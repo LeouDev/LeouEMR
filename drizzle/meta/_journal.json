@@ -8,6 +8,13 @@
       "when": 1788577890913,
       "tag": "0000_large_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788655281776,
+      "tag": "0001_auth_trigger_and_rls",
+      "breakpoints": true
     }
   ]
 }
