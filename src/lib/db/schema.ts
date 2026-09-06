@@ -66,6 +66,12 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   role: userRoleEnum("role").notNull(),
   status: userStatusEnum("status").notNull().default("active"),
+  /**
+   * Links a login to a person in the source data. Agents are scoped to the
+   * employee with this EID; supervisors are scoped to employees whose
+   * supervisorEid matches it. Null until an admin links the account.
+   */
+  employeeEid: text("employee_eid").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -86,6 +92,15 @@ export const employees = pgTable("employees", {
   teamId: uuid("team_id").references(() => teams.id),
   supervisorId: uuid("supervisor_id").references(() => users.id),
   managerId: uuid("manager_id").references(() => users.id),
+  /**
+   * Org hierarchy exactly as the source data expresses it. The raw file
+   * identifies supervisors by EID and managers by name only, so these are
+   * the authoritative scoping fields; supervisorId/managerId are populated
+   * only once matching login accounts exist.
+   */
+  supervisorEid: text("supervisor_eid"),
+  supervisorName: text("supervisor_name"),
+  managerName: text("manager_name"),
   site: text("site"),
   skillType: text("skill_type"),
   status: employeeStatusEnum("status").notNull().default("active"),
@@ -105,11 +120,11 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
   name: text("name").notNull(),
   type: kpiTypeEnum("type").notNull(),
   direction: kpiDirectionEnum("direction").notNull(),
-  target: numeric("target"),
-  warningThreshold: numeric("warning_threshold"),
-  failureThreshold: numeric("failure_threshold"),
-  rangeMin: numeric("range_min"),
-  rangeMax: numeric("range_max"),
+  target: numeric("target", { mode: "number" }),
+  warningThreshold: numeric("warning_threshold", { mode: "number" }),
+  failureThreshold: numeric("failure_threshold", { mode: "number" }),
+  rangeMin: numeric("range_min", { mode: "number" }),
+  rangeMax: numeric("range_max", { mode: "number" }),
   expectedBoolean: boolean("expected_boolean"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -165,8 +180,17 @@ export const weeklyMetricResults = pgTable(
     kpiId: uuid("kpi_id").notNull().references(() => kpiDefinitions.id),
     weekStart: date("week_start").notNull(),
     weekEnd: date("week_end").notNull(),
-    actualValue: numeric("actual_value").notNull(),
+    actualValue: numeric("actual_value", { mode: "number" }).notNull(),
+    /**
+     * The target in force when this week was evaluated. Snapshotted rather
+     * than looked up later because KPI targets change over time and history
+     * must stay interpretable — and because some targets (CPH/AHT) come per
+     * employee from the source data, not from the KPI definition.
+     */
+    targetValue: numeric("target_value", { mode: "number" }),
     status: kpiStatusEnum("status").notNull(),
+    /** Row count behind the aggregate, e.g. number of audits or surveys. */
+    sampleSize: integer("sample_size"),
     sourceImportId: uuid("source_import_id").references(() => importBatches.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -199,20 +223,30 @@ export const performanceIssues = pgTable("performance_issues", {
   status: issueStatusEnum("status").notNull().default("OPEN"),
   openedWeek: date("opened_week").notNull(),
   consecutivePassingWeeks: integer("consecutive_passing_weeks").notNull().default(0),
+  /**
+   * Latest week already folded into this issue's state. Re-importing an
+   * earlier or equal week is a no-op, so a corrected re-upload can never
+   * double-count a pass or spuriously reopen a resolved issue.
+   */
+  lastEvaluatedWeek: date("last_evaluated_week"),
   resolvedWeek: date("resolved_week"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Powers the weekly timeline view (spec section 12) — one row per week the issue was evaluated. */
-export const weeklyIssueHistory = pgTable("weekly_issue_history", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  performanceIssueId: uuid("performance_issue_id").notNull().references(() => performanceIssues.id),
-  week: date("week").notNull(),
-  result: weeklyResultEnum("result").notNull(),
-  consecutiveCountAfter: integer("consecutive_count_after").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const weeklyIssueHistory = pgTable(
+  "weekly_issue_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    performanceIssueId: uuid("performance_issue_id").notNull().references(() => performanceIssues.id),
+    week: date("week").notNull(),
+    result: weeklyResultEnum("result").notNull(),
+    consecutiveCountAfter: integer("consecutive_count_after").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("weekly_issue_history_issue_week_idx").on(table.performanceIssueId, table.week)],
+);
 
 /**
  * 1:1 with performance_issues, created together: the issue owns the weekly
@@ -260,7 +294,7 @@ export const actionPlans = pgTable("action_plans", {
   correctiveAction: text("corrective_action").notNull(),
   expectedBehavior: text("expected_behavior").notNull(),
   targetMetric: text("target_metric").notNull(),
-  targetValue: numeric("target_value").notNull(),
+  targetValue: numeric("target_value", { mode: "number" }).notNull(),
   dueDate: date("due_date").notNull(),
   followUpDate: date("follow_up_date").notNull(),
   coachingRequired: boolean("coaching_required").notNull().default(false),

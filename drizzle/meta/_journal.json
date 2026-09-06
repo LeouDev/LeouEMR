@@ -36,6 +36,27 @@
       "when": 1788656143466,
       "tag": "0004_skill_references_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788656765654,
+      "tag": "0005_metric_target_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788657021305,
+      "tag": "0006_import_hierarchy_and_engine_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788657022250,
+      "tag": "0007_id_sequences_and_kpi_seed",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "set-role": "tsx --env-file=.env.local scripts/set-user-role.mts"
+    "set-role": "tsx --env-file=.env.local scripts/set-user-role.mts",
+    "import": "tsx --env-file=.env.local scripts/import-workbook.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",
@@ -22,6 +23,7 @@
     "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.5.4"
   },
   "devDependencies": {
