@@ -120,6 +120,20 @@
       "when": 1788662790662,
       "tag": "0016_seed_skill_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788664177805,
+      "tag": "0017_skill_metric",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788664178805,
+      "tag": "0018_seed_skill_metrics",
+      "breakpoints": true
     }
   ]
 }

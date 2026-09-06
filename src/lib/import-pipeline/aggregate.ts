@@ -194,6 +194,7 @@ const EXTRA_COLUMNS: Record<string, Record<string, string[]>> = {
     cases: ["CASESCOMPLETED", "Cases Completed", "Prod Volume"],
     hours: ["PRODUCTIVITYHOUR", "Productivity Hour", "Prod Hours"],
     weightHours: ["IEX Prod Hours", "IEX Hours", "ProdHrs"],
+    prodWeight: ["Prod Weight", "ProdWeight"],
     cphTarget: ["CPHTarget", "CPH Target", "Target"],
     ahtTarget: ["AHTTarget", "AHT Target"],
   },
@@ -297,6 +298,7 @@ function consumeRow(
         cases: 0,
         hours: 0,
         weightHours: 0,
+        prodWeight: 0,
         cphTarget: undefined,
         ahtTarget: undefined,
       };
@@ -304,6 +306,7 @@ function consumeRow(
       skill.cases += caseCount;
       skill.hours += hourCount;
       skill.weightHours += weightHourCount ?? hourCount;
+      skill.prodWeight += toNumber(cols.prodWeight ? row[cols.prodWeight] : undefined) ?? 0;
       if (cphTarget !== null && Number.isFinite(cphTarget)) skill.cphTarget = cphTarget;
       if (ahtTarget !== null && Number.isFinite(ahtTarget)) skill.ahtTarget = ahtTarget;
       acc.skillAcc.set(skillKey, skill);

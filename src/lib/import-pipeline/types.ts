@@ -75,6 +75,11 @@ export interface SkillWeek {
    */
   weightHours: number;
   /**
+   * Production weight, the numerator for case-rate skills
+   * (case rate = production weight / cases). Unused by CPH and AHT skills.
+   */
+  prodWeight: number;
+  /**
    * The employee's own targets from the source row, which take precedence
    * over the skill reference's defaults because the source carries
    * per-employee targets (ramping agents have lower ones).

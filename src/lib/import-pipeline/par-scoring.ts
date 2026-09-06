@@ -30,6 +30,7 @@ interface SkillReference {
   code: string;
   name: string;
   target: number;
+  metric: "cph" | "aht" | "case_rate";
   lowerIsBetter: boolean;
   attributesPerAudit: number;
   thresholds: RatingThresholds;
@@ -54,6 +55,7 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
       code: row.code,
       name: row.name,
       target: row.target,
+      metric: row.metric,
       lowerIsBetter: row.lowerIsBetter,
       attributesPerAudit: row.attributesPerAudit,
       thresholds: { r1: row.r1, r2: row.r2, r3: row.r3, r4: row.r4, r5: row.r5 },
@@ -71,6 +73,25 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
   }
 
   return byKey;
+}
+
+/**
+ * The measured value for one skill-week, per the skill's configured metric.
+ * Case rate is weight-based and involves no hours at all.
+ */
+function measureSkill(
+  metric: SkillReference["metric"],
+  skill: { cases: number; hours: number; prodWeight: number },
+): number | null {
+  switch (metric) {
+    case "aht":
+      return skill.cases > 0 ? (skill.hours / skill.cases) * 3600 : null;
+    case "case_rate":
+      return skill.cases > 0 && skill.prodWeight > 0 ? skill.prodWeight / skill.cases : null;
+    case "cph":
+    default:
+      return skill.hours > 0 ? skill.cases / skill.hours : null;
+  }
 }
 
 /** Normalized skill key -> attributes per audit, for the DPO denominator. */
@@ -144,9 +165,8 @@ export async function computeParMetrics(
           : (skill.cphTarget ?? reference.target);
         if (!target) return null;
 
-        const actual = reference.lowerIsBetter
-          ? (skill.hours / skill.cases) * 3600 // seconds per case
-          : skill.cases / skill.hours; // cases per hour
+        const actual = measureSkill(reference.metric, skill);
+        if (actual === null) return null;
 
         const ratio = computeSkillRatio(actual, target, reference.lowerIsBetter);
         return {

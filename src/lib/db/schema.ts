@@ -148,12 +148,25 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
  * Thresholds are stored as decimal ratios (1.2727 = 127.27%) and are fixed
  * scoring policy — only `target` is editable, and only by an admin.
  */
+export const skillMetricEnum = pgEnum("skill_metric", ["cph", "aht", "case_rate"]);
+
 export const skillReferences = pgTable("skill_references", {
   id: uuid("id").primaryKey().defaultRandom(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   target: numeric("target", { mode: "number" }).notNull(),
-  /** True for skills where a lower actual is better (ratio = target/actual). */
+  /**
+   * Which formula produces this skill's measured value, per the source
+   * workbook's own Calculated Field definitions:
+   *   cph       = cases / productive hours
+   *   aht       = (productive hours / cases) * 3600
+   *   case_rate = production weight / cases
+   *
+   * Case rate does not involve hours at all, so treating those skills as
+   * cases-per-hour silently scores them against the wrong quantity.
+   */
+  metric: skillMetricEnum("metric").notNull().default("cph"),
+  /** True for skills where a lower actual is better (ratio = target/actual) — the AHT skills. */
   lowerIsBetter: boolean("lower_is_better").notNull().default(false),
   r5: numeric("r5", { mode: "number" }).notNull(),
   r4: numeric("r4", { mode: "number" }).notNull(),
