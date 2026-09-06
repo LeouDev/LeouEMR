@@ -16,6 +16,12 @@ const NAV = [
   { href: "/skills", label: "Skill Reference" },
 ];
 
+/** Admin-only destinations. The pages enforce this themselves too. */
+const ADMIN_NAV = [
+  { href: "/import", label: "Import" },
+  { href: "/users", label: "Users" },
+];
+
 export function AppHeader({ user, current }: { user: CurrentUser; current: string }) {
   return (
     <header className="border-b border-line bg-surface">
@@ -34,7 +40,7 @@ export function AppHeader({ user, current }: { user: CurrentUser; current: strin
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex">
-            {NAV.map((item) => {
+            {[...NAV, ...(user.role === "admin" ? ADMIN_NAV : [])].map((item) => {
               const active = current === item.href;
               return (
                 <Link

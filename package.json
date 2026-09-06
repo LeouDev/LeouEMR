@@ -14,7 +14,8 @@
     "db:studio": "drizzle-kit studio",
     "set-role": "tsx --env-file=.env.local scripts/set-user-role.mts",
     "import": "tsx --env-file=.env.local scripts/import-workbook.mts",
-    "verify:four-week": "tsx --env-file=.env.local scripts/verify-four-week-rule.mts"
+    "verify:four-week": "tsx --env-file=.env.local scripts/verify-four-week-rule.mts",
+    "verify:scope": "tsx --env-file=.env.local scripts/verify-access-scope.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",
