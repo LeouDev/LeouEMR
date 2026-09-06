@@ -11,7 +11,7 @@ import { db } from "../src/lib/db/client";
 import { importBatches } from "../src/lib/db/schema";
 import { commitImport } from "../src/lib/import-pipeline/commit";
 import { parseWorkbookBuffer } from "../src/lib/import-pipeline/parse-workbook";
-import { loadSkillMetrics } from "../src/lib/import-pipeline/par-scoring";
+import { loadRampTargets, loadSkillMetrics } from "../src/lib/import-pipeline/par-scoring";
 
 const filePath = process.argv[2];
 if (!filePath) {
@@ -20,7 +20,11 @@ if (!filePath) {
 }
 
 const buffer = readFileSync(filePath);
-const parsed = parseWorkbookBuffer(buffer, await loadSkillMetrics());
+// Matches src/app/(shell)/import/actions.ts exactly, so a command-line run
+// exercises the identical pipeline the admin UI does — including ramp
+// targets, which this script previously left out.
+const [skillMetrics, rampTargets] = await Promise.all([loadSkillMetrics(), loadRampTargets()]);
+const parsed = parseWorkbookBuffer(buffer, skillMetrics, rampTargets);
 
 console.log("--- parse ---");
 console.log("weeks:", parsed.weeks.join(", "));
