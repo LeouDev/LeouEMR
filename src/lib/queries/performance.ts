@@ -542,3 +542,18 @@ export async function getEmployeeMatrix(
     })),
   };
 }
+
+
+/** Employee ids the caller may see — exported for period-based views. */
+export async function getScopedEmployeeIds(user: CurrentUser): Promise<string[] | "all" | null> {
+  return scopedEmployeeIds(user);
+}
+
+/** All employee ids in scope, resolved to a concrete list. */
+export async function resolveScopedIds(user: CurrentUser): Promise<string[]> {
+  const ids = await scopedEmployeeIds(user);
+  if (ids === null) return [];
+  if (ids !== "all") return ids;
+  const rows = await db.select({ id: employees.id }).from(employees);
+  return rows.map((r) => r.id);
+}

@@ -8,7 +8,6 @@ import {
   StatCard,
   StatusBadge,
   formatMetric,
-  formatWeek,
 } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
@@ -18,6 +17,10 @@ import {
   getTeamSummary,
 } from "@/lib/queries/performance";
 import { getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
+import { resolveScopedIds } from "@/lib/queries/performance";
+import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
+import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
+import { PeriodPicker } from "@/components/period-picker";
 
 /** Today's date as YYYY-MM-DD, for overdue comparisons. */
 function todayIso(): string {
@@ -34,7 +37,7 @@ const ROLE_HEADLINE: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>;
+  searchParams: Promise<{ week?: string; granularity?: string; period?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -43,7 +46,34 @@ export default async function DashboardPage({
   const params = await searchParams;
   const weeks = await getAvailableWeeks();
   const latest = await getLatestWeek();
+
+  // Reporting period. Weeks still drive the action-item engine; this only
+  // changes what the summary above is measured over.
+  const granularity = parseGranularity(params.granularity);
+  const range = await getFactDateRange();
+  const periods = range ? periodsBetween(granularity, range.first, range.last) : [];
+  const period =
+    periods.find((p) => p.start === params.period) ??
+    periods[0] ??
+    (latest ? periodContaining("week", latest) : null);
+
+  // The attention table and issue counts stay weekly, since an action item
+  // belongs to a week.
   const week = params.week && weeks.includes(params.week) ? params.week : latest;
+
+  const scopedIds = await resolveScopedIds(user);
+  const periodMetrics = period ? await getPeriodMetrics(scopedIds, period) : [];
+
+  const periodByEmployee = new Map<string, { fail: number; warn: number }>();
+  for (const metric of periodMetrics) {
+    const entry = periodByEmployee.get(metric.employeeId) ?? { fail: 0, warn: 0 };
+    if (metric.status === "FAIL") entry.fail += 1;
+    if (metric.status === "WARNING") entry.warn += 1;
+    periodByEmployee.set(metric.employeeId, entry);
+  }
+  const periodFailing = [...periodByEmployee.values()].filter((e) => e.fail > 0).length;
+  const periodAtRisk = [...periodByEmployee.values()].filter((e) => e.fail === 0 && e.warn > 0).length;
+  const periodPassing = periodByEmployee.size - periodFailing - periodAtRisk;
 
   const summary = await getTeamSummary(user, week);
   const attention = await getAttentionRows(user, week, 50);
@@ -67,26 +97,17 @@ export default async function DashboardPage({
               {ROLE_HEADLINE[user.role] ?? "Dashboard"}
             </h1>
             <p className="mt-1 text-sm text-muted">
-              {week ? `Week of ${formatWeek(week)}` : "No performance data imported yet"}
+              {period ? period.label : "No performance data imported yet"}
             </p>
           </div>
 
-          {weeks.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {weeks.slice(0, 6).map((option) => (
-                <Link
-                  key={option}
-                  href={`/dashboard?week=${option}`}
-                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition ${
-                    option === week
-                      ? "border-navy bg-navy-800 text-white"
-                      : "border-line bg-surface text-muted hover:border-navy-100 hover:text-navy-900"
-                  }`}
-                >
-                  {formatWeek(option)}
-                </Link>
-              ))}
-            </div>
+          {period && periods.length > 0 && (
+            <PeriodPicker
+              basePath="/dashboard"
+              granularity={granularity}
+              periods={periods}
+              selected={period}
+            />
           )}
         </div>
 
@@ -104,9 +125,9 @@ export default async function DashboardPage({
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label={user.role === "agent" ? "Me" : "Employees"} value={summary.totalEmployees} />
-          <StatCard label="Passing this week" value={summary.passing} tone="pass" />
-          <StatCard label="At risk" value={summary.atRisk} tone="warn" />
-          <StatCard label="Failing" value={summary.failing} tone="fail" />
+          <StatCard label="Passing" value={periodPassing} tone="pass" hint={period?.label} />
+          <StatCard label="At risk" value={periodAtRisk} tone="warn" hint={period?.label} />
+          <StatCard label="Failing" value={periodFailing} tone="fail" hint={period?.label} />
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
