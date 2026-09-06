@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { aggregateWorkbook, type SheetRows, type SkillMetrics } from "./aggregate";
+import type { RampTargets } from "./par-scoring";
 import type { ParseResult } from "./types";
 
 /**
@@ -10,6 +11,7 @@ import type { ParseResult } from "./types";
 export function parseWorkbookBuffer(
   buffer: ArrayBuffer | Buffer,
   skillMetrics?: SkillMetrics,
+  rampTargets?: RampTargets,
 ): ParseResult {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
@@ -23,5 +25,5 @@ export function parseWorkbookBuffer(
     });
   }
 
-  return aggregateWorkbook(sheets, skillMetrics);
+  return aggregateWorkbook(sheets, skillMetrics, rampTargets);
 }
