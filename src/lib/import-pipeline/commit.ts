@@ -4,6 +4,9 @@ import {
   employees,
   importBatches,
   kpiDefinitions,
+  metricFacts,
+  qualityFacts,
+  skillFacts,
   weeklyMetricResults,
 } from "@/lib/db/schema";
 import { evaluateKpi } from "@/lib/kpi-engine/evaluate";
@@ -99,6 +102,8 @@ export async function commitImport(
     }
   }
 
+  await persistFacts(parsed, definitions, options.importBatchId, employeeIdByEid);
+
   const engineResult = await runIssueEngineForWeeks(parsed.weeks);
 
   await db
@@ -123,6 +128,118 @@ export async function commitImport(
     issuesOpened: engineResult.opened,
     issuesUpdated: engineResult.updated,
   };
+}
+
+/**
+ * Stores the daily facts behind each metric.
+ *
+ * The weekly ledger drives the action-item engine, but a reporting period
+ * other than a week has to be re-aggregated from source grain — most of
+ * these measures cannot be averaged across periods.
+ */
+async function persistFacts(
+  parsed: ParseResult,
+  definitions: Map<string, { id: string }>,
+  importBatchId: string,
+  employeeIdByEid: Map<string, string>,
+) {
+  const CHUNK = 1000;
+
+  const metricRows = parsed.metricFacts
+    .map((fact) => {
+      const employeeId = employeeIdByEid.get(fact.eid);
+      const kpi = definitions.get(fact.kpiCode);
+      if (!employeeId || !kpi) return null;
+      return {
+        employeeId,
+        kpiId: kpi.id,
+        factDate: fact.factDate,
+        numerator: fact.numerator,
+        denominator: fact.denominator,
+        sampleSize: fact.sampleSize,
+        sourceImportId: importBatchId,
+      };
+    })
+    .filter((r) => r !== null);
+
+  for (let i = 0; i < metricRows.length; i += CHUNK) {
+    await db
+      .insert(metricFacts)
+      .values(metricRows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: [metricFacts.employeeId, metricFacts.kpiId, metricFacts.factDate],
+        set: {
+          numerator: sql`excluded.numerator`,
+          denominator: sql`excluded.denominator`,
+          sampleSize: sql`excluded.sample_size`,
+          sourceImportId: sql`excluded.source_import_id`,
+        },
+      });
+  }
+
+  const skillRows = parsed.skillFacts
+    .map((fact) => {
+      const employeeId = employeeIdByEid.get(fact.eid);
+      if (!employeeId) return null;
+      return {
+        employeeId,
+        skillLabel: fact.skillLabel,
+        factDate: fact.factDate,
+        cases: fact.cases,
+        hours: fact.hours,
+        weightHours: fact.weightHours,
+        prodWeight: fact.prodWeight,
+        sourceImportId: importBatchId,
+      };
+    })
+    .filter((r) => r !== null);
+
+  for (let i = 0; i < skillRows.length; i += CHUNK) {
+    await db
+      .insert(skillFacts)
+      .values(skillRows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: [skillFacts.employeeId, skillFacts.skillLabel, skillFacts.factDate],
+        set: {
+          cases: sql`excluded.cases`,
+          hours: sql`excluded.hours`,
+          weightHours: sql`excluded.weight_hours`,
+          prodWeight: sql`excluded.prod_weight`,
+          sourceImportId: sql`excluded.source_import_id`,
+        },
+      });
+  }
+
+  const qualityRows = parsed.qualityFacts
+    .map((fact) => {
+      const employeeId = employeeIdByEid.get(fact.eid);
+      if (!employeeId) return null;
+      return {
+        employeeId,
+        skillLabel: fact.skillLabel,
+        factDate: fact.factDate,
+        audits: fact.audits,
+        imperfect: fact.imperfect,
+        markdowns: fact.markdowns,
+        sourceImportId: importBatchId,
+      };
+    })
+    .filter((r) => r !== null);
+
+  for (let i = 0; i < qualityRows.length; i += CHUNK) {
+    await db
+      .insert(qualityFacts)
+      .values(qualityRows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: [qualityFacts.employeeId, qualityFacts.skillLabel, qualityFacts.factDate],
+        set: {
+          audits: sql`excluded.audits`,
+          imperfect: sql`excluded.imperfect`,
+          markdowns: sql`excluded.markdowns`,
+          sourceImportId: sql`excluded.source_import_id`,
+        },
+      });
+  }
 }
 
 /** Overrides a KPI definition's thresholds with a per-row target from the source. */

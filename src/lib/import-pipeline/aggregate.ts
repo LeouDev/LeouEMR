@@ -12,8 +12,11 @@ import {
   type KpiCode,
   type ParsedEmployee,
   type ParseResult,
+  type MetricFact,
+  type QualityFact,
   type QualityWeek,
   type SheetSummary,
+  type SkillFact,
   type SkillWeek,
   type ValidationIssue,
 } from "./types";
@@ -87,6 +90,12 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
   const skillAcc = new Map<string, SkillWeek>(); // `${eid}|${week}|${skill}`
   const qualityAcc = new Map<string, QualityWeek>(); // `${eid}|${week}`
 
+  // Daily facts, so any reporting period can be re-aggregated from source
+  // grain rather than averaged from weekly values.
+  const metricFactAcc = new Map<string, MetricFact>();
+  const skillFactAcc = new Map<string, SkillFact>();
+  const qualityFactAcc = new Map<string, QualityFact>();
+
   const resolvedSheets = matchSheets(sheets);
 
   for (const [canonical, sheetName] of Object.entries(resolvedSheets)) {
@@ -132,6 +141,9 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
         expected,
         skillAcc,
         qualityAcc,
+        metricFactAcc,
+        skillFactAcc,
+        qualityFactAcc,
       });
 
       if (consumed) used += 1;
@@ -159,7 +171,8 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
   }
 
   const metrics = buildMetrics(
-    { means, counts, cases, hours, present, expected, skillAcc, qualityAcc },
+    { means, counts, cases, hours, present, expected, skillAcc, qualityAcc,
+      metricFactAcc, skillFactAcc, qualityFactAcc },
     weekRange,
   );
 
@@ -181,6 +194,9 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
     metrics,
     skillWeeks: [...skillAcc.values()].filter((s) => s.hours > 0 && s.cases > 0),
     qualityWeeks: [...qualityAcc.values()],
+    metricFacts: [...metricFactAcc.values()],
+    skillFacts: [...skillFactAcc.values()],
+    qualityFacts: [...qualityFactAcc.values()],
     issues,
     sheets: summaries,
     weeks: [...weeks].sort(),
@@ -191,6 +207,7 @@ export function aggregateWorkbook(sheets: SheetRows): ParseResult {
 /** Sheet-specific columns layered on top of the shared identity columns. */
 const EXTRA_COLUMNS: Record<string, Record<string, string[]>> = {
   productivity: {
+    factDate: ["DATECOMPLETED", "Date Completed"],
     cases: ["CASESCOMPLETED", "Cases Completed", "Prod Volume"],
     hours: ["PRODUCTIVITYHOUR", "Productivity Hour", "Prod Hours"],
     weightHours: ["IEX Prod Hours", "IEX Hours", "ProdHrs"],
@@ -199,18 +216,22 @@ const EXTRA_COLUMNS: Record<string, Record<string, string[]>> = {
     ahtTarget: ["AHTTarget", "AHT Target"],
   },
   quality: {
+    factDate: ["Date"],
     score: ["Score"],
     markdown: ["TotalMarkdown", "Markdown"],
   },
   nps: {
+    factDate: ["Date"],
     nps: ["NPS"],
   },
   attendance: {
+    factDate: ["Date"],
     present: ["PRESENT"],
     absent: ["ABSENT"],
     status: ["STATUS"],
   },
   feedback: {
+    factDate: ["Error Date", "Date"],
     risk: ["ComplianceRisk", "Compliance Risk"],
   },
 };
@@ -260,6 +281,40 @@ interface Accumulators {
   expected: AccumulatorMap;
   skillAcc: Map<string, SkillWeek>;
   qualityAcc: Map<string, QualityWeek>;
+  metricFactAcc: Map<string, MetricFact>;
+  skillFactAcc: Map<string, SkillFact>;
+  qualityFactAcc: Map<string, QualityFact>;
+}
+
+/** Accumulates one day's numerator and denominator for a measured KPI. */
+function addMetricFact(
+  acc: Map<string, MetricFact>,
+  eid: string,
+  kpiCode: KpiCode,
+  factDate: string | null,
+  numerator: number,
+  denominator: number,
+) {
+  if (!factDate) return;
+  const key = `${eid}|${kpiCode}|${factDate}`;
+  const existing = acc.get(key) ?? {
+    eid, kpiCode, factDate, numerator: 0, denominator: 0, sampleSize: 0,
+  };
+  existing.numerator += numerator;
+  existing.denominator += denominator;
+  existing.sampleSize += 1;
+  acc.set(key, existing);
+}
+
+/** Reads a cell as an ISO date, accepting Date objects and Excel serials. */
+function readDate(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+  const text = toText(value);
+  if (!text) return null;
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
 function consumeRow(
@@ -279,6 +334,11 @@ function consumeRow(
 
       const cphTarget = toNumber(cols.cphTarget ? row[cols.cphTarget] : undefined);
       const ahtTarget = toNumber(cols.ahtTarget ? row[cols.ahtTarget] : undefined);
+
+      const factDate = readDate(cols.factDate ? row[cols.factDate] : undefined);
+      // CPH and AHT share the same components; their aggregation rules differ.
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.CPH, factDate, caseCount, hourCount);
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.AHT, factDate, caseCount, hourCount);
 
       accumulate(acc.cases, eid, weekStart, KPI_CODES.CPH, caseCount, cphTarget);
       accumulate(acc.hours, eid, weekStart, KPI_CODES.CPH, hourCount);
@@ -310,6 +370,18 @@ function consumeRow(
       if (cphTarget !== null && Number.isFinite(cphTarget)) skill.cphTarget = cphTarget;
       if (ahtTarget !== null && Number.isFinite(ahtTarget)) skill.ahtTarget = ahtTarget;
       acc.skillAcc.set(skillKey, skill);
+
+      if (factDate) {
+        const factKey = `${eid}|${skillType}|${factDate}`;
+        const fact = acc.skillFactAcc.get(factKey) ?? {
+          eid, skillLabel: skillType, factDate, cases: 0, hours: 0, weightHours: 0, prodWeight: 0,
+        };
+        fact.cases += caseCount;
+        fact.hours += hourCount;
+        fact.weightHours += weightHourCount ?? hourCount;
+        fact.prodWeight += toNumber(cols.prodWeight ? row[cols.prodWeight] : undefined) ?? 0;
+        acc.skillFactAcc.set(factKey, fact);
+      }
       return true;
     }
 
@@ -317,6 +389,8 @@ function consumeRow(
       // Score is a 0-1 fraction per audit; the weekly KPI is its mean as a percentage.
       const score = toNumber(cols.score ? row[cols.score] : undefined);
       if (score === null) return false;
+      const qDate = readDate(cols.factDate ? row[cols.factDate] : undefined);
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.QUALITY, qDate, score, 1);
       accumulate(acc.means, eid, weekStart, KPI_CODES.QUALITY, score * 100);
 
       // Audit tallies for DPU and DPO, split by skill because DPO weights
@@ -338,6 +412,17 @@ function consumeRow(
       skillTally.markdowns += markdown;
       tally.bySkill[auditSkill] = skillTally;
       acc.qualityAcc.set(qualityKey, tally);
+
+      if (qDate) {
+        const factKey = `${eid}|${auditSkill}|${qDate}`;
+        const fact = acc.qualityFactAcc.get(factKey) ?? {
+          eid, skillLabel: auditSkill, factDate: qDate, audits: 0, imperfect: 0, markdowns: 0,
+        };
+        fact.audits += 1;
+        if (score < 1) fact.imperfect += 1;
+        fact.markdowns += markdown;
+        acc.qualityFactAcc.set(factKey, fact);
+      }
       return true;
     }
 
@@ -345,6 +430,8 @@ function consumeRow(
       // Each row is one survey scored 100 / 0 / -100; the mean is the NPS.
       const nps = toNumber(cols.nps ? row[cols.nps] : undefined);
       if (nps === null) return false;
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.NPS,
+        readDate(cols.factDate ? row[cols.factDate] : undefined), nps, 1);
       accumulate(acc.means, eid, weekStart, KPI_CODES.NPS, nps);
       return true;
     }
@@ -356,6 +443,8 @@ function consumeRow(
       const isAbsent = toNumber(cols.absent ? row[cols.absent] : undefined) ?? 0;
       if (isPresent !== 1 && isAbsent !== 1) return false;
 
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.ATTENDANCE,
+        readDate(cols.factDate ? row[cols.factDate] : undefined), isPresent === 1 ? 1 : 0, 1);
       accumulate(acc.present, eid, weekStart, KPI_CODES.ATTENDANCE, isPresent === 1 ? 1 : 0);
       accumulate(acc.expected, eid, weekStart, KPI_CODES.ATTENDANCE, 1);
       return true;
@@ -373,6 +462,8 @@ function consumeRow(
 
       const isCritical =
         numeric !== null ? numeric === 1 : label!.toLowerCase().includes("critical");
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.CRITICAL_ERRORS,
+        readDate(cols.factDate ? row[cols.factDate] : undefined), isCritical ? 1 : 0, 1);
       accumulate(acc.counts, eid, weekStart, KPI_CODES.CRITICAL_ERRORS, isCritical ? 1 : 0);
       return true;
     }

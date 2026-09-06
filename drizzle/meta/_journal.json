@@ -134,6 +134,27 @@
       "when": 1788664178805,
       "tag": "0018_seed_skill_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788666352806,
+      "tag": "0019_daily_facts",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788666353806,
+      "tag": "0020_seed_kpi_aggregation",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788666354806,
+      "tag": "0021_skill_aliases_rls",
+      "breakpoints": true
     }
   ]
 }

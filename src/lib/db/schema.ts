@@ -29,6 +29,16 @@ export const kpiDirectionEnum = pgEnum("kpi_direction", [
   "boolean_match",
 ]);
 export const kpiStatusEnum = pgEnum("kpi_status", ["pass", "warning", "fail"]);
+
+/** How a KPI's stored numerator and denominator combine into its value. */
+export const kpiAggregationEnum = pgEnum("kpi_aggregation", [
+  "ratio", // numerator / denominator
+  "ratio_pct", // numerator / denominator * 100
+  "inverse_seconds", // denominator / numerator * 3600
+  "sum", // numerator
+  "derived", // computed from skill/quality facts rather than these two
+]);
+
 export const weeklyResultEnum = pgEnum("weekly_result", ["pass", "fail"]);
 
 export const importStatusEnum = pgEnum("import_status", [
@@ -135,6 +145,12 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
    * stay visible on the scorecard to show which gate failed.
    */
   generatesActionItems: boolean("generates_action_items").notNull().default(true),
+  /**
+   * How this KPI's daily facts combine into a value for a reporting period.
+   * Stored per KPI because the correct roll-up differs: a rate re-divides
+   * its totals, a count sums, and AHT inverts.
+   */
+  aggregation: kpiAggregationEnum("aggregation").notNull().default("ratio"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -227,6 +243,87 @@ export const weeklyMetricResults = pgTable(
       table.employeeId,
       table.kpiId,
       table.weekStart,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Daily facts
+//
+// The weekly ledger above is what the action-item engine runs on, because
+// the 4-week rule is inherently weekly. These tables keep the same data at
+// its source grain so any reporting period — day, week, month, quarter,
+// year — can be aggregated correctly.
+//
+// This matters because most of these measures cannot be averaged across
+// periods: quality for a month is total score over total audits, not the
+// mean of four weekly percentages. Storing the numerator and denominator
+// rather than the computed value is what makes re-aggregation sound.
+// ---------------------------------------------------------------------------
+
+export const metricFacts = pgTable(
+  "metric_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    kpiId: uuid("kpi_id").notNull().references(() => kpiDefinitions.id),
+    factDate: date("fact_date").notNull(),
+    numerator: numeric("numerator", { mode: "number" }).notNull(),
+    denominator: numeric("denominator", { mode: "number" }).notNull(),
+    sampleSize: integer("sample_size").notNull().default(0),
+    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  },
+  (table) => [
+    uniqueIndex("metric_facts_employee_kpi_date_idx").on(
+      table.employeeId,
+      table.kpiId,
+      table.factDate,
+    ),
+  ],
+);
+
+/** Per-skill production, the input to PAR/MBO scoring at any period. */
+export const skillFacts = pgTable(
+  "skill_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    /** Skill label as written in the source; resolved through skill_aliases. */
+    skillLabel: text("skill_label").notNull(),
+    factDate: date("fact_date").notNull(),
+    cases: numeric("cases", { mode: "number" }).notNull().default(0),
+    hours: numeric("hours", { mode: "number" }).notNull().default(0),
+    weightHours: numeric("weight_hours", { mode: "number" }).notNull().default(0),
+    prodWeight: numeric("prod_weight", { mode: "number" }).notNull().default(0),
+    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  },
+  (table) => [
+    uniqueIndex("skill_facts_employee_skill_date_idx").on(
+      table.employeeId,
+      table.skillLabel,
+      table.factDate,
+    ),
+  ],
+);
+
+/** Per-skill audit tallies, the input to DPU and DPO at any period. */
+export const qualityFacts = pgTable(
+  "quality_facts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    skillLabel: text("skill_label").notNull(),
+    factDate: date("fact_date").notNull(),
+    audits: integer("audits").notNull().default(0),
+    imperfect: integer("imperfect").notNull().default(0),
+    markdowns: integer("markdowns").notNull().default(0),
+    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  },
+  (table) => [
+    uniqueIndex("quality_facts_employee_skill_date_idx").on(
+      table.employeeId,
+      table.skillLabel,
+      table.factDate,
     ),
   ],
 );

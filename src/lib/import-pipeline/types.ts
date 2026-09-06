@@ -120,9 +120,47 @@ export interface ParseResult {
   metrics: AggregatedMetric[];
   skillWeeks: SkillWeek[];
   qualityWeeks: QualityWeek[];
+  metricFacts: MetricFact[];
+  skillFacts: SkillFact[];
+  qualityFacts: QualityFact[];
   issues: ValidationIssue[];
   sheets: SheetSummary[];
   weeks: string[];
   /** Sheets present in the workbook that the pipeline does not consume. */
   unrecognizedSheets: string[];
+}
+
+/**
+ * One day's raw components for a measured KPI, kept so any reporting
+ * period can be re-aggregated correctly rather than averaged from weekly
+ * values.
+ */
+export interface MetricFact {
+  eid: string;
+  kpiCode: KpiCode;
+  factDate: string;
+  numerator: number;
+  denominator: number;
+  sampleSize: number;
+}
+
+/** One day's production for one employee on one skill. */
+export interface SkillFact {
+  eid: string;
+  skillLabel: string;
+  factDate: string;
+  cases: number;
+  hours: number;
+  weightHours: number;
+  prodWeight: number;
+}
+
+/** One day's audit tallies for one employee on one skill. */
+export interface QualityFact {
+  eid: string;
+  skillLabel: string;
+  factDate: string;
+  audits: number;
+  imperfect: number;
+  markdowns: number;
 }
