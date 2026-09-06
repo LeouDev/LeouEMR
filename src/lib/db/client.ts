@@ -7,14 +7,22 @@ if (!process.env.DATABASE_URL) {
 }
 
 /**
- * Supabase's session-mode pooler allows a small number of clients, and the
- * dev server, scripts and serverless invocations all draw from it, so the
- * per-process pool is kept deliberately small. `prepare: false` keeps this
- * compatible with transaction-mode pooling too.
+ * Serverless platforms run many short-lived instances, each opening its own
+ * pool, so a pool size that is fine locally will exhaust the database's
+ * client limit in production. One connection per instance is the standard
+ * shape there; locally a handful is faster.
+ *
+ * `prepare: false` is required for Supabase's transaction-mode pooler
+ * (port 6543), which is the port production should use — the session-mode
+ * pooler holds a connection per client and runs out quickly under
+ * serverless concurrency.
  */
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+
 const queryClient = postgres(process.env.DATABASE_URL, {
-  max: 4,
+  max: isServerless ? 1 : 4,
   idle_timeout: 20,
+  connect_timeout: 10,
   prepare: false,
 });
 
