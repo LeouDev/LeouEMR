@@ -57,7 +57,7 @@ function LoginForm() {
 
       await holdForScene(startedAt);
       setNotice(
-        "Account created. An administrator needs to approve it and assign your role before you can sign in.",
+        "Account created. Check your email for a confirmation link, then wait for an administrator to approve your account and assign your role before signing in.",
       );
       setDetails(EMPTY_SIGNUP);
       setMode("signin");
@@ -67,7 +67,11 @@ function LoginForm() {
 
     const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
     if (signInError) {
-      setError(signInError.message);
+      setError(
+        signInError.code === "email_not_confirmed"
+          ? "Confirm your email using the link we sent you before signing in."
+          : signInError.message,
+      );
       setSubmitting(false);
       return;
     }
