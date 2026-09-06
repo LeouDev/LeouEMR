@@ -41,17 +41,25 @@ const LEADER_ONLY_NAV = [
   { href: "/skills", label: "Skills" },
   { href: "/ews", label: "EWS" },
   { href: "/ramp", label: "Ramp" },
-  { href: "/adherence", label: "Adherence" },
 ];
+
+/**
+ * The team lead who actually works an agent's adherence exceptions day to
+ * day; a manager or admin has no reason to see this in their own nav.
+ */
+const SUPERVISOR_ONLY_NAV = [{ href: "/adherence", label: "Adherence" }];
 
 /** Only roles with direct reports; an agent's own details are not a 201 file. */
 const LEADER_NAV = [{ href: "/201-file", label: "201 File" }];
 
-/** Admin-only destinations. The pages enforce this themselves too. */
+/**
+ * Admin-only destinations. The pages enforce this themselves too — Audit
+ * has no nav entry (kept reachable by URL for whoever needs it) but is
+ * otherwise unchanged.
+ */
 const ADMIN_NAV = [
   { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
-  { href: "/audit", label: "Audit" },
 ];
 
 /**
@@ -85,7 +93,13 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
 
   const items = [
     ...NAV,
-    ...(user.role === "agent" ? AGENT_NAV : [...leaderNav, ...LEADER_NAV]),
+    ...(user.role === "agent"
+      ? AGENT_NAV
+      : [
+          ...leaderNav,
+          ...(user.role === "supervisor" ? SUPERVISOR_ONLY_NAV : []),
+          ...LEADER_NAV,
+        ]),
     ...(user.role === "admin" ? ADMIN_NAV : []),
   ];
 

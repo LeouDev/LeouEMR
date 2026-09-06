@@ -286,7 +286,7 @@ export function SkillWorkspace({
                           value={row.actual}
                           onChange={(e) => updateRow(i, { actual: e.target.value })}
                           placeholder="Actual"
-                          className="w-28 border-2 border-ink bg-surface px-2 py-1.5 font-mono text-sm text-ink tabular-nums outline-none transition"
+                          className="w-full border-2 border-ink bg-surface px-2 py-1.5 font-mono text-sm text-ink tabular-nums outline-none transition"
                         />
                       </td>
                       <td className="px-3 py-2.5">
@@ -298,7 +298,7 @@ export function SkillWorkspace({
                           value={row.prodHours}
                           onChange={(e) => updateRow(i, { prodHours: e.target.value })}
                           placeholder="Hours"
-                          className="w-24 border-2 border-ink bg-surface px-2 py-1.5 font-mono text-sm text-ink tabular-nums outline-none transition"
+                          className="w-full border-2 border-ink bg-surface px-2 py-1.5 font-mono text-sm text-ink tabular-nums outline-none transition"
                         />
                       </td>
                       <td className="px-3 py-2.5 font-mono text-muted tabular-nums">
