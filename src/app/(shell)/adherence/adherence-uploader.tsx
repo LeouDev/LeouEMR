@@ -1,17 +1,48 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import type { AdherenceAgentDay } from "@/lib/adherence/parse-pdf";
 import { parseAdherenceUpload } from "./actions";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
+type Result = { fileName: string; agents: AdherenceAgentDay[] };
+
+const STORAGE_KEY = "adherence-coding-result";
+
+/** A refresh mid-review shouldn't lose the scan — coding a 50-agent report is not a one-sitting task. */
+function loadSavedResult(): Result | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Result) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveResult(result: Result | null) {
+  try {
+    if (result) localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Private browsing or storage disabled — the page still works, it just won't survive a refresh.
+  }
+}
+
 export function AdherenceUploader() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ fileName: string; agents: AdherenceAgentDay[] } | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
   const [onlyExceptions, setOnlyExceptions] = useState(true);
+
+  // Read after mount, not in the initializer — the server render has no
+  // localStorage, so restoring here (rather than synchronously) avoids a
+  // hydration mismatch between what the server and the client first render.
+  useEffect(() => {
+    const saved = loadSavedResult();
+    if (saved) setResult(saved);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,12 +52,21 @@ export function AdherenceUploader() {
     const response = await parseAdherenceUpload(new FormData(form));
     setBusy(false);
     if (response.ok) {
-      setResult({ fileName: response.fileName, agents: response.agents });
+      const next = { fileName: response.fileName, agents: response.agents };
+      setResult(next);
+      saveResult(next);
       form.reset();
     } else {
       setError(response.error);
       setResult(null);
+      saveResult(null);
     }
+  }
+
+  function handleDone() {
+    setResult(null);
+    setError(null);
+    saveResult(null);
   }
 
   const totalExceptions = result
@@ -53,6 +93,15 @@ export function AdherenceUploader() {
           <button type="submit" disabled={busy} className="btn-primary px-5 py-2.5 text-sm">
             {busy ? "Reading…" : "Scan"}
           </button>
+          {result && (
+            <button
+              type="button"
+              onClick={handleDone}
+              className="border-2 border-ink px-5 py-2.5 text-sm font-semibold tracking-[0.08em] text-ink uppercase transition hover:bg-cream"
+            >
+              I&rsquo;m done
+            </button>
+          )}
         </form>
         {error && (
           <p role="alert" className="border-t-2 border-fail bg-fail-bg px-6 py-3 text-sm font-semibold text-fail">
