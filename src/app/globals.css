@@ -1,26 +1,66 @@
 @import "tailwindcss";
 
+/**
+ * OptumRX EMR brand theme — navy, orange, cream.
+ * Deliberately a single light look: the brand's cream ground is the
+ * identity, so there is no dark-mode inversion.
+ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --brand-navy-900: #0e2440;
+  --brand-navy-800: #16355d;
+  --brand-navy: #1d4478;
+  --brand-navy-500: #2c5a95;
+  --brand-navy-100: #dbe4f0;
+
+  --brand-orange: #f76b15;
+  --brand-orange-dark: #d4550a;
+  --brand-orange-100: #fde5d3;
+
+  --brand-cream: #fbf7ef;
+  --brand-cream-dark: #f1e9da;
+
+  --surface: #ffffff;
+  --border: #e5ded0;
+  --muted: #6b7a8d;
+
+  --status-pass: #157f5c;
+  --status-pass-bg: #e3f4ed;
+  --status-warn: #b7791f;
+  --status-warn-bg: #fdf3dc;
+  --status-fail: #c0392b;
+  --status-fail-bg: #fbe6e3;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-navy-900: var(--brand-navy-900);
+  --color-navy-800: var(--brand-navy-800);
+  --color-navy: var(--brand-navy);
+  --color-navy-500: var(--brand-navy-500);
+  --color-navy-100: var(--brand-navy-100);
+
+  --color-orange-brand: var(--brand-orange);
+  --color-orange-brand-dark: var(--brand-orange-dark);
+  --color-orange-brand-100: var(--brand-orange-100);
+
+  --color-cream: var(--brand-cream);
+  --color-cream-dark: var(--brand-cream-dark);
+
+  --color-surface: var(--surface);
+  --color-line: var(--border);
+  --color-muted: var(--muted);
+
+  --color-pass: var(--status-pass);
+  --color-pass-bg: var(--status-pass-bg);
+  --color-warn: var(--status-warn);
+  --color-warn-bg: var(--status-warn-bg);
+  --color-fail: var(--status-fail);
+  --color-fail-bg: var(--status-fail-bg);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--brand-cream);
+  color: var(--brand-navy-900);
 }
