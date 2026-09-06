@@ -271,9 +271,84 @@ img:not([data-keep-color]) {
   70%, 100% { opacity: 1; }
 }
 
+/**
+ * The header scene: an astronaut travels planet to planet, injecting each
+ * one with orange. Lifted from Header Animation.dc.html unchanged — same
+ * geometry, same 14s loop, same per-planet offsets (fill/pulse N fires at
+ * planet N's arrival, 0%/30%/58%/86% of the loop).
+ */
+@keyframes hdr-twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@keyframes hdr-hop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes hdr-travel {
+  0%, 6% { transform: translateX(0); }
+  22%, 34% { transform: translateX(230px); }
+  50%, 62% { transform: translateX(460px); }
+  78%, 90% { transform: translateX(690px); }
+  100% { transform: translateX(760px); }
+}
+@keyframes hdr-jab {
+  0%, 4% { transform: translateY(0); }
+  8% { transform: translateY(5px); }
+  12% { transform: translateY(0); }
+  22%, 26% { transform: translateY(0); }
+  30% { transform: translateY(5px); }
+  34% { transform: translateY(0); }
+  50%, 54% { transform: translateY(0); }
+  58% { transform: translateY(5px); }
+  62% { transform: translateY(0); }
+  78%, 82% { transform: translateY(0); }
+  86% { transform: translateY(5px); }
+  90%, 100% { transform: translateY(0); }
+}
+@keyframes hdr-fill1 {
+  0%, 6% { transform: translateY(24px); }
+  12%, 100% { transform: translateY(0); }
+}
+@keyframes hdr-fill2 {
+  0%, 30% { transform: translateY(24px); }
+  36%, 100% { transform: translateY(0); }
+}
+@keyframes hdr-fill3 {
+  0%, 58% { transform: translateY(24px); }
+  64%, 100% { transform: translateY(0); }
+}
+@keyframes hdr-fill4 {
+  0%, 86% { transform: translateY(24px); }
+  92%, 100% { transform: translateY(0); }
+}
+@keyframes hdr-pulse1 {
+  0%, 8% { transform: scale(1); opacity: 0.8; }
+  18%, 100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes hdr-pulse2 {
+  0%, 32% { transform: scale(1); opacity: 0.8; }
+  42%, 100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes hdr-pulse3 {
+  0%, 60% { transform: scale(1); opacity: 0.8; }
+  70%, 100% { transform: scale(1.9); opacity: 0; }
+}
+@keyframes hdr-pulse4 {
+  0%, 88% { transform: scale(1); opacity: 0.8; }
+  98%, 100% { transform: scale(1.9); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade-up,
   [style*="animation"] {
     animation: none !important;
+  }
+  /* The fill rects' own end state (translateY(0)) already reads as "planet
+     filled" once their animation is removed above — nothing further to do
+     for those. The pulse ring has no such resting state, so without this it
+     would freeze as a solid static ring rather than disappearing. */
+  .hdr-pulse-ring {
+    opacity: 0 !important;
   }
 }

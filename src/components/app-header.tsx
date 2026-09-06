@@ -1,6 +1,7 @@
 import { and, count, eq, isNull } from "drizzle-orm";
 import Link from "next/link";
 import { BrandMark, BrandWordmark } from "@/components/brand";
+import { HeaderScene } from "@/components/header-scene";
 import { db } from "@/lib/db/client";
 import { notifications } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -73,27 +74,28 @@ export async function AppHeader({ user, current }: { user: CurrentUser; current:
 
   return (
     <header className="border-b-2 border-orange-brand bg-navy-800">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2.5">
-        <Link href="/dashboard" className="flex shrink-0 items-center gap-3">
+      <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2.5">
+        {/* Purely decorative, sits behind the logo and the identity/actions
+            cluster (both given their own stacking order below) and never
+            intercepts a click — hidden below 1280px, where there is no room
+            for it between the two anyway. */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-[260px] right-[420px] hidden overflow-hidden xl:block"
+        >
+          <HeaderScene />
+        </div>
+
+        <Link href="/dashboard" className="relative z-10 flex shrink-0 items-center gap-3">
           <BrandMark className="h-9 w-9" id="header" />
           <BrandWordmark tone="light" />
         </Link>
 
-        <div className="flex shrink-0 items-center gap-3">
-          <Link
-            href="/notifications"
-            aria-label={`Notifications${unread.n > 0 ? `, ${unread.n} unread` : ""}`}
-            className="relative border-2 border-navy-500 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cream uppercase transition hover:border-orange-brand hover:text-orange-brand"
-          >
-            Inbox
-            {unread.n > 0 && (
-              <span className="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center bg-orange-brand px-1 text-[10px] font-bold text-white">
-                {unread.n > 99 ? "99+" : unread.n}
-              </span>
-            )}
-          </Link>
-
-          {/* One line each, never wrapped — this block was three lines tall. */}
+        <div className="relative z-10 flex shrink-0 items-center gap-4">
+          {/* Identity leads, actions follow as one cluster — the name used to
+              sit between Inbox and Sign out, reading as if it belonged to
+              neither. One line each, never wrapped: this block was three
+              lines tall before. */}
           <div className="hidden text-right leading-tight sm:block">
             <p className="text-sm font-semibold whitespace-nowrap text-cream">{user.name}</p>
             <p className="text-[10px] font-bold tracking-[0.12em] whitespace-nowrap text-orange-brand uppercase">
@@ -101,7 +103,22 @@ export async function AppHeader({ user, current }: { user: CurrentUser; current:
             </p>
           </div>
 
-          <SignOutButton />
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/notifications"
+              aria-label={`Notifications${unread.n > 0 ? `, ${unread.n} unread` : ""}`}
+              className="relative border-2 border-navy-500 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cream uppercase transition hover:border-orange-brand hover:text-orange-brand"
+            >
+              Inbox
+              {unread.n > 0 && (
+                <span className="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center bg-orange-brand px-1 text-[10px] font-bold text-white">
+                  {unread.n > 99 ? "99+" : unread.n}
+                </span>
+              )}
+            </Link>
+
+            <SignOutButton />
+          </div>
         </div>
       </div>
 
