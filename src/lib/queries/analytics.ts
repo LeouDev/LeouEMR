@@ -15,6 +15,7 @@ import {
 } from "./org-history";
 import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
+import { periodContaining } from "./period";
 import type { Period } from "./period";
 
 /** Today in UTC, the fallback when there is no data to bound the period. */
@@ -64,6 +65,15 @@ export interface AnalyticsSnapshot {
   byManager: GroupBreakdown[];
   bySupervisor: GroupBreakdown[];
   statuses: StatusBreakdown[];
+  /**
+   * What "by site" / "by manager" / "by supervisor" actually describe: the
+   * latest single week under the week grain, the latest whole month under
+   * the month grain. Returned pre-labelled so the page never has to re-derive
+   * it from a trend bucket — that was the earlier bug, since a month bucket's
+   * key is a month-start and formatting it as a week silently produced a
+   * fabricated 7-day range.
+   */
+  asOfLabel: string | null;
 }
 
 /**
@@ -118,6 +128,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     byManager: [],
     bySupervisor: [],
     statuses: [],
+    asOfLabel: null,
   };
   if (ids.length === 0) return empty;
 
@@ -223,6 +234,13 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
   ]);
 
   const latestWeek = latestWeekRow?.week ?? undefined;
+  // The window "by site"/"by manager"/"by supervisor" aggregate over: one
+  // week under the week grain (unchanged), the whole month containing that
+  // week under the month grain — otherwise switching to "Trend by: Month"
+  // relabels the same single week rather than actually widening it.
+  const latestPeriod = latestWeek
+    ? periodContaining(filters.grain === "month" ? "month" : "week", latestWeek)
+    : null;
 
   const groupBy = async (column: SQL<string | null>) => {
     const rowsPromise = db
@@ -231,7 +249,10 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
         employees: sql<number>`count(distinct ${employees.id})::int`,
         // Only KPIs that open action items count as a failure here, matching
         // the KPI breakdown above — otherwise a PAR component and the MBO it
-        // feeds would both mark the same person failing.
+        // feeds would both mark the same person failing. A person counts as
+        // failing if they failed on ANY day inside the window, matching how
+        // the trend chart's own month bucket counts a distinct employee once
+        // regardless of how many of that month's weeks they failed.
         failing: sql<number>`count(distinct ${employees.id}) filter (where ${weeklyMetricResults.status} = 'fail' and ${kpiDefinitions.generatesActionItems})::int`,
       })
       .from(employees)
@@ -239,7 +260,12 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
         weeklyMetricResults,
         and(
           eq(weeklyMetricResults.employeeId, employees.id),
-          latestWeek ? eq(weeklyMetricResults.weekStart, latestWeek) : undefined,
+          latestPeriod
+            ? and(
+                gte(weeklyMetricResults.weekStart, latestPeriod.start),
+                lte(weeklyMetricResults.weekStart, latestPeriod.end),
+              )
+            : undefined,
         ),
       )
       .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
@@ -308,6 +334,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     byManager,
     bySupervisor,
     statuses: statusRows.map((s) => ({ status: s.status, count: s.n })),
+    asOfLabel: latestPeriod?.label ?? null,
   };
 }
 
