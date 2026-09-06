@@ -11,6 +11,15 @@
  *         where each record contributes (its own skill's attributes
  *         × that record's audits). An employee audited on several skills
  *         must not be scored against one flat attributes value.
+ *
+ * A note on DPO's current sensitivity: the source Quality tab records
+ * whether an audit had a markdown (TotalMarkdown is only ever 0 or 1), not
+ * how many attributes were marked down. A failed audit therefore subtracts
+ * one from a denominator of 23-28, landing around 96%, so DPO clears a 95%
+ * gate on every week in the current data and flags exactly the weeks DPU
+ * already flags. It becomes discriminating as soon as the export carries a
+ * real per-audit markdown count — this function needs no change, since it
+ * already sums whatever that column holds.
  */
 
 /** The attributes-per-audit fallback for skills without a configured value. */
