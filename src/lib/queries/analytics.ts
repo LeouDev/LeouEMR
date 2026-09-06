@@ -220,6 +220,11 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     .select({ status: performanceIssues.status, n: count() })
     .from(performanceIssues)
     .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
+    // issueScope filters on managerOfRecord/siteOfRecord when those filters are
+    // set, and both reference employee_assignments in their SQL — without this
+    // join Postgres has nothing to resolve that table against and the whole
+    // query throws, which is exactly what picking a manager did here.
+    .leftJoin(employeeAssignments, assignmentAt(asOf))
     .where(issueScope.length ? and(...issueScope) : undefined)
     .groupBy(performanceIssues.status);
 
