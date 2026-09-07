@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import type { AdherenceAgentDay } from "@/lib/adherence/parse-pdf";
 import { parseAdherenceUpload } from "./actions";
@@ -19,29 +19,67 @@ const FILTERS: Array<{ value: SegmentFilter; label: string }> = [
   { value: "all", label: "All segments" },
 ];
 
-/** A refresh mid-review shouldn't lose the scan — coding a 50-agent report is not a one-sitting task. */
-function loadSavedResult(): Result | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Result) : null;
-  } catch {
-    return null;
-  }
-}
+/**
+ * The saved scan, held in localStorage so a refresh mid-review does not lose
+ * it — coding a fifty-agent report is not a one-sitting task.
+ *
+ * Read through useSyncExternalStore rather than copied into state by an
+ * effect. The server has no localStorage, so it renders nothing and React
+ * swaps in the saved scan on hydration; seeding useState from storage would
+ * hydrate different markup than the server sent. The parsed value is cached
+ * against the raw string because getSnapshot has to return a stable
+ * reference — re-parsing on every render would loop.
+ */
+const store = {
+  listeners: new Set<() => void>(),
+  cache: { raw: null as string | null, value: null as Result | null },
 
-function saveResult(result: Result | null) {
-  try {
-    if (result) localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
-    else localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Private browsing or storage disabled — the page still works, it just won't survive a refresh.
-  }
-}
+  subscribe(fn: () => void) {
+    store.listeners.add(fn);
+    return () => {
+      store.listeners.delete(fn);
+    };
+  },
+
+  read(): Result | null {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(STORAGE_KEY);
+    } catch {
+      // Private browsing or storage disabled — the page still works.
+      raw = null;
+    }
+    if (raw !== store.cache.raw) {
+      let value: Result | null = null;
+      try {
+        value = raw ? (JSON.parse(raw) as Result) : null;
+      } catch {
+        value = null;
+      }
+      store.cache = { raw, value };
+    }
+    return store.cache.value;
+  },
+
+  /** Nothing is saved as far as the server is concerned. */
+  serverRead(): Result | null {
+    return null;
+  },
+
+  write(result: Result | null) {
+    try {
+      if (result) localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+    for (const listener of store.listeners) listener();
+  },
+};
 
 export function AdherenceUploader() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Result | null>(null);
+  const result = useSyncExternalStore(store.subscribe, store.read, store.serverRead);
+  const setResult = store.write;
   /**
    * Unscheduled segments first, because that is what a team lead codes: time
    * the agent spent on something the schedule never asked for. The variance
@@ -49,14 +87,6 @@ export function AdherenceUploader() {
    * scheduled work that ran early or long.
    */
   const [filter, setFilter] = useState<SegmentFilter>("unscheduled");
-
-  // Read after mount, not in the initializer — the server render has no
-  // localStorage, so restoring here (rather than synchronously) avoids a
-  // hydration mismatch between what the server and the client first render.
-  useEffect(() => {
-    const saved = loadSavedResult();
-    if (saved) setResult(saved);
-  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -68,19 +98,19 @@ export function AdherenceUploader() {
     if (response.ok) {
       const next = { fileName: response.fileName, agents: response.agents };
       setResult(next);
-      saveResult(next);
+      setResult(next);
       form.reset();
     } else {
       setError(response.error);
       setResult(null);
-      saveResult(null);
+      setResult(null);
     }
   }
 
   function handleDone() {
     setResult(null);
     setError(null);
-    saveResult(null);
+    setResult(null);
   }
 
   const totalExceptions = result
