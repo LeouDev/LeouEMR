@@ -35,11 +35,25 @@ export async function ManagerOverview({
 
   // The tree already carries a passRate at every level, supervisor included
   // — no separate query, just flattened out of the site→manager→supervisor
-  // nesting into one flat, cross-site list. Someone with nobody scored yet
+  // nesting into one flat, cross-site list. A supervisor with people split
+  // across two sites appears as a separate node under each one, so those
+  // are merged back into a single row rather than shown as two unrelated
+  // fragments of the same person's team. Someone with nobody scored yet
   // this period has no rate to show at all, not a misleading 0%.
-  const supervisorMbo = mbo.sites
-    .flatMap((site) => site.children)
-    .flatMap((managerNode) => managerNode.children)
+  const bySupervisorName = new Map<string, { scored: number; passing: number; headcount: number }>();
+  for (const supervisorNode of mbo.sites.flatMap((site) => site.children).flatMap((m) => m.children)) {
+    const entry = bySupervisorName.get(supervisorNode.label) ?? { scored: 0, passing: 0, headcount: 0 };
+    entry.scored += supervisorNode.scored;
+    entry.passing += supervisorNode.passing;
+    entry.headcount += supervisorNode.headcount;
+    bySupervisorName.set(supervisorNode.label, entry);
+  }
+  const supervisorMbo = [...bySupervisorName.entries()]
+    .map(([label, totals]) => ({
+      label,
+      ...totals,
+      passRate: totals.scored > 0 ? (totals.passing / totals.scored) * 100 : null,
+    }))
     .filter((s) => s.scored > 0)
     .sort((a, b) => (a.passRate ?? 0) - (b.passRate ?? 0));
 
