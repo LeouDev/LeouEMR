@@ -20,6 +20,7 @@ import {
 } from "@/lib/org/assignments";
 import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
+import { combine } from "@/lib/queries/period-metrics";
 import { computeParMetrics } from "./par-scoring";
 import type { ParseResult } from "./types";
 
@@ -58,40 +59,59 @@ export async function commitImport(
   const definitions = await loadKpiDefinitions();
 
   const missingKpis = new Set<string>();
-  const rows: Array<typeof weeklyMetricResults.$inferInsert> = [];
+  // Built from parsed.metrics — every one of these has a daily fact behind
+  // it in metric_facts, so its actualValue gets corrected below rather than
+  // trusted as-is. par.metrics (PAR/MBO/DPU/DPO) has no such fact table to
+  // re-derive from and is written as computed.
+  const factBackedRows: Array<typeof weeklyMetricResults.$inferInsert> = [];
+  const derivedRows: Array<typeof weeklyMetricResults.$inferInsert> = [];
 
   // PAR/MBO ratings are derived rather than measured, so they are computed
   // here from the per-skill totals and appended to the measured metrics.
   const par = await computeParMetrics(parsed.skillWeeks, parsed.qualityWeeks);
-  const allMetrics = [...parsed.metrics, ...par.metrics];
 
-  for (const metric of allMetrics) {
-    const employeeId = employeeIdByEid.get(metric.eid);
-    const definition = definitions.get(metric.kpiCode);
+  for (const [metrics, target] of [
+    [parsed.metrics, factBackedRows],
+    [par.metrics, derivedRows],
+  ] as const) {
+    for (const metric of metrics) {
+      const employeeId = employeeIdByEid.get(metric.eid);
+      const definition = definitions.get(metric.kpiCode);
 
-    if (!employeeId) continue;
-    if (!definition) {
-      missingKpis.add(metric.kpiCode);
-      continue;
+      if (!employeeId) continue;
+      if (!definition) {
+        missingKpis.add(metric.kpiCode);
+        continue;
+      }
+
+      // A target carried by the source data (CPH/AHT) wins over the KPI
+      // definition's global threshold, because those targets are per employee.
+      const effective = applySourceTarget(definition.definition, metric.targetValue);
+      const evaluation = evaluateKpi(metric.actualValue, effective);
+
+      target.push({
+        employeeId,
+        kpiId: definition.id,
+        weekStart: metric.weekStart,
+        weekEnd: metric.weekEnd,
+        actualValue: metric.actualValue,
+        targetValue: metric.targetValue ?? effective.target ?? null,
+        status: evaluation.status.toLowerCase() as "pass" | "warning" | "fail",
+        sampleSize: metric.sampleSize,
+        sourceImportId: options.importBatchId,
+      });
     }
-
-    // A target carried by the source data (CPH/AHT) wins over the KPI
-    // definition's global threshold, because those targets are per employee.
-    const effective = applySourceTarget(definition.definition, metric.targetValue);
-    const evaluation = evaluateKpi(metric.actualValue, effective);
-
-    rows.push({
-      employeeId,
-      kpiId: definition.id,
-      weekStart: metric.weekStart,
-      weekEnd: metric.weekEnd,
-      actualValue: metric.actualValue,
-      targetValue: metric.targetValue ?? effective.target ?? null,
-      status: evaluation.status.toLowerCase() as "pass" | "warning" | "fail",
-      sampleSize: metric.sampleSize,
-      sourceImportId: options.importBatchId,
-    });
   }
+
+  // Facts first: metric_facts merges safely across imports (upserted per
+  // employee+kpi+day), which is exactly what weekly_metric_results is not —
+  // a week's row here used to be whatever THIS import alone computed for it,
+  // silently overwriting a more complete prior total the moment two imports
+  // carried a non-identical view of the same week (see reconcileFactBackedRows).
+  await persistFacts(parsed, definitions, options.importBatchId, employeeIdByEid);
+  await reconcileFactBackedRows(factBackedRows, definitions);
+
+  const rows = [...factBackedRows, ...derivedRows];
 
   if (rows.length > 0) {
     // Re-importing a week replaces that week's computed value rather than
@@ -117,8 +137,6 @@ export async function commitImport(
         });
     }
   }
-
-  await persistFacts(parsed, definitions, options.importBatchId, employeeIdByEid);
 
   const engineResult = await runIssueEngineForWeeks(parsed.weeks);
 
@@ -290,6 +308,78 @@ async function persistFacts(
   }
 }
 
+/**
+ * Overwrites each row's actualValue/sampleSize/status in place, re-derived
+ * from every metric_facts row for that employee+KPI+week rather than from
+ * this import's own local rollup.
+ *
+ * A single import only ever sees the source rows it was handed — a workbook
+ * covering a "partial" re-export of a week (missing an incident row a prior
+ * import already recorded) still computes a self-consistent-looking weekly
+ * total from what it has, and the old code trusted that total outright.
+ * metric_facts doesn't have this problem (each day is its own upsert key,
+ * so distinct days from different imports simply coexist), so re-summing
+ * from it after facts are persisted is what actually reflects the complete
+ * picture across every import that has ever touched this employee+KPI.
+ */
+async function reconcileFactBackedRows(
+  rows: Array<typeof weeklyMetricResults.$inferInsert>,
+  definitions: Map<string, { id: string; aggregation: string; definition: KpiDefinition }>,
+): Promise<void> {
+  if (rows.length === 0) return;
+
+  const employeeIds = [...new Set(rows.map((r) => r.employeeId))];
+  const kpiIds = [...new Set(rows.map((r) => r.kpiId))];
+  const aggregationByKpiId = new Map(
+    [...definitions.values()].map((d) => [d.id, d.aggregation]),
+  );
+  const definitionByKpiId = new Map([...definitions.values()].map((d) => [d.id, d.definition]));
+
+  const facts = await db
+    .select({
+      employeeId: metricFacts.employeeId,
+      kpiId: metricFacts.kpiId,
+      factDate: metricFacts.factDate,
+      numerator: metricFacts.numerator,
+      denominator: metricFacts.denominator,
+      sampleSize: metricFacts.sampleSize,
+    })
+    .from(metricFacts)
+    .where(and(inArray(metricFacts.employeeId, employeeIds), inArray(metricFacts.kpiId, kpiIds)));
+
+  const factsByPair = new Map<string, typeof facts>();
+  for (const f of facts) {
+    const key = `${f.employeeId}|${f.kpiId}`;
+    const arr = factsByPair.get(key);
+    if (arr) arr.push(f);
+    else factsByPair.set(key, [f]);
+  }
+
+  for (const row of rows) {
+    const aggregation = aggregationByKpiId.get(row.kpiId);
+    const definition = definitionByKpiId.get(row.kpiId);
+    if (!aggregation || !definition) continue;
+
+    const pairFacts = factsByPair.get(`${row.employeeId}|${row.kpiId}`) ?? [];
+    const inRange = pairFacts.filter((f) => f.factDate >= row.weekStart && f.factDate <= row.weekEnd);
+    if (inRange.length === 0) continue; // this import's own row is all there is for this week
+
+    const numerator = inRange.reduce((sum, f) => sum + f.numerator, 0);
+    const denominator = inRange.reduce((sum, f) => sum + f.denominator, 0);
+    const sampleSize = inRange.reduce((sum, f) => sum + (f.sampleSize ?? 0), 0);
+
+    const correctActual = combine(aggregation, numerator, denominator);
+    if (correctActual === null) continue;
+
+    const effective = applySourceTarget(definition, row.targetValue ?? undefined);
+    const evaluation = evaluateKpi(correctActual, effective);
+
+    row.actualValue = correctActual;
+    row.sampleSize = sampleSize;
+    row.status = evaluation.status.toLowerCase() as "pass" | "warning" | "fail";
+  }
+}
+
 type EmployeeIdMap = Map<string, string> & {
   stats: { employeesCreated: number; employeesUpdated: number };
 };
@@ -442,6 +532,7 @@ async function loadKpiDefinitions() {
       row.code,
       {
         id: row.id,
+        aggregation: row.aggregation,
         definition: {
           code: row.code,
           name: row.name,

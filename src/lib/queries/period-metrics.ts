@@ -184,7 +184,8 @@ async function getWeekMetrics(employeeIds: string[], weekStart: string): Promise
   }));
 }
 
-function combine(
+/** How a KPI's daily numerator/denominator facts combine into one measured value — shared with the import pipeline, which re-derives a week's value the same way rather than trusting one import's own local rollup. */
+export function combine(
   aggregation: string,
   numerator: number,
   denominator: number,
