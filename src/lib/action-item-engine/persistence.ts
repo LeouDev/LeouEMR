@@ -2,13 +2,16 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   actionItems,
+  actionPlans,
   auditLog,
   kpiDefinitions,
   performanceIssues,
+  rcaEntries,
+  rcaNotes,
   weeklyIssueHistory,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { evaluateWeeklyResult } from "./engine";
+import { canAutoReplay, evaluateWeeklyResult, replayEmployeeKpiHistory } from "./engine";
 import {
   DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
   type IssueStatus,
@@ -29,6 +32,10 @@ export interface EngineRunResult {
   opened: number;
   updated: number;
   completed: number;
+  /** Issues whose already-folded history no longer matched current data and were safely rebuilt. */
+  corrected: number;
+  /** Same situation, but left untouched for a person to review — see canAutoReplay. */
+  flagged: number;
 }
 
 interface LiveIssue {
@@ -51,10 +58,11 @@ interface LiveIssue {
  * makes a full import take many minutes.
  */
 export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRunResult> {
-  const result: EngineRunResult = { opened: 0, updated: 0, completed: 0 };
+  const result: EngineRunResult = { opened: 0, updated: 0, completed: 0, corrected: 0, flagged: 0 };
   if (weeks.length === 0) return result;
 
   const live = await loadLiveIssues();
+  const staleTouches: Array<{ employeeId: string; kpiId: string }> = [];
 
   for (const week of [...new Set(weeks)].sort()) {
     // Component KPIs (the PAR rating, DPU, DPO) are gates on the composite
@@ -85,8 +93,16 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
       const key = `${metric.employeeId}|${metric.kpiId}`;
       const existing = live.get(key);
 
-      // Already folded in: re-importing the same or an earlier week is a no-op.
-      if (existing?.lastEvaluatedWeek && existing.lastEvaluatedWeek >= week) continue;
+      // Already folded in: re-importing the same or an earlier week is
+      // normally a no-op — but if the week's own data has since changed
+      // (a ramp target correction, a routing fix), the issue's stored
+      // history is now stale against it. Reconciled in bulk after this
+      // loop rather than inline, since it may need every week this
+      // employee+KPI has ever recorded, not just the ones in this batch.
+      if (existing?.lastEvaluatedWeek && existing.lastEvaluatedWeek >= week) {
+        staleTouches.push({ employeeId: metric.employeeId, kpiId: metric.kpiId });
+        continue;
+      }
 
       // WARNING sits above the failure threshold, so it counts as a pass.
       const weekResult = metric.status === "fail" ? "FAIL" : "PASS";
@@ -146,7 +162,151 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
     await insertEvents(events);
   }
 
+  if (staleTouches.length > 0) {
+    const { corrected, flagged } = await reconcileStaleTouches(staleTouches, live);
+    result.corrected += corrected;
+    result.flagged += flagged;
+  }
+
   return result;
+}
+
+/**
+ * Rebuilds (or flags) an issue whose already-folded weekly history no
+ * longer matches current data.
+ *
+ * One employee+KPI can appear multiple times in `touches` (several weeks
+ * in one import batch can all be stale); each pair is reconciled once,
+ * against the *entire* weekly ledger for that KPI rather than just the
+ * weeks that triggered it, since a stale opened-week can only be found by
+ * looking at the whole trajectory.
+ */
+async function reconcileStaleTouches(
+  touches: Array<{ employeeId: string; kpiId: string }>,
+  live: Map<string, LiveIssue>,
+): Promise<{ corrected: number; flagged: number }> {
+  const pairs = new Map(touches.map((t) => [`${t.employeeId}|${t.kpiId}`, t]));
+
+  let corrected = 0;
+  let flagged = 0;
+
+  for (const { employeeId, kpiId } of pairs.values()) {
+    const issue = live.get(`${employeeId}|${kpiId}`);
+    if (!issue) continue; // stale touches only ever come from an existing live issue
+
+    const [allMetrics, storedHistory, otherIssues] = await Promise.all([
+      db
+        .select({ week: weeklyMetricResults.weekStart, status: weeklyMetricResults.status })
+        .from(weeklyMetricResults)
+        .where(and(eq(weeklyMetricResults.employeeId, employeeId), eq(weeklyMetricResults.kpiId, kpiId)))
+        .orderBy(asc(weeklyMetricResults.weekStart)),
+      db.select().from(weeklyIssueHistory).where(eq(weeklyIssueHistory.performanceIssueId, issue.id)),
+      db
+        .select({ id: performanceIssues.id })
+        .from(performanceIssues)
+        .where(and(eq(performanceIssues.employeeId, employeeId), eq(performanceIssues.kpiId, kpiId))),
+    ]);
+
+    const replay = replayEmployeeKpiHistory(allMetrics);
+
+    const storedByWeek = new Map(storedHistory.map((h) => [h.week, h.result]));
+    const replayByWeek = new Map(replay.history.map((h) => [h.week, h.result]));
+    const touchedWeeks = new Set([...storedByWeek.keys(), ...replayByWeek.keys()]);
+    const isStale = [...touchedWeeks].some((w) => storedByWeek.get(w) !== replayByWeek.get(w));
+    if (!isStale) continue;
+
+    const [actionItemRow] = await db
+      .select()
+      .from(actionItems)
+      .where(eq(actionItems.performanceIssueId, issue.id))
+      .limit(1);
+    if (!actionItemRow) continue; // every issue has one; defensive only
+
+    const [[rcaRow], [planRow], noteRows] = await Promise.all([
+      db.select({ id: rcaEntries.id }).from(rcaEntries).where(eq(rcaEntries.actionItemId, actionItemRow.id)).limit(1),
+      db.select({ id: actionPlans.id }).from(actionPlans).where(eq(actionPlans.actionItemId, actionItemRow.id)).limit(1),
+      db.select({ id: rcaNotes.id }).from(rcaNotes).where(eq(rcaNotes.actionItemId, actionItemRow.id)).limit(1),
+    ]);
+
+    const eligible = canAutoReplay({
+      status: issue.state.status,
+      hasRca: !!rcaRow,
+      hasActionPlan: !!planRow,
+      hasNotes: noteRows.length > 0,
+      hasOtherIssuesForKpi: otherIssues.length > 1,
+    });
+
+    const before = {
+      status: issue.state.status,
+      openedWeek: issue.state.openedWeek,
+      consecutivePassingWeeks: issue.state.consecutivePassingWeeks,
+      history: Object.fromEntries(storedByWeek),
+    };
+
+    if (!eligible) {
+      await db.insert(auditLog).values({
+        action: "issue.stale_data_flagged",
+        entityType: "performance_issue",
+        entityId: issue.id,
+        before,
+        after: { current: Object.fromEntries(replayByWeek) },
+      });
+      flagged += 1;
+      continue;
+    }
+
+    const lastWeek = allMetrics.at(-1)?.week ?? issue.lastEvaluatedWeek;
+
+    if (!replay.issue) {
+      // Corrected data never fails at all — this issue should never have opened.
+      await db.delete(actionItems).where(eq(actionItems.id, actionItemRow.id));
+      await db.delete(weeklyIssueHistory).where(eq(weeklyIssueHistory.performanceIssueId, issue.id));
+      await db.delete(performanceIssues).where(eq(performanceIssues.id, issue.id));
+      live.delete(`${employeeId}|${kpiId}`);
+    } else {
+      await db
+        .update(performanceIssues)
+        .set({
+          status: replay.issue.status,
+          openedWeek: replay.issue.openedWeek,
+          consecutivePassingWeeks: replay.issue.consecutivePassingWeeks,
+          resolvedWeek: replay.issue.resolvedWeek ?? null,
+          lastEvaluatedWeek: lastWeek,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(performanceIssues.id, issue.id));
+      await db
+        .update(actionItems)
+        .set({ status: replay.issue.status, updatedAt: sql`now()` })
+        .where(eq(actionItems.id, actionItemRow.id));
+      await db.delete(weeklyIssueHistory).where(eq(weeklyIssueHistory.performanceIssueId, issue.id));
+      if (replay.history.length > 0) {
+        await db.insert(weeklyIssueHistory).values(
+          replay.history.map((h) => ({
+            performanceIssueId: issue.id,
+            week: h.week,
+            result: h.result,
+            consecutiveCountAfter: h.consecutiveCountAfter,
+          })),
+        );
+      }
+      issue.state = replay.issue;
+      issue.lastEvaluatedWeek = lastWeek;
+    }
+
+    await db.insert(auditLog).values({
+      action: "issue.stale_data_corrected",
+      entityType: "performance_issue",
+      entityId: issue.id,
+      before,
+      after: replay.issue
+        ? { ...replay.issue, history: Object.fromEntries(replayByWeek) }
+        : { deleted: true },
+    });
+    corrected += 1;
+  }
+
+  return { corrected, flagged };
 }
 
 async function loadLiveIssues(): Promise<Map<string, LiveIssue>> {

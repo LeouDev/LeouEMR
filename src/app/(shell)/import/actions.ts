@@ -90,6 +90,8 @@ export interface CommitResponse {
     metricsWritten: number;
     issuesOpened: number;
     issuesUpdated: number;
+    issuesCorrected: number;
+    issuesFlagged: number;
     weeks: string[];
     metricsSkippedNoKpi: string[];
   };

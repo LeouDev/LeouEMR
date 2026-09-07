@@ -246,6 +246,18 @@ export function ImportWizard() {
                 {result.issuesOpened} action items opened, {result.issuesUpdated} updated
               </li>
               <li>Weeks: {result.weeks.join(", ")}</li>
+              {result.issuesCorrected > 0 && (
+                <li className="text-warn">
+                  {result.issuesCorrected} action item{result.issuesCorrected === 1 ? "" : "s"} rebuilt —
+                  a previously-imported week&rsquo;s data changed since it was first evaluated
+                </li>
+              )}
+              {result.issuesFlagged > 0 && (
+                <li className="text-warn">
+                  {result.issuesFlagged} action item{result.issuesFlagged === 1 ? "" : "s"} have a
+                  since-corrected week but already have RCA/plan work — see the audit log to review
+                </li>
+              )}
               {result.metricsSkippedNoKpi.length > 0 && (
                 <li className="text-warn">
                   Skipped, no matching KPI configured: {result.metricsSkippedNoKpi.join(", ")}
