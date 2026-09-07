@@ -6,6 +6,7 @@ import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import type { NpsMix } from "@/lib/kpi-engine/nps";
 import { getPeriodMetrics } from "./period-metrics";
 import { periodContaining, previousPeriod, type Period } from "./period";
+import { eligibleForPeriod } from "./eligibility";
 
 export interface KpiComparison {
   kpiCode: string;
@@ -308,15 +309,29 @@ export async function getTeamPeriodComparison(
     return { period: current, previous, kpis: [], rows: [] };
   }
 
+  // Who counted for THIS period. reportingScopeIds already resolves the org
+  // as it stood, but it says nothing about whether someone had left — so a
+  // separated agent kept appearing as a row in every later month. Same rule
+  // as the roster, the MBO tree and the stack rank, deliberately the same
+  // helper: a second copy of it would drift and the four would disagree.
+  //
+  // Applied to the current period only. The previous period is still fetched
+  // in full, because a row that belongs in this month needs last month's
+  // value to show a change against.
+  const eligibleIds = await eligibleForPeriod(employeeIds, current);
+  if (eligibleIds.length === 0) {
+    return { period: current, previous, kpis: [], rows: [] };
+  }
+
   const [currentMetrics, previousMetrics, roster, currentRates, previousRates] = await Promise.all([
-    getPeriodMetrics(employeeIds, current),
-    getPeriodMetrics(employeeIds, previous),
+    getPeriodMetrics(eligibleIds, current),
+    getPeriodMetrics(eligibleIds, previous),
     db
       .select({ id: employees.id, eid: employees.eid, name: employees.name })
       .from(employees)
-      .where(inArray(employees.id, employeeIds)),
-    getCaseRates(employeeIds, current),
-    getCaseRates(employeeIds, previous),
+      .where(inArray(employees.id, eligibleIds)),
+    getCaseRates(eligibleIds, current),
+    getCaseRates(eligibleIds, previous),
   ]);
 
   const priorByKey = new Map(previousMetrics.map((m) => [`${m.employeeId}|${m.kpiCode}`, m]));
