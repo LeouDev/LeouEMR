@@ -7,8 +7,7 @@ interface DayEntry {
   type: string | null;
 }
 
-/** Saturday-first, matching the reporting weeks used everywhere else. */
-const WEEKDAYS = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function shiftMonth(month: string, by: number): string {
   const [y, m] = month.split("-").map(Number);
@@ -42,8 +41,7 @@ export function PtoCalendar({
   const first = new Date(Date.UTC(year, monthNum - 1, 1));
   const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
 
-  // Weeks run Saturday to Friday here, so shift the JS Sunday-first index.
-  const leading = (first.getUTCDay() + 1) % 7;
+  const leading = first.getUTCDay();
 
   const cells: Array<string | null> = [
     ...Array<null>(leading).fill(null),

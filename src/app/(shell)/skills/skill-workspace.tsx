@@ -238,21 +238,21 @@ export function SkillWorkspace({
 
         <div className="px-6 py-5">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
+            <table className="w-full min-w-[760px] table-fixed border-collapse text-sm">
               <thead>
                 <tr className="border-b-2 border-ink">
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
+                  <th className="w-[25%] px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
                     Skill
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
+                  <th className="w-[20%] px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
                     Actual
                   </th>
-                  <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
+                  <th className="w-[20%] px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
                     Prod hours
                   </th>
-                  <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Target</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Ratio</th>
-                  <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Rating</th>
+                  <th className="w-[12%] px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Target</th>
+                  <th className="w-[12%] px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Ratio</th>
+                  <th className="w-[11%] px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Rating</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,11 +272,6 @@ export function SkillWorkspace({
                             </option>
                           ))}
                         </select>
-                        {skill && (
-                          <span className="mt-1 block text-[11px] text-muted">
-                            {skill.lowerIsBetter ? "Lower is better" : "Higher is better"}
-                          </span>
-                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         <input
