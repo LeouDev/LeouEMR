@@ -33,7 +33,7 @@ export const MBO_GATES = {
   dpo: 95,
 } as const;
 
-interface SkillReference {
+export interface SkillReference {
   code: string;
   name: string;
   target: number;
@@ -86,7 +86,7 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
  * The measured value for one skill-week, per the skill's configured metric.
  * Case rate is weight-based and involves no hours at all.
  */
-function measureSkill(
+export function measureSkill(
   metric: SkillReference["metric"],
   skill: { cases: number; hours: number; prodWeight: number },
 ): number | null {
