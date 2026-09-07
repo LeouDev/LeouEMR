@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { formatMetric } from "@/components/ui";
 
 /**
@@ -47,8 +47,59 @@ export interface ShellActionItems {
 const RANGES = [6, 12] as const;
 export type ShellRange = (typeof RANGES)[number];
 
+export interface ShellContext {
+  /** The series currently charted. */
+  selected: string | null;
+  /** Chart a different series; ignored for a series with no points. */
+  select: (key: string) => void;
+  /** Which keys have anything to chart. */
+  chartable: Set<string>;
+}
+
 const STORE_SERIES = "dashboard.trendKpi";
 const STORE_RANGE = "dashboard.trendRange";
+
+/**
+ * The viewer's chip and range choice, remembered in localStorage.
+ *
+ * Read through useSyncExternalStore rather than copied into state by an
+ * effect: the server has no localStorage, so it renders the default and React
+ * swaps in the stored value on hydration. Seeding useState from storage
+ * instead would hydrate different markup than the server sent, and doing it
+ * in an effect costs a second render pass on every mount.
+ */
+const prefs = {
+  listeners: new Set<() => void>(),
+  subscribe(fn: () => void) {
+    prefs.listeners.add(fn);
+    return () => {
+      prefs.listeners.delete(fn);
+    };
+  },
+  read(key: string): string | null {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      // Private browsing, or storage disabled. The defaults are fine.
+      return null;
+    }
+  },
+  write(key: string, value: string) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {}
+    for (const listener of prefs.listeners) listener();
+  },
+};
+
+function usePref(key: string): [string | null, (value: string) => void] {
+  const value = useSyncExternalStore(
+    prefs.subscribe,
+    () => prefs.read(key),
+    () => null,
+  );
+  return [value, (next: string) => prefs.write(key, next)];
+}
 
 /** "Aug 16" — a full week range is too long to repeat twelve times on an axis. */
 export function shortWeek(weekStart: string): string {
@@ -80,9 +131,10 @@ export function DashboardShell({
   defaultSeriesKey,
   emptyTrendMessage = "No week-by-week history for this period yet.",
 }: {
-  summary: React.ReactNode;
+  /** Static, or a render prop when the summary itself drives the chart. */
+  summary: React.ReactNode | ((ctx: ShellContext) => React.ReactNode);
   /** Given the charted series key and a setter, so a row can select itself. */
-  rows: (ctx: { selected: string | null; select: (key: string) => void; chartable: Set<string> }) => React.ReactNode;
+  rows: (ctx: ShellContext) => React.ReactNode;
   series: ShellSeries[];
   /** e.g. "Trend" or "Team trend"; the series label is appended. */
   trendTitle: string;
@@ -93,52 +145,44 @@ export function DashboardShell({
   const chartable = useMemo(() => series.filter((s) => s.points.length > 0), [series]);
   const chartableKeys = useMemo(() => new Set(chartable.map((s) => s.key)), [chartable]);
 
-  const [selected, setSelected] = useState<string | null>(
-    defaultSeriesKey ?? chartable[0]?.key ?? null,
-  );
-  const [range, setRange] = useState<ShellRange>(12);
+  const [storedSeries, setStoredSeries] = usePref(STORE_SERIES);
+  const [storedRange, setStoredRange] = usePref(STORE_RANGE);
 
-  // Read after mount rather than during render: the server has no
-  // localStorage, and seeding state from it would hydrate a different chart
-  // than the markup the server sent.
-  useEffect(() => {
-    try {
-      const storedSeries = window.localStorage.getItem(STORE_SERIES);
-      if (storedSeries && chartableKeys.has(storedSeries)) setSelected(storedSeries);
-      const storedRange = Number(window.localStorage.getItem(STORE_RANGE));
-      if (RANGES.includes(storedRange as ShellRange)) setRange(storedRange as ShellRange);
-    } catch {
-      // Private browsing, or storage disabled. The defaults are fine.
-    }
-  }, [chartableKeys]);
+  // A remembered chip that this view cannot chart falls back to the default
+  // rather than leaving the chart empty — the roles share the storage key and
+  // do not share every series.
+  const selected =
+    storedSeries && chartableKeys.has(storedSeries)
+      ? storedSeries
+      : (defaultSeriesKey ?? chartable[0]?.key ?? null);
+  const range = RANGES.includes(Number(storedRange) as ShellRange)
+    ? (Number(storedRange) as ShellRange)
+    : 12;
 
   const select = (key: string) => {
     if (!chartableKeys.has(key)) return;
-    setSelected(key);
-    try {
-      window.localStorage.setItem(STORE_SERIES, key);
-    } catch {}
+    setStoredSeries(key);
   };
 
-  const chooseRange = (value: ShellRange) => {
-    setRange(value);
-    try {
-      window.localStorage.setItem(STORE_RANGE, String(value));
-    } catch {}
-  };
+  const chooseRange = (value: ShellRange) => setStoredRange(String(value));
 
   const active = chartable.find((s) => s.key === selected) ?? chartable[0] ?? null;
   const points = active ? active.points.slice(-range) : [];
+  const context: ShellContext = {
+    selected: active?.key ?? null,
+    select,
+    chartable: chartableKeys,
+  };
 
   return (
     <section className="border-t-2 border-ink">
       <div className="grid lg:grid-cols-[280px_1fr]">
         <div className="flex flex-col gap-6 border-b-2 border-ink py-6 pr-6 lg:border-r-2 lg:border-b-0">
-          {summary}
+          {typeof summary === "function" ? summary(context) : summary}
         </div>
 
         <div className="flex min-w-0 flex-col">
-          {rows({ selected: active?.key ?? null, select, chartable: chartableKeys })}
+          {rows(context)}
 
           <div className="pt-5 lg:pl-6">
             {active === null ? (

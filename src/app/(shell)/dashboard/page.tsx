@@ -6,7 +6,6 @@ import {
   CardHeader,
   EmptyState,
   PageBand,
-  StatCard,
   StatusBadge,
   formatMetric,
 } from "@/components/ui";
@@ -14,7 +13,6 @@ import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
 import { PeriodComparisonTable } from "./period-comparison-table";
 import { AgentPerformance, type AgentKpi } from "./agent-performance";
-import type { ShellActionItems } from "./dashboard-shell";
 import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
 import { TeamAgentTable } from "./team-agent-table";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -158,16 +156,11 @@ export default async function DashboardPage({
   // Only people with a result this period can be classified; the roster is
   // usually larger, and that difference is unmeasured rather than passing.
   const periodMeasured = periodByEmployee.size;
-  const periodUnmeasured = Math.max(0, summary.totalEmployees - periodMeasured);
 
   // Which KPIs actually had data. A boundary week can carry only attendance,
   // and reporting that as "nothing failing" reads as an all-clear when the
   // truth is that almost nothing was measured.
   const evaluatedKpis = [...new Set(weekMetrics.map((m) => m.kpiName))];
-  // What the passing / at-risk / failing counts are actually built from.
-  // Without naming these, "14 passing" reads as a clean bill of health when
-  // it can mean one KPI had data and nobody failed it.
-  const periodKpis = [...new Set(periodMetrics.map((m) => m.kpiName))].sort();
 
   // Production Rate (PAR) on its own terms. The generic "passing" count asks
   // whether every measured KPI held; this asks the single question the
@@ -186,7 +179,6 @@ export default async function DashboardPage({
 
   const parMetrics = periodMetrics.filter((m) => m.kpiCode === "PRODUCTION_RATE");
   const parPassing = parMetrics.filter((m) => m.status === "PASS").length;
-  const parTarget = parMetrics.find((m) => m.targetValue !== null)?.targetValue ?? null;
   const thinCoverage = weekMetrics.length > 0 && evaluatedKpis.length <= 2;
 
   // MBO is a composite gate rather than a threshold, so it is counted on its
@@ -330,7 +322,19 @@ export default async function DashboardPage({
       <main className="mx-auto max-w-7xl px-6 py-8">
 
         {user.role === "manager" && (
-          <ManagerOverview managerName={user.managerName ?? user.name} period={period} />
+          <ManagerOverview
+            managerName={user.managerName ?? user.name}
+            period={period}
+            weeks={weeks}
+            rollup={rollup}
+            actionItems={{
+              open: summary.openIssues,
+              awaiting: summary.awaitingAcknowledgement,
+              monitoring: summary.monitoring,
+              sustained: summary.sustained,
+              overdue,
+            }}
+          />
         )}
 
         {unscoped && (
@@ -416,159 +420,7 @@ export default async function DashboardPage({
               )}
             </>
           )
-        ) : (
-          <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label={user.role === "agent" ? "Me" : "Employees"}
-              value={summary.totalEmployees}
-              hint={
-                periodUnmeasured > 0
-                  ? `${periodMeasured} with data · ${periodUnmeasured} without`
-                  : period?.label
-              }
-            />
-            <StatCard
-              label="Passing PAR"
-              value={parMetrics.length === 0 ? "—" : parPassing}
-              tone={parMetrics.length === 0 ? "default" : "pass"}
-              hint={
-                parMetrics.length === 0
-                  ? "No production rate scored this period"
-                  : `of ${parMetrics.length} scored${parTarget === null ? "" : ` · target ${parTarget.toFixed(2)}`}`
-              }
-            />
-            <StatCard label="At risk" value={periodAtRisk} tone="warn" hint={period?.label} />
-            <StatCard
-              label="Agents w/ Failing KPI"
-              value={periodFailing}
-              tone="fail"
-              hint={period?.label}
-            />
-          </div>
-
-          <p className="mt-3 text-xs text-muted">
-            {periodKpis.length === 0
-              ? "No KPI had data for this period, so nobody could be classified."
-              : `Counted across ${periodKpis.length} KPI${periodKpis.length === 1 ? "" : "s"} with data this period: ${periodKpis.join(", ")}.`}
-            {periodKpis.length === 1 &&
-              " One KPI alone is not a full picture — try a wider period."}
-          </p>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Passing MBO"
-              value={mboScored === 0 ? "—" : mboPassing}
-              tone={mboScored === 0 ? "default" : "pass"}
-              hint={
-                mboScored === 0
-                  ? "No MBO scored this period"
-                  : `of ${mboScored} scored · ${period?.label ?? ""}`
-              }
-              href={mboHref("pass")}
-            />
-            <StatCard
-              label="Failing MBO"
-              value={mboScored === 0 ? "—" : mboFailing}
-              tone={mboScored === 0 ? "default" : "fail"}
-              hint={
-                mboScored === 0
-                  ? "Try a wider period"
-                  : "See who and which gate they missed"
-              }
-              href={mboHref("fail")}
-            />
-          </div>
-          </>
-        )}
-
-        {/* Both of these now live inside the agent and supervisor views above,
-            so they render only for the roles that still need them. */}
-        {!isAgent && !isSupervisor && (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <StatCard label="Active action items" value={summary.openIssues} href="/action-items" />
-          <StatCard
-            label="Awaiting acknowledgement"
-            value={summary.awaitingAcknowledgement}
-            tone="warn"
-            href="/action-items"
-          />
-          <StatCard label="Monitoring" value={summary.monitoring} />
-          <StatCard label="Sustained" value={summary.sustained} tone="pass" />
-          <StatCard
-            label="Overdue"
-            value={overdue}
-            tone={overdue > 0 ? "fail" : "default"}
-            hint={overdue > 0 ? "Past the action plan due date" : undefined}
-            href="/action-items"
-          />
-        </div>
-        )}
-
-        {showsRollup && rollup.length > 0 && (
-          <Card className="mt-6">
-            <CardHeader
-              title="By supervisor"
-              subtitle="Where the open work sits across your organization"
-            />
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-cream">
-                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Supervisor</th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">Team</th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">
-                      Failing this week
-                    </th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">
-                      Open items
-                    </th>
-                    <th className="px-6 py-2.5 font-semibold text-ink">
-                      Awaiting ack
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rollup.map((row) => (
-                    <tr
-                      key={row.supervisorName}
-                      className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100"
-                    >
-                      <td className="px-6 py-2">
-                        <Link
-                          href={`/employees?supervisor=${encodeURIComponent(row.supervisorName)}${
-                            week ? `&week=${week}` : ""
-                          }`}
-                          className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                        >
-                          {row.supervisorName}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-muted">
-                        {row.teamSize}
-                      </td>
-                      <td
-                        className={`px-3 py-2 font-mono tabular-nums ${row.failingThisWeek > 0 ?"text-fail" : "text-muted"
-                        }`}
-                      >
-                        {row.failingThisWeek || "—"}
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-ink">
-                        {row.openIssues || "—"}
-                      </td>
-                      <td
-                        className={`px-6 py-2 font-mono tabular-nums ${row.awaitingAcknowledgement > 0 ?"text-warn" : "text-muted"
-                        }`}
-                      >
-                        {row.awaitingAcknowledgement || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
+        ) : null}
 
         {/* Every figure this table held for an agent is now in the KPI cells
             above, each with its own change line, so for them it was the same

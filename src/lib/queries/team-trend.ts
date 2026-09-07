@@ -99,10 +99,10 @@ export async function getTeamKpiTrend(
 
 export interface OrgTrendPoint {
   weekStart: string;
-  /** The plotted value; a percentage for the rate series, a count for items. */
+  /** A percentage for the rate series, a count for open items. */
   value: number;
-  /** Numerator and denominator behind the value, for the tooltip. */
-  of: string;
+  /** What the value is made of, for the tooltip. */
+  caption: string;
 }
 
 export interface OrgTrendSeries {
@@ -111,48 +111,49 @@ export interface OrgTrendSeries {
   /** What the number means, shown beside the chart title. */
   note: string;
   target: number | null;
-  /** Percent series are read against 100; a count has no ceiling. */
+  /** Percent series read against 100; a count has no ceiling. */
   unit: "percent" | "count";
   points: OrgTrendPoint[];
 }
 
+export interface OrgTrend {
+  /** The manager's whole span. */
+  whole: OrgTrendSeries[];
+  /** The same series confined to one supervisor's team, keyed by name. */
+  bySupervisor: Record<string, OrgTrendSeries[]>;
+}
+
 /**
- * Organization-level weekly series for the manager view.
+ * Organization-level weekly series for the manager view, whole-span and per
+ * supervisor.
  *
- * Fail rate and MBO pass rate are counted per week over the same weekly
- * ledger the rest of the app reports from. Open action items are counted as
- * "open at the end of that week" from each issue's own opened and resolved
- * weeks, so the line shows the backlog as it stood, not as it stands now.
+ * The weekly rows are read once and every series is derived from them in
+ * memory rather than issuing a query per supervisor per measure. A manager's
+ * span is a few thousand rows over twelve weeks, which is far cheaper to
+ * group here than to ask the database for a dozen times.
+ *
+ * Open action items are counted as "open at the end of that week" from each
+ * issue's own opened and resolved weeks, so the line shows the backlog as it
+ * stood rather than as it stands now — a resolved issue should not retitle
+ * history as though it was never open.
  */
 export async function getOrgTrend(
-  employeeIds: string[],
+  roster: Array<{ employeeId: string; supervisorName: string | null }>,
   weekStarts: string[],
-): Promise<OrgTrendSeries[]> {
-  if (employeeIds.length === 0 || weekStarts.length === 0) return [];
+): Promise<OrgTrend> {
+  if (roster.length === 0 || weekStarts.length === 0) return { whole: [], bySupervisor: {} };
   const weeks = [...weekStarts].sort();
-  const lastWeek = weeks[weeks.length - 1];
+  const employeeIds = roster.map((r) => r.employeeId);
 
-  const [failRows, mboRows, issues] = await Promise.all([
+  const [rows, issues] = await Promise.all([
     db
       .select({
+        employeeId: weeklyMetricResults.employeeId,
         weekStart: weeklyMetricResults.weekStart,
-        failing: sql<number>`count(distinct ${weeklyMetricResults.employeeId}) filter (where ${weeklyMetricResults.status} = 'fail')::int`,
-        evaluated: sql<number>`count(distinct ${weeklyMetricResults.employeeId})::int`,
-      })
-      .from(weeklyMetricResults)
-      .where(
-        and(
-          inArray(weeklyMetricResults.employeeId, employeeIds),
-          inArray(weeklyMetricResults.weekStart, weeks),
-        ),
-      )
-      .groupBy(weeklyMetricResults.weekStart),
-    db
-      .select({
-        weekStart: weeklyMetricResults.weekStart,
-        // MBO is a share of gates met, so clearing every gate is exactly 100.
-        passing: sql<number>`count(*) filter (where ${weeklyMetricResults.actualValue} >= 100)::int`,
-        scored: sql<number>`count(*)::int`,
+        kpiCode: kpiDefinitions.code,
+        kpiName: kpiDefinitions.name,
+        status: weeklyMetricResults.status,
+        actualValue: weeklyMetricResults.actualValue,
       })
       .from(weeklyMetricResults)
       .innerJoin(kpiDefinitions, sql`${kpiDefinitions.id} = ${weeklyMetricResults.kpiId}`)
@@ -160,12 +161,11 @@ export async function getOrgTrend(
         and(
           inArray(weeklyMetricResults.employeeId, employeeIds),
           inArray(weeklyMetricResults.weekStart, weeks),
-          sql`${kpiDefinitions.code} = 'MBO'`,
         ),
-      )
-      .groupBy(weeklyMetricResults.weekStart),
+      ),
     db
       .select({
+        employeeId: performanceIssues.employeeId,
         openedWeek: performanceIssues.openedWeek,
         resolvedWeek: performanceIssues.resolvedWeek,
       })
@@ -173,72 +173,113 @@ export async function getOrgTrend(
       .where(
         and(
           inArray(performanceIssues.employeeId, employeeIds),
-          lte(performanceIssues.openedWeek, lastWeek),
-          or(
-            isNull(performanceIssues.resolvedWeek),
-            gt(performanceIssues.resolvedWeek, weeks[0]),
-          ),
+          lte(performanceIssues.openedWeek, weeks[weeks.length - 1]),
+          or(isNull(performanceIssues.resolvedWeek), gt(performanceIssues.resolvedWeek, weeks[0])),
         ),
       ),
   ]);
 
-  const failByWeek = new Map(failRows.map((r) => [r.weekStart, r]));
-  const mboByWeek = new Map(mboRows.map((r) => [r.weekStart, r]));
+  // KPI display names, in the order the ledger returned them; the view sorts.
+  const kpiNames = new Map<string, string>();
+  for (const row of rows) kpiNames.set(row.kpiCode, row.kpiName);
 
-  const failRate: OrgTrendPoint[] = [];
-  const mboPass: OrgTrendPoint[] = [];
-  const openItems: OrgTrendPoint[] = [];
+  const build = (ids: Set<string>): OrgTrendSeries[] => {
+    const mine = rows.filter((r) => ids.has(r.employeeId));
+    const myIssues = issues.filter((i) => ids.has(i.employeeId));
 
-  for (const week of weeks) {
-    const f = failByWeek.get(week);
-    if (f && f.evaluated > 0) {
-      failRate.push({
-        weekStart: week,
-        value: (f.failing / f.evaluated) * 100,
-        of: `${f.failing} of ${f.evaluated} evaluated`,
-      });
+    const failRate: OrgTrendPoint[] = [];
+    const mboPass: OrgTrendPoint[] = [];
+    const openItems: OrgTrendPoint[] = [];
+    const perKpi = new Map<string, OrgTrendPoint[]>();
+
+    for (const week of weeks) {
+      const wk = mine.filter((r) => r.weekStart === week);
+
+      // Someone is failing the week if any one of their KPIs failed, so this
+      // counts people rather than results.
+      const evaluated = new Set(wk.map((r) => r.employeeId));
+      const failingPeople = new Set(wk.filter((r) => r.status === "fail").map((r) => r.employeeId));
+      if (evaluated.size > 0) {
+        failRate.push({
+          weekStart: week,
+          value: (failingPeople.size / evaluated.size) * 100,
+          caption: `${failingPeople.size} of ${evaluated.size} evaluated`,
+        });
+      }
+
+      // MBO is a share of gates met, so clearing every gate is exactly 100.
+      const mbo = wk.filter((r) => r.kpiCode === "MBO");
+      if (mbo.length > 0) {
+        const passing = mbo.filter((r) => r.actualValue >= 100).length;
+        mboPass.push({
+          weekStart: week,
+          value: (passing / mbo.length) * 100,
+          caption: `${passing} of ${mbo.length} scored`,
+        });
+      }
+
+      const open = myIssues.filter(
+        (i) => i.openedWeek <= week && (i.resolvedWeek === null || i.resolvedWeek > week),
+      ).length;
+      openItems.push({ weekStart: week, value: open, caption: `${open} open at week end` });
+
+      for (const [code] of kpiNames) {
+        const forKpi = wk.filter((r) => r.kpiCode === code);
+        if (forKpi.length === 0) continue;
+        const failed = forKpi.filter((r) => r.status === "fail").length;
+        const points = perKpi.get(code) ?? [];
+        points.push({
+          weekStart: week,
+          value: (failed / forKpi.length) * 100,
+          caption: `${failed} of ${forKpi.length} weekly results`,
+        });
+        perKpi.set(code, points);
+      }
     }
-    const m = mboByWeek.get(week);
-    if (m && m.scored > 0) {
-      mboPass.push({
-        weekStart: week,
-        value: (m.passing / m.scored) * 100,
-        of: `${m.passing} of ${m.scored} scored`,
-      });
-    }
-    // Counted from each issue's own span rather than its status today, so a
-    // week that has since been worked down still shows the backlog it had.
-    const open = issues.filter(
-      (i) => i.openedWeek <= week && (i.resolvedWeek === null || i.resolvedWeek > week),
-    ).length;
-    openItems.push({ weekStart: week, value: open, of: `${open} open at week end` });
+
+    const series: OrgTrendSeries[] = [
+      {
+        key: "FAIL_RATE",
+        label: "Fail rate",
+        note: "share of agents failing at least one KPI",
+        target: null,
+        unit: "percent",
+        points: failRate,
+      },
+      {
+        key: "MBO_PASS",
+        label: "MBO pass rate",
+        note: "share clearing every gate",
+        target: 90,
+        unit: "percent",
+        points: mboPass,
+      },
+      {
+        key: "OPEN_ITEMS",
+        label: "Open action items",
+        note: "active at week end",
+        target: null,
+        unit: "count",
+        points: openItems,
+      },
+      ...[...perKpi.entries()].map(([code, points]) => ({
+        key: `KPI_${code}`,
+        label: `${kpiNames.get(code) ?? code} fail rate`,
+        note: `share of weekly ${kpiNames.get(code) ?? code} results below target`,
+        target: null,
+        unit: "percent" as const,
+        points,
+      })),
+    ];
+
+    return series.filter((s) => s.points.length > 0);
+  };
+
+  const bySupervisor: Record<string, OrgTrendSeries[]> = {};
+  for (const name of new Set(roster.map((r) => r.supervisorName).filter((n): n is string => Boolean(n)))) {
+    const ids = new Set(roster.filter((r) => r.supervisorName === name).map((r) => r.employeeId));
+    bySupervisor[name] = build(ids);
   }
 
-  const all: OrgTrendSeries[] = [
-    {
-      key: "FAIL_RATE",
-      label: "Fail rate",
-      note: "share of agents failing at least one KPI",
-      target: null,
-      unit: "percent",
-      points: failRate,
-    },
-    {
-      key: "MBO_PASS",
-      label: "MBO pass rate",
-      note: "share clearing every gate",
-      target: 90,
-      unit: "percent",
-      points: mboPass,
-    },
-    {
-      key: "OPEN_ITEMS",
-      label: "Open action items",
-      note: "active at week end",
-      target: null,
-      unit: "count",
-      points: openItems,
-    },
-  ];
-  return all.filter((s) => s.points.length > 0);
+  return { whole: build(new Set(employeeIds)), bySupervisor };
 }
