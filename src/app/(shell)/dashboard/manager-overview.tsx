@@ -33,6 +33,16 @@ export async function ManagerOverview({
 
   const [analytics, mbo] = await Promise.all([getAnalytics(filters), getMboOverview(filters)]);
 
+  // The tree already carries a passRate at every level, supervisor included
+  // — no separate query, just flattened out of the site→manager→supervisor
+  // nesting into one flat, cross-site list. Someone with nobody scored yet
+  // this period has no rate to show at all, not a misleading 0%.
+  const supervisorMbo = mbo.sites
+    .flatMap((site) => site.children)
+    .flatMap((managerNode) => managerNode.children)
+    .filter((s) => s.scored > 0)
+    .sort((a, b) => (a.passRate ?? 0) - (b.passRate ?? 0));
+
   if (analytics.totalEmployees === 0) {
     return (
       <Card className="mb-6">
@@ -113,6 +123,21 @@ export async function ManagerOverview({
               caption: `${s.employees} employees · ${s.openIssues} open items`,
             }))}
             emptyMessage="No supervisors recorded in your span."
+          />
+        </ChartFrame>
+
+        <ChartFrame
+          title="MBO pass rate by supervisor"
+          subtitle={period?.label ?? "All weeks"}
+        >
+          <BarList
+            tone="better-when-higher"
+            rows={supervisorMbo.map((s) => ({
+              label: s.label,
+              value: s.passRate ?? 0,
+              caption: `${s.passing} of ${s.scored} clearing every gate · ${s.headcount} people`,
+            }))}
+            emptyMessage="No one in your span has an MBO score for this period."
           />
         </ChartFrame>
 
