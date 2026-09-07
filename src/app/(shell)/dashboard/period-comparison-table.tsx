@@ -50,6 +50,12 @@ export function PeriodComparisonTable({
   /** True when the viewer is the only row — an agent looking at themselves. */
   forSelf?: boolean;
 }) {
+  // DPU and DPO are MBO gates, not standalone results to read across a team:
+  // they sit at 100.00 / "no change" for almost everyone and cost two columns
+  // of a table that already scrolls sideways. They keep counting toward MBO,
+  // and the MBO page still shows which gate someone missed.
+  const kpis = data.kpis.filter((kpi) => kpi.code !== "DPU" && kpi.code !== "DPO");
+
   return (
     <Card className="mt-6">
       <CardHeader
@@ -63,7 +69,7 @@ export function PeriodComparisonTable({
         }
       />
 
-      {data.kpis.length === 0 ? (
+      {kpis.length === 0 ? (
         <EmptyState
           title="No data this month"
           description={
@@ -80,7 +86,7 @@ export function PeriodComparisonTable({
                 <th className={`${HEAD} sticky left-0 z-10 bg-cream px-6 text-left`}>
                   {forSelf ? "Me" : "Employee"}
                 </th>
-                {data.kpis.map((kpi) => (
+                {kpis.map((kpi) => (
                   <th key={kpi.code} className={`${HEAD} min-w-28`}>
                     {kpi.name}
                   </th>
@@ -99,7 +105,7 @@ export function PeriodComparisonTable({
                       {row.name}
                     </Link>
                   </td>
-                  {data.kpis.map((kpi) => (
+                  {kpis.map((kpi) => (
                     <td key={kpi.code} className="px-3 py-2">
                       <Cell cell={row.cells[kpi.code]} kpiCode={kpi.code} />
                     </td>
