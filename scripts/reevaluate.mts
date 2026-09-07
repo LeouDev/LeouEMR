@@ -113,11 +113,22 @@ for (let i = 0; i < disposable.length; i += CHUNK) {
   await db.delete(performanceIssues).where(inArray(performanceIssues.id, slice));
 }
 
-// 3. Rewind surviving issues so the engine replays every week against them.
+// 3. Rewind surviving issues so the engine replays their weeks against them.
+//
+// Rewound to the day before the issue opened, not to null. The engine skips
+// any week at or before lastEvaluatedWeek, so this replays exactly the weeks
+// the issue was alive for and no earlier ones. Rewinding to null replayed the
+// employee's whole history against it, and passing weeks from before the
+// failure that opened the issue counted toward closing it: one attendance
+// issue opened in August was completed on five passing weeks from May and
+// June, and stamped resolved a month before it opened.
 if (withHumanWork.size > 0) {
   await db
     .update(performanceIssues)
-    .set({ lastEvaluatedWeek: null, consecutivePassingWeeks: 0 })
+    .set({
+      lastEvaluatedWeek: sql`${performanceIssues.openedWeek} - interval '1 day'`,
+      consecutivePassingWeeks: 0,
+    })
     .where(inArray(performanceIssues.id, [...withHumanWork]));
   await db
     .delete(weeklyIssueHistory)

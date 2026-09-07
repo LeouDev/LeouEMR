@@ -17,7 +17,8 @@
     "verify:four-week": "tsx --env-file=.env.local scripts/verify-four-week-rule.mts",
     "verify:scope": "tsx --env-file=.env.local scripts/verify-access-scope.mts",
     "reevaluate": "tsx --env-file=.env.local scripts/reevaluate.mts",
-    "purge:unsourced": "tsx --env-file=.env.local scripts/purge-unsourced-results.mts"
+    "purge:unsourced": "tsx --env-file=.env.local scripts/purge-unsourced-results.mts",
+    "delete-issue": "tsx --env-file=.env.local scripts/delete-issue.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",
