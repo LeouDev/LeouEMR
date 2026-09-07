@@ -29,23 +29,31 @@ export function ImportWizard() {
     }
 
     setBusy("uploading");
-    const ticket = await createUploadTicket(file.name, file.size);
-    if (!ticket.ok) {
-      setError(ticket.error);
-      setBusy(null);
-      return null;
-    }
+    try {
+      const ticket = await createUploadTicket(file.name, file.size);
+      if (!ticket.ok) {
+        setError(ticket.error);
+        return null;
+      }
 
-    const { error: uploadError } = await createSupabaseBrowserClient()
-      .storage.from(ticket.bucket)
-      .uploadToSignedUrl(ticket.path, ticket.token, file);
-    if (uploadError) {
-      setError(`Upload failed: ${uploadError.message}`);
-      setBusy(null);
-      return null;
-    }
+      const { error: uploadError } = await createSupabaseBrowserClient()
+        .storage.from(ticket.bucket)
+        .uploadToSignedUrl(ticket.path, ticket.token, file);
+      if (uploadError) {
+        setError(`Upload failed: ${uploadError.message}`);
+        return null;
+      }
 
-    return { path: ticket.path, name: file.name };
+      return { path: ticket.path, name: file.name };
+    } catch (cause) {
+      // A dropped connection or an unhandled server error throws rather
+      // than returning — without this the UI would sit on "Uploading…"
+      // forever with no explanation.
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return null;
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function analyze() {
