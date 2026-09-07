@@ -20,7 +20,8 @@
     "purge:unsourced": "tsx --env-file=.env.local scripts/purge-unsourced-results.mts",
     "delete-issue": "tsx --env-file=.env.local scripts/delete-issue.mts",
     "fix:resolution": "tsx --env-file=.env.local scripts/fix-backwards-resolution.mts",
-    "check:integrity": "tsx --env-file=.env.local scripts/check-integrity.mts"
+    "check:integrity": "tsx --env-file=.env.local scripts/check-integrity.mts",
+    "migrate:0039": "tsx --env-file=.env.local scripts/apply-0039.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",
