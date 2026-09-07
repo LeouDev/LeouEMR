@@ -17,6 +17,8 @@ export interface SupervisorRow {
   site: string | null;
   teamSize: number;
   failing: number;
+  /** How many of the team actually had a result in the week Failing counts. */
+  evaluated: number;
   openIssues: number;
   awaiting: number;
   /** Share of the team clearing every MBO gate, or null with nobody scored. */
@@ -36,14 +38,17 @@ export interface ManagerStats {
   worstKpi: KpiBreakdown | null;
 }
 
-/** Above this share of a team failing, the row is the story rather than a footnote. */
+/** Above this share of the evaluated team failing, the row is the story rather than a footnote. */
 const TEAM_ALARM = 0.3;
 /** The business's own MBO bar, and the one the stat card upstream already uses. */
 const MBO_BAR = 90;
+/** Below this share meeting target, a KPI is worth calling out — the old 20% fail line, inverted. */
+const ACHIEVED_BAR = 80;
 
 export function ManagerDashboard({
   stats,
   supervisors,
+  asOfLabel,
   trend,
   kpis,
   topAgents,
@@ -54,6 +59,8 @@ export function ManagerDashboard({
 }: {
   stats: ManagerStats;
   supervisors: SupervisorRow[];
+  /** The week Failing is measured over — the newest one inside the range. */
+  asOfLabel: string | null;
   trend: OrgTrend;
   kpis: KpiBreakdown[];
   topAgents: TopAgent[];
@@ -94,15 +101,24 @@ export function ManagerDashboard({
       <div>
         <h6 className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">Summary</h6>
         <div className="mt-1.5 font-sans text-[56px] leading-none font-extrabold">
-          <span className={stats.failing > 0 ? "text-fail" : "text-pass"}>{stats.failing}</span>
-          <span className="text-ink-faint">/{stats.total}</span>
+          <span className={stats.failing === 0 ? "text-pass" : "text-ink"}>
+            {Math.max(0, stats.withData - stats.failing)}
+          </span>
+          <span className="text-ink-faint">/{stats.withData}</span>
         </div>
         <p className="mt-1.5 text-[13px] text-ink">
-          agent{stats.failing === 1 ? "" : "s"} failing at least one KPI
+          agent{stats.withData - stats.failing === 1 ? "" : "s"} meeting every KPI
           {stats.asOfLabel ? `, week of ${stats.asOfLabel}` : ""}
         </p>
+        {/* The count needing attention keeps its own line: inverting a rate
+            is a change of framing, losing the number to act on is not. */}
         <p className="mt-0.5 text-xs text-muted">
-          {stats.withData} of {stats.total} with data · any KPI, not just MBO
+          {stats.failing > 0 ? (
+            <span className="font-semibold text-fail">{stats.failing} below target</span>
+          ) : (
+            <span>none below target</span>
+          )}{" "}
+          · {stats.withData} of {stats.total} with data · any KPI, not just MBO
         </p>
       </div>
 
@@ -126,16 +142,19 @@ export function ManagerDashboard({
           </span>
         </div>
         <div className="flex justify-between gap-2">
-          <span className="text-muted">Worst KPI</span>
+          <span className="text-muted">Weakest KPI</span>
           {stats.worstKpi ? (
             <button
               type="button"
               onClick={() => select(`KPI_${stats.worstKpi!.code}`)}
               className={`text-right ${
-                stats.worstKpi.failRate >= 20 ? "font-semibold text-fail" : "text-ink"
+                100 - stats.worstKpi.failRate <= ACHIEVED_BAR
+                  ? "font-semibold text-fail"
+                  : "text-ink"
               } hover:underline`}
             >
-              {stats.worstKpi.name} · {stats.worstKpi.failing}/{stats.worstKpi.total} fail
+              {stats.worstKpi.name} · {stats.worstKpi.total - stats.worstKpi.failing}/
+              {stats.worstKpi.total} met
             </button>
           ) : (
             <span className="text-muted">—</span>
@@ -175,7 +194,9 @@ export function ManagerDashboard({
               <div className="grid border-b-2 border-ink text-[11px] font-bold tracking-[0.08em] text-muted uppercase lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr]">
                 <div className="py-3 lg:pl-6">Supervisor</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">Team</div>
-                <div className="hidden py-3 pr-5 text-right lg:block">Failing</div>
+                <div className="hidden py-3 pr-5 text-right lg:block">
+                  Failing{asOfLabel ? <span className="block font-normal normal-case tracking-normal">wk of {asOfLabel}</span> : null}
+                </div>
                 <div className="hidden py-3 pr-5 text-right lg:block">MBO pass</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">Open</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">Awaiting ack</div>
@@ -183,7 +204,7 @@ export function ManagerDashboard({
 
               {supervisors.map((s) => {
                 const isScope = scope === s.name;
-                const alarming = s.teamSize > 0 && s.failing / s.teamSize >= TEAM_ALARM;
+                const alarming = s.evaluated > 0 && s.failing / s.evaluated >= TEAM_ALARM;
                 const mboLow = s.mboPassRate !== null && s.mboPassRate < MBO_BAR;
                 return (
                   <button
@@ -202,12 +223,12 @@ export function ManagerDashboard({
                     <Figure value={s.teamSize} label="team" />
                     <Figure
                       value={s.failing}
-                      label={s.teamSize > 0 ? `${Math.round((s.failing / s.teamSize) * 100)}% of team` : "—"}
+                      label={s.evaluated > 0 ? `of ${s.evaluated} evaluated` : "nobody evaluated"}
                       tone={alarming ? "fail" : undefined}
                     />
                     <Figure
                       value={s.mboPassRate === null ? "—" : `${s.mboPassRate.toFixed(0)}%`}
-                      label={s.mboScored === 0 ? "nobody scored" : mboLow ? "below 90%" : "on target"}
+                      label={s.mboScored === 0 ? "nobody scored" : `${s.mboPassing} of ${s.mboScored}`}
                       tone={mboLow ? "fail" : undefined}
                     />
                     <Figure value={s.openIssues} label="open" />
@@ -227,9 +248,9 @@ export function ManagerDashboard({
         <div>
           <div className="mb-1.5 flex flex-wrap items-baseline justify-between gap-2">
             <h6 className="text-[11px] font-bold tracking-[0.1em] text-orange-brand uppercase">
-              Fail rate by KPI
+              Achievement by KPI
             </h6>
-            <span className="text-xs text-muted">{periodLabel} · share of weekly results</span>
+            <span className="text-xs text-muted">{periodLabel} · share of weekly results meeting target</span>
           </div>
           {kpis.length === 0 ? (
             <p className="py-6 text-sm text-muted">No KPI had data in this range.</p>
@@ -247,25 +268,27 @@ export function ManagerDashboard({
                     {k.name}
                   </span>
                   <span className="text-[10px] text-muted">
-                    {k.failing} of {k.total}
+                    {k.total - k.failing} of {k.total}
                   </span>
                 </span>
                 <span className="h-2.5 bg-cream-dark">
                   <span
                     className="block h-full"
                     style={{
-                      width: `${Math.min(100, k.failRate)}%`,
+                      width: `${Math.min(100, 100 - k.failRate)}%`,
                       backgroundColor:
-                        k.failRate >= 20 ? "var(--color-orange-brand)" : "var(--color-ink)",
+                        100 - k.failRate <= ACHIEVED_BAR
+                          ? "var(--color-orange-brand)"
+                          : "var(--color-ink)",
                     }}
                   />
                 </span>
                 <span
                   className={`text-right font-mono font-extrabold tabular-nums ${
-                    k.failRate >= 20 ? "text-fail" : "text-ink"
+                    100 - k.failRate <= ACHIEVED_BAR ? "text-fail" : "text-ink"
                   }`}
                 >
-                  {k.failRate.toFixed(1)}%
+                  {(100 - k.failRate).toFixed(1)}%
                 </span>
               </div>
             ))

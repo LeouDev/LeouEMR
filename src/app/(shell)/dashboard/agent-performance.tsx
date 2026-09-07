@@ -115,14 +115,23 @@ export function AgentPerformance({
       <div>
         <h6 className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">Summary</h6>
         <div className="mt-1.5 font-sans text-[56px] leading-none font-extrabold">
-          <span className={failing.length > 0 ? "text-fail" : "text-pass"}>{failing.length}</span>
+          <span className={failing.length === 0 ? "text-pass" : "text-ink"}>
+            {scored.length - failing.length}
+          </span>
           <span className="text-ink-faint">/{scored.length}</span>
         </div>
         <p className="mt-1.5 text-[13px] text-ink">
           {scored.length === 0
             ? "Nothing scored this period"
-            : `KPI${failing.length === 1 ? "" : "s"} below target · ${periodLabel}`}
+            : `KPI${scored.length - failing.length === 1 ? "" : "s"} met · ${periodLabel}`}
         </p>
+        {/* What to work on is still the point, so the shortfall keeps a line
+            of its own rather than being inverted out of sight. */}
+        {failing.length > 0 && (
+          <p className="mt-0.5 text-xs font-semibold text-fail">
+            {failing.length} below target
+          </p>
+        )}
       </div>
 
       {groups.length > 1 && (
@@ -135,7 +144,7 @@ export function AgentPerformance({
                 {below > 0 ? (
                   <span className="font-semibold text-fail">{below} below</span>
                 ) : (
-                  <span className="text-ink">on target</span>
+                  <span className="text-ink">all met</span>
                 )}
               </div>
             );

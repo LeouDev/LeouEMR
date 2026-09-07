@@ -36,14 +36,16 @@ export interface TeamSummaryStats {
 }
 
 /**
- * A third of the team below target is where an average stops being the story.
+ * Below two thirds of the team meeting a target, the measure itself is the
+ * story rather than a few individuals.
  *
- * Below that a team reads as a few individuals needing attention — which the
- * agent table underneath names. At or above it the measure itself is the
- * problem, and the cell says so in red rather than leaving a healthy-looking
- * mean to speak for a team that is not healthy.
+ * Above it a team reads as a handful of people needing attention, which the
+ * agent table underneath names. At or below it the cell says so in red rather
+ * than leaving a healthy-looking mean to speak for a team that is not
+ * healthy. Stated as achievement so the whole view reads the same way: up is
+ * good, and a number falling is always the thing to look at.
  */
-const WIDESPREAD = 1 / 3;
+const ACHIEVED_BAR = 2 / 3;
 
 export function SupervisorOverview({
   kpis,
@@ -72,7 +74,7 @@ export function SupervisorOverview({
         .map((s) => ({
           key: s.kpiCode,
           label: s.kpiName,
-          note: "line = team average · bars = agents below target",
+          note: "line = team average · bars = agents meeting target",
           target: s.target,
           format: s.kpiCode,
           points: s.points.map((p) => ({
@@ -80,8 +82,8 @@ export function SupervisorOverview({
             value: p.avg,
             // The mean alone hides the shape of a team: one agent at 40% and
             // nine at 100% averages to a comfortable 94%.
-            bar: { value: p.below, of: p.scored, label: `${p.below} below` },
-            caption: `${p.below} of ${p.scored} below target`,
+            bar: { value: p.scored - p.below, of: p.scored, label: `${p.scored - p.below} met` },
+            caption: `${p.scored - p.below} of ${p.scored} meeting target`,
           })),
         })),
     [series],
@@ -90,21 +92,34 @@ export function SupervisorOverview({
   // Open on the measure most of the team is missing, not merely the first one.
   const worst = [...kpis]
     .filter((k) => k.scored > 0 && k.below > 0 && shellSeries.some((s) => s.key === k.code))
-    .sort((a, b) => b.below / b.scored - a.below / a.scored || orderIndex(a.code) - orderIndex(b.code))[0];
+    .sort(
+      (a, b) =>
+        (a.scored - a.below) / a.scored - (b.scored - b.below) / b.scored ||
+        orderIndex(a.code) - orderIndex(b.code),
+    )[0];
 
   const summary = (
     <>
       <div>
         <h6 className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">Summary</h6>
         <div className="mt-1.5 font-sans text-[56px] leading-none font-extrabold">
-          <span className={stats.failing > 0 ? "text-fail" : "text-pass"}>{stats.failing}</span>
-          <span className="text-ink-faint">/{stats.total}</span>
+          <span className={stats.failing === 0 ? "text-pass" : "text-ink"}>
+            {Math.max(0, stats.measured - stats.failing)}
+          </span>
+          <span className="text-ink-faint">/{stats.measured}</span>
         </div>
         <p className="mt-1.5 text-[13px] text-ink">
-          agent{stats.failing === 1 ? "" : "s"} with a failing KPI · {periodLabel}
+          agent{stats.measured - stats.failing === 1 ? "" : "s"} meeting every KPI · {periodLabel}
         </p>
+        {/* The count needing attention is still the number a supervisor acts
+            on, so it keeps its own line rather than being inverted away. */}
         <p className="mt-0.5 text-xs text-muted">
-          {stats.atRisk} more at risk · {stats.measured} of {stats.total} with data
+          {stats.failing > 0 ? (
+            <span className="font-semibold text-fail">{stats.failing} below target</span>
+          ) : (
+            <span>none below target</span>
+          )}{" "}
+          · {stats.atRisk} at risk · {stats.measured} of {stats.total} with data
         </p>
       </div>
 
@@ -153,7 +168,8 @@ export function SupervisorOverview({
                 {group.kpis.map((kpi) => {
                   const isCharted = selected === kpi.code;
                   const canChart = chartable.has(kpi.code);
-                  const widespread = kpi.scored > 0 && kpi.below / kpi.scored >= WIDESPREAD;
+                  const met = kpi.scored - kpi.below;
+                  const weak = kpi.scored > 0 && met / kpi.scored <= ACHIEVED_BAR;
                   return (
                     <button
                       key={kpi.code}
@@ -176,7 +192,7 @@ export function SupervisorOverview({
                       <span className="flex items-baseline gap-2">
                         <span
                           className={`font-mono text-[34px] leading-none font-extrabold tabular-nums ${
-                            widespread ? "text-fail" : "text-ink"
+                            weak ? "text-fail" : "text-ink"
                           }`}
                         >
                           {formatMetric(kpi.avg, kpi.code)}
@@ -191,8 +207,8 @@ export function SupervisorOverview({
                         {kpi.below === 0 ? (
                           <span>everyone on target</span>
                         ) : (
-                          <span className={widespread ? "text-fail" : "text-muted"}>
-                            {kpi.below} of {kpi.scored} below
+                          <span className={weak ? "text-fail" : "text-muted"}>
+                            {met} of {kpi.scored} met
                           </span>
                         )}
                       </span>

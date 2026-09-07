@@ -8,7 +8,7 @@ import { formatMetric } from "@/components/ui";
  * One plottable series, whatever the view.
  *
  * Deliberately not tied to a KPI: the agent and supervisor views chart KPIs,
- * the manager view charts fail rate, MBO pass rate and open items, and all
+ * the manager view charts achievement, MBO pass rate and open items, and all
  * three want the same chips, the same range toggle and the same chart.
  */
 export interface ShellSeries {

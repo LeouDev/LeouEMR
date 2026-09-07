@@ -127,6 +127,11 @@ export interface OrgTrend {
  * Organization-level weekly series for the manager view, whole-span and per
  * supervisor.
  *
+ * Stated as achievement rather than failure — the share meeting target, not
+ * the share missing it. The two carry the same information, but a chart where
+ * up is good reads the same way as every other chart on the page, and mixing
+ * the two polarities in one row of chips invites reading a rise as a problem.
+ *
  * The weekly rows are read once and every series is derived from them in
  * memory rather than issuing a query per supervisor per measure. A manager's
  * span is a few thousand rows over twelve weeks, which is far cheaper to
@@ -187,7 +192,7 @@ export async function getOrgTrend(
     const mine = rows.filter((r) => ids.has(r.employeeId));
     const myIssues = issues.filter((i) => ids.has(i.employeeId));
 
-    const failRate: OrgTrendPoint[] = [];
+    const passRate: OrgTrendPoint[] = [];
     const mboPass: OrgTrendPoint[] = [];
     const openItems: OrgTrendPoint[] = [];
     const perKpi = new Map<string, OrgTrendPoint[]>();
@@ -200,10 +205,11 @@ export async function getOrgTrend(
       const evaluated = new Set(wk.map((r) => r.employeeId));
       const failingPeople = new Set(wk.filter((r) => r.status === "fail").map((r) => r.employeeId));
       if (evaluated.size > 0) {
-        failRate.push({
+        const met = evaluated.size - failingPeople.size;
+        passRate.push({
           weekStart: week,
-          value: (failingPeople.size / evaluated.size) * 100,
-          caption: `${failingPeople.size} of ${evaluated.size} evaluated`,
+          value: (met / evaluated.size) * 100,
+          caption: `${met} of ${evaluated.size} evaluated`,
         });
       }
 
@@ -226,12 +232,12 @@ export async function getOrgTrend(
       for (const [code] of kpiNames) {
         const forKpi = wk.filter((r) => r.kpiCode === code);
         if (forKpi.length === 0) continue;
-        const failed = forKpi.filter((r) => r.status === "fail").length;
+        const met = forKpi.filter((r) => r.status !== "fail").length;
         const points = perKpi.get(code) ?? [];
         points.push({
           weekStart: week,
-          value: (failed / forKpi.length) * 100,
-          caption: `${failed} of ${forKpi.length} weekly results`,
+          value: (met / forKpi.length) * 100,
+          caption: `${met} of ${forKpi.length} weekly results`,
         });
         perKpi.set(code, points);
       }
@@ -239,12 +245,12 @@ export async function getOrgTrend(
 
     const series: OrgTrendSeries[] = [
       {
-        key: "FAIL_RATE",
-        label: "Fail rate",
-        note: "share of agents failing at least one KPI",
+        key: "PASS_RATE",
+        label: "Meeting every KPI",
+        note: "share of agents meeting every KPI they were scored on",
         target: null,
         unit: "percent",
-        points: failRate,
+        points: passRate,
       },
       {
         key: "MBO_PASS",
@@ -264,8 +270,8 @@ export async function getOrgTrend(
       },
       ...[...perKpi.entries()].map(([code, points]) => ({
         key: `KPI_${code}`,
-        label: `${kpiNames.get(code) ?? code} fail rate`,
-        note: `share of weekly ${kpiNames.get(code) ?? code} results below target`,
+        label: `${kpiNames.get(code) ?? code} achieved`,
+        note: `share of weekly ${kpiNames.get(code) ?? code} results meeting target`,
         target: null,
         unit: "percent" as const,
         points,

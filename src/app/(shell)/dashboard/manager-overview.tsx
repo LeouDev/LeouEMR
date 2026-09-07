@@ -79,9 +79,18 @@ export async function ManagerOverview({
   const trend = await getOrgTrend(roster, weeks.slice(0, 12));
 
   const rollupByName = new Map(rollup.map((r) => [r.supervisorName, r]));
+  // Failing comes from the analytics breakdown rather than the rollup: the
+  // rollup counts the newest week that exists anywhere, while the summary
+  // above counts the newest week inside the selected range. Those are
+  // different weeks whenever the range is not the newest one, and taking one
+  // from each put "0 failing" on every row beside a summary saying 15.
+  const failingByName = new Map(analytics.bySupervisor.map((g) => [g.label, g]));
   const supervisors: SupervisorRow[] = [...bySupervisor.entries()]
     .map(([name, totals]) => {
+      // Open and awaiting are a work queue, not a period measure, so they
+      // stay current — matching the action-item block in the summary.
       const counts = rollupByName.get(name);
+      const evaluated = failingByName.get(name);
       return {
         name,
         site: totals.site,
@@ -89,7 +98,8 @@ export async function ManagerOverview({
         // results are in this period. They differ after a realignment, and
         // the roster the numbers came from is the honest one.
         teamSize: totals.headcount,
-        failing: counts?.failingThisWeek ?? 0,
+        failing: evaluated?.failing ?? 0,
+        evaluated: evaluated?.employees ?? 0,
         openIssues: counts?.openIssues ?? 0,
         awaiting: counts?.awaitingAcknowledgement ?? 0,
         mboPassRate: totals.scored > 0 ? (totals.passing / totals.scored) * 100 : null,
@@ -139,6 +149,7 @@ export async function ManagerOverview({
           worstKpi,
         }}
         supervisors={supervisors}
+        asOfLabel={analytics.asOfLabel}
         trend={trend}
         kpis={[...analytics.kpis].sort((a, b) => b.failRate - a.failRate)}
         topAgents={mbo.topAgents.slice(0, 6)}
