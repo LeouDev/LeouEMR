@@ -6,9 +6,12 @@ import type { EmployeeMatrix } from "@/lib/queries/performance";
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
 const STICKY = "sticky left-0 z-10 min-w-52 bg-surface px-6 py-2";
 
-function toneFor(status: "pass" | "warning" | "fail"): string {
+function toneFor(status: "pass" | "warning" | "fail" | null): string {
   if (status === "fail") return "bg-fail-bg font-semibold text-fail";
   if (status === "warning") return "bg-warn-bg text-warn";
+  // No target means nothing to pass or fail — case rate reads as a plain
+  // figure rather than borrowing the green of a measure that cleared a bar.
+  if (status === null) return "text-ink";
   return "text-pass";
 }
 

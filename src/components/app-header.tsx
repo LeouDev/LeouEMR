@@ -107,7 +107,19 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   ];
 
   return (
-    <header className="border-b-2 border-orange-brand bg-navy-800">
+    /*
+     * Pinned to the top: the tabs and the account controls are wanted at any
+     * scroll depth, and these pages are long — an agent table runs to forty
+     * rows, the trend charts sit below the fold, and getting back to the nav
+     * meant scrolling all the way up.
+     *
+     * z-30 clears the z-20 the long tables use for their own sticky headers.
+     * Those stick inside their own overflow containers rather than to the
+     * viewport, so the two never compete for the same line — they just need
+     * to pass under this one rather than through it. The background is opaque
+     * for the same reason.
+     */
+    <header className="sticky top-0 z-30 border-b-2 border-orange-brand bg-navy-800">
       <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2.5">
         {/* Purely decorative, sits behind the logo and the identity/actions
             cluster (both given their own stacking order below) and never

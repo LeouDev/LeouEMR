@@ -107,12 +107,14 @@ export async function getEmployeeKpiTrend(
  * the grid and not plot. Unscored, for the same reason it is unscored in the
  * comparison table: each skill carries its own target.
  */
-async function getCaseRateSeries(
+export async function getCaseRateByWeek(
   employeeId: string,
-  /** Ascending week starts. */
+  /** Reporting week starts to cover. */
   weeks: string[],
-): Promise<TrendSeries | null> {
-  const lastWeekEnd = periodContaining("week", weeks[weeks.length - 1]).end;
+): Promise<Map<string, number>> {
+  if (weeks.length === 0) return new Map();
+  const sorted = [...weeks].sort();
+  const lastWeekEnd = periodContaining("week", sorted[sorted.length - 1]).end;
 
   const [rows, refs] = await Promise.all([
     db
@@ -126,7 +128,7 @@ async function getCaseRateSeries(
       .where(
         and(
           eq(skillFacts.employeeId, employeeId),
-          gte(skillFacts.factDate, weeks[0]),
+          gte(skillFacts.factDate, sorted[0]),
           lte(skillFacts.factDate, lastWeekEnd),
         ),
       )
@@ -136,7 +138,7 @@ async function getCaseRateSeries(
 
   // Bucketed with periodContaining rather than by date arithmetic here, so
   // these weeks are the same Saturday-to-Friday weeks the ledger uses.
-  const wanted = new Set(weeks);
+  const wanted = new Set(sorted);
   const totals = new Map<string, { prodWeight: number; cases: number }>();
   for (const row of rows) {
     const ref = refs.get(normalizeSkill(row.skillLabel));
@@ -149,13 +151,21 @@ async function getCaseRateSeries(
     totals.set(weekStart, entry);
   }
 
-  const points: TrendPoint[] = [...totals.entries()]
-    .filter(([, t]) => t.cases > 0 && t.prodWeight > 0)
-    .map(([weekStart, t]) => ({
-      weekStart,
-      value: t.prodWeight / t.cases,
-      status: null,
-    }))
+  const rates = new Map<string, number>();
+  for (const [week, t] of totals) {
+    if (t.cases > 0 && t.prodWeight > 0) rates.set(week, t.prodWeight / t.cases);
+  }
+  return rates;
+}
+
+async function getCaseRateSeries(
+  employeeId: string,
+  /** Ascending week starts. */
+  weeks: string[],
+): Promise<TrendSeries | null> {
+  const rates = await getCaseRateByWeek(employeeId, weeks);
+  const points: TrendPoint[] = [...rates.entries()]
+    .map(([weekStart, value]) => ({ weekStart, value, status: null }))
     .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   if (points.length === 0) return null;

@@ -17,6 +17,7 @@ import {
 } from "@/lib/db/schema";
 import { employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
+import { getCaseRateByWeek } from "./trend";
 
 /** Statuses still requiring attention (not resolved). */
 /**
@@ -473,7 +474,8 @@ export async function getAvailableWeeks(): Promise<string[]> {
 export interface MatrixCell {
   actualValue: number;
   targetValue: number | null;
-  status: "pass" | "warning" | "fail";
+  /** Null where the figure carries no target, so nothing passes or fails it. */
+  status: "pass" | "warning" | "fail" | null;
   sampleSize: number | null;
 }
 
@@ -578,6 +580,28 @@ export async function getEmployeeMatrix(
       status: row.status,
       sampleSize: row.sampleSize,
     });
+  }
+
+  // Case rate is a skill metric with no KPI definition and no row in the
+  // weekly ledger, so it cannot arrive with the query above — but for an
+  // agent scored on it, it is the output measure their PAR is built from, and
+  // the plan showed an empty Cases Per Hour row instead. Unscored: each skill
+  // carries its own target, so there is nothing here to pass or fail.
+  const caseRates = await getCaseRateByWeek(employeeId, weeks);
+  if (caseRates.size > 0) {
+    kpiOrder.set("CASE_RATE", {
+      code: "CASE_RATE",
+      name: "Case Rate",
+      direction: "higher_is_better",
+    });
+    for (const [week, value] of caseRates) {
+      cells.set(`CASE_RATE|${week}`, {
+        actualValue: value,
+        targetValue: null,
+        status: null,
+        sampleSize: null,
+      });
+    }
   }
 
   // Both of these depend only on issueRows, not on each other.
