@@ -22,6 +22,7 @@ import {
 } from "@/lib/queries/performance";
 import { getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
 import { resolveScopedIds } from "@/lib/queries/performance";
+import { reportingScopeIds } from "@/lib/queries/org-history";
 import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
@@ -191,14 +192,20 @@ export default async function DashboardPage({
   const mboHref = (status: "pass" | "fail") =>
     `/mbo?granularity=${granularity}${period ? `&period=${period.start}` : ""}&status=${status}`;
 
+  // Reporting scope, not operational scope: this table answers "whose numbers
+  // made up my team in the period being viewed," so a realignment since then
+  // must not silently add or drop rows — see org-history.ts. resolveScopedIds
+  // (used for the cards above) intentionally stays on "who I manage now."
+  const comparisonIds = period ? await reportingScopeIds(user, period.end) : [];
+
   // Everyone with a linked employee record gets the comparison matrix. For an
   // agent it is a single row — their own KPIs against the previous period —
   // which is exactly the comparison the cards above cannot show.
-  const showsComparison = scopedIds.length > 0;
+  const showsComparison = comparisonIds.length > 0;
   // Follows the period picker, so a week is compared against the previous
   // week rather than always against last month.
   const comparison =
-    showsComparison && period ? await getTeamPeriodComparison(scopedIds, period) : null;
+    showsComparison && period ? await getTeamPeriodComparison(comparisonIds, period) : null;
 
   const unscoped = !user.employeeEid && user.role !== "manager";
 
