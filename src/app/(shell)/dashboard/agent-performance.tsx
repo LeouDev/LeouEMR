@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { formatMetric } from "@/components/ui";
 import type { TrendSeries } from "@/lib/queries/trend";
+import { KPI_GROUPS, KPI_ORDER, directionLabel, orderIndex } from "./kpi-groups";
 import {
   ActionItemsSummary,
   DashboardShell,
@@ -22,36 +23,6 @@ export interface AgentKpi {
   /** Whether `delta` moved the good way. Null for no prior, no change, or no direction. */
   improved: boolean | null;
   previous: number | null;
-}
-
-/**
- * KPIs grouped by what they measure rather than listed flat.
- *
- * Ten equal tiles made every measure look equally important and left an agent
- * to work out for themselves that MBO is a composite of the others. Grouping
- * says which is which, and lets the summary column report a group at a time.
- */
-export const KPI_GROUPS: Array<{ name: string; codes: string[] }> = [
-  { name: "Composite", codes: ["MBO"] },
-  // Case rate sits with the other output measures: it is what a case-rate
-  // agent is scored on in place of cases per hour, never alongside it.
-  { name: "Output", codes: ["PRODUCTION_RATE", "CPH", "CASE_RATE", "AHT"] },
-  { name: "Quality", codes: ["QUALITY", "DPU", "DPO", "CRITICAL_ERRORS"] },
-  { name: "Engagement", codes: ["ATTENDANCE", "NPS"] },
-];
-
-/** Headline measures first, matching the order the groups are read in. */
-export const KPI_ORDER = KPI_GROUPS.flatMap((g) => g.codes);
-
-export function orderIndex(code: string): number {
-  const i = KPI_ORDER.indexOf(code);
-  return i < 0 ? 99 : i;
-}
-
-export function directionLabel(direction: string): string | null {
-  if (direction === "higher_is_better") return "Higher is better";
-  if (direction === "lower_is_better") return "Lower is better";
-  return null;
 }
 
 export function AgentPerformance({

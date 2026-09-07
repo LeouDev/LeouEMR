@@ -10,7 +10,7 @@ import {
   type ShellActionItems,
   type ShellSeries,
 } from "./dashboard-shell";
-import { KPI_GROUPS, KPI_ORDER, directionLabel, orderIndex } from "./agent-performance";
+import { KPI_GROUPS, orderIndex } from "./kpi-groups";
 
 export interface TeamKpi {
   code: string;
@@ -223,5 +223,3 @@ export function SupervisorOverview({
     />
   );
 }
-
-export { KPI_ORDER, directionLabel };

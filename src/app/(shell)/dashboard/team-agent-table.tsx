@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { formatMetric, metricTone } from "@/components/ui";
 import type { TeamKpiCell, TeamPeriodComparison } from "@/lib/queries/my-stats";
-import { KPI_ORDER } from "./agent-performance";
+import { orderIndex } from "./kpi-groups";
 
 const SHOWN = 6;
 
@@ -30,11 +30,7 @@ export function TeamAgentTable({
 }) {
   const kpis = data.kpis
     .filter((k) => !HIDDEN.has(k.code))
-    .sort(
-      (a, b) =>
-        (KPI_ORDER.indexOf(a.code) < 0 ? 99 : KPI_ORDER.indexOf(a.code)) -
-        (KPI_ORDER.indexOf(b.code) < 0 ? 99 : KPI_ORDER.indexOf(b.code)),
-    );
+    .sort((a, b) => orderIndex(a.code) - orderIndex(b.code));
 
   if (kpis.length === 0 || data.rows.length === 0) return null;
 
