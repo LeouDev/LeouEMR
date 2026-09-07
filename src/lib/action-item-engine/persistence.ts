@@ -62,6 +62,12 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
   if (weeks.length === 0) return result;
 
   const live = await loadLiveIssues();
+  // One bulk read, not one per already-evaluated row: a routine re-import of
+  // weeks that are mostly unchanged (the normal case for a large historical
+  // file that also happens to re-cover a few recent weeks) would otherwise
+  // turn every single one of those rows into its own round trip just to
+  // confirm nothing changed.
+  const historyByIssueWeek = await loadHistoryByIssue([...live.values()].map((i) => i.id));
   const staleTouches: Array<{ employeeId: string; kpiId: string }> = [];
 
   for (const week of [...new Set(weeks)].sort()) {
@@ -93,19 +99,23 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
       const key = `${metric.employeeId}|${metric.kpiId}`;
       const existing = live.get(key);
 
-      // Already folded in: re-importing the same or an earlier week is
-      // normally a no-op — but if the week's own data has since changed
-      // (a ramp target correction, a routing fix), the issue's stored
-      // history is now stale against it. Reconciled in bulk after this
-      // loop rather than inline, since it may need every week this
-      // employee+KPI has ever recorded, not just the ones in this batch.
-      if (existing?.lastEvaluatedWeek && existing.lastEvaluatedWeek >= week) {
-        staleTouches.push({ employeeId: metric.employeeId, kpiId: metric.kpiId });
-        continue;
-      }
-
       // WARNING sits above the failure threshold, so it counts as a pass.
       const weekResult = metric.status === "fail" ? "FAIL" : "PASS";
+
+      // Already folded in: re-importing the same or an earlier week is
+      // normally a no-op — checked here against the already-loaded history
+      // map, not a query, since this is the common case for a routine
+      // re-import. Only a genuine mismatch (the week's own data changed
+      // since it was folded in — a ramp target correction, a routing fix)
+      // is queued for the more expensive reconciliation below.
+      if (existing?.lastEvaluatedWeek && existing.lastEvaluatedWeek >= week) {
+        const storedResult = historyByIssueWeek.get(`${existing.id}|${week}`);
+        const currentResult = weekResult === "FAIL" ? "fail" : "pass";
+        if (storedResult !== currentResult) {
+          staleTouches.push({ employeeId: metric.employeeId, kpiId: metric.kpiId });
+        }
+        continue;
+      }
 
       const outcome = evaluateWeeklyResult(
         existing?.state ?? null,
@@ -307,6 +317,18 @@ async function reconcileStaleTouches(
   }
 
   return { corrected, flagged };
+}
+
+/** Every recorded week's result for the given issues, keyed by `${issueId}|${week}`. */
+async function loadHistoryByIssue(issueIds: string[]): Promise<Map<string, "pass" | "fail">> {
+  if (issueIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({ performanceIssueId: weeklyIssueHistory.performanceIssueId, week: weeklyIssueHistory.week, result: weeklyIssueHistory.result })
+    .from(weeklyIssueHistory)
+    .where(inArray(weeklyIssueHistory.performanceIssueId, issueIds));
+
+  return new Map(rows.map((r) => [`${r.performanceIssueId}|${r.week}`, r.result]));
 }
 
 async function loadLiveIssues(): Promise<Map<string, LiveIssue>> {
