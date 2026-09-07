@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   acknowledgeByAgent,
+  canAutoReplay,
   evaluateWeeklyResult,
+  replayEmployeeKpiHistory,
   runWeeklyHistory,
   submitRcaAndActionPlan,
 } from "./engine";
@@ -190,5 +192,87 @@ describe("configurable consecutive-pass requirement", () => {
       { autoAcknowledgeAfterFailure: true },
     );
     expect(issue).toMatchObject({ status: "SUSTAINED", consecutivePassingWeeks: 2 });
+  });
+});
+
+describe("canAutoReplay — safety gate for rewriting an issue's already-folded history", () => {
+  const clean = {
+    status: "OPEN" as const,
+    hasRca: false,
+    hasActionPlan: false,
+    hasNotes: false,
+    hasOtherIssuesForKpi: false,
+  };
+
+  it("allows a plain OPEN issue with no human decisions on it", () => {
+    expect(canAutoReplay(clean)).toBe(true);
+  });
+
+  it("allows REOPENED the same way, in principle", () => {
+    expect(canAutoReplay({ ...clean, status: "REOPENED" })).toBe(true);
+  });
+
+  it("refuses once an RCA exists", () => {
+    expect(canAutoReplay({ ...clean, hasRca: true })).toBe(false);
+  });
+
+  it("refuses once an action plan exists", () => {
+    expect(canAutoReplay({ ...clean, hasActionPlan: true })).toBe(false);
+  });
+
+  it("refuses once a note exists", () => {
+    expect(canAutoReplay({ ...clean, hasNotes: true })).toBe(false);
+  });
+
+  it("refuses when a prior episode exists for the same employee+KPI", () => {
+    expect(canAutoReplay({ ...clean, hasOtherIssuesForKpi: true })).toBe(false);
+  });
+
+  it("refuses any status past OPEN/REOPENED even with no other flags set", () => {
+    for (const status of ["AWAITING_AGENT_ACKNOWLEDGEMENT", "ACKNOWLEDGED", "MONITORING", "SUSTAINED", "COMPLETED"] as const) {
+      expect(canAutoReplay({ ...clean, status })).toBe(false);
+    }
+  });
+});
+
+describe("replayEmployeeKpiHistory — rebuilding an issue's trajectory from current weekly data", () => {
+  it("produces no issue and no history when every week passes", () => {
+    const result = replayEmployeeKpiHistory([
+      { week: "2026-08-01", status: "pass" },
+      { week: "2026-08-08", status: "pass" },
+    ]);
+    expect(result.issue).toBeNull();
+    expect(result.history).toEqual([]);
+  });
+
+  it("drops weeks before the first fail — an issue carries no history before it exists", () => {
+    const result = replayEmployeeKpiHistory([
+      { week: "2026-08-01", status: "pass" },
+      { week: "2026-08-08", status: "fail" },
+      { week: "2026-08-15", status: "pass" },
+    ]);
+    expect(result.history.map((h) => h.week)).toEqual(["2026-08-08", "2026-08-15"]);
+    expect(result.history[0]).toEqual({ week: "2026-08-08", result: "fail", consecutiveCountAfter: 0 });
+    // Passing while still OPEN (no RCA/ack in a pure replay) doesn't advance the counter.
+    expect(result.history[1]).toEqual({ week: "2026-08-15", result: "pass", consecutiveCountAfter: 0 });
+    expect(result.issue).toMatchObject({ status: "OPEN", openedWeek: "2026-08-08" });
+  });
+
+  it("treats a warning as a pass, matching the engine's own mapping", () => {
+    const result = replayEmployeeKpiHistory([{ week: "2026-08-01", status: "warning" }]);
+    expect(result.issue).toBeNull();
+    expect(result.history).toEqual([]);
+  });
+
+  it("moves the opened week when an earlier fail is corrected to a pass", () => {
+    // The real-world case this whole reconciliation exists for: a week that
+    // opened an issue turns out, after a data correction, to have passed —
+    // but a later week in the same run still genuinely fails.
+    const result = replayEmployeeKpiHistory([
+      { week: "2026-08-01", status: "pass" }, // was "fail" when the issue first opened
+      { week: "2026-08-08", status: "fail" },
+    ]);
+    expect(result.issue).toMatchObject({ status: "OPEN", openedWeek: "2026-08-08" });
+    expect(result.history).toEqual([{ week: "2026-08-08", result: "fail", consecutiveCountAfter: 0 }]);
   });
 });

@@ -31,6 +31,10 @@ export interface CommitSummary {
   weeks: string[];
   issuesOpened: number;
   issuesUpdated: number;
+  /** Issues whose already-folded history no longer matched corrected data and were rebuilt. */
+  issuesCorrected: number;
+  /** Same situation, left for a person to review — see canAutoReplay. */
+  issuesFlagged: number;
   /** Skill labels present in the data with no configured reference. */
   unmatchedSkills: string[];
 }
@@ -139,6 +143,8 @@ export async function commitImport(
     weeks: parsed.weeks,
     issuesOpened: engineResult.opened,
     issuesUpdated: engineResult.updated,
+    issuesCorrected: engineResult.corrected,
+    issuesFlagged: engineResult.flagged,
   };
 }
 

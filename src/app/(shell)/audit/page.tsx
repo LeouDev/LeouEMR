@@ -10,6 +10,8 @@ const ACTION_LABELS: Record<string, string> = {
   "issue.issue_reopened": "Issue reopened",
   "issue.issue_sustained": "Sustained improvement reached",
   "issue.issue_completed": "Issue completed",
+  "issue.stale_data_corrected": "Action item rebuilt after a corrected week",
+  "issue.stale_data_flagged": "Action item has a corrected week — needs review",
   "rca.created": "RCA entered",
   "rca.updated": "RCA updated",
   "action_plan.created": "Action plan entered",

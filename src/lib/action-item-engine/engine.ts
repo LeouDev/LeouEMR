@@ -2,6 +2,7 @@ import {
   DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
   type ActionItemEngineConfig,
   type IssueEvent,
+  type IssueStatus,
   type PerformanceIssueState,
   type WeeklyEvaluationOutcome,
   type WeeklyResult,
@@ -168,4 +169,74 @@ export function runWeeklyHistory(
   }
 
   return { issue, history };
+}
+
+/**
+ * Whether a live issue's already-folded weekly history can be safely
+ * rebuilt from scratch after the weekly data behind it changes (a ramp
+ * target correction, a routing fix, a corrected re-import).
+ *
+ * Only issues with zero human decisions layered on top qualify. A
+ * corrected weekly value can tell us what the mechanical pass/fail
+ * bookkeeping should have been, but it cannot tell us what a supervisor's
+ * RCA, an agent's acknowledgement, or an already-completed episode would
+ * have looked like under the corrected numbers — those are left for a
+ * person to review (see persistence.ts's stale-week handling) rather than
+ * silently rewritten.
+ */
+export function canAutoReplay(context: {
+  status: IssueStatus;
+  hasRca: boolean;
+  hasActionPlan: boolean;
+  hasNotes: boolean;
+  /** A prior episode (e.g. a completed-then-reopened lineage) for the same employee+KPI. */
+  hasOtherIssuesForKpi: boolean;
+}): boolean {
+  return (
+    (context.status === "OPEN" || context.status === "REOPENED") &&
+    !context.hasRca &&
+    !context.hasActionPlan &&
+    !context.hasNotes &&
+    !context.hasOtherIssuesForKpi
+  );
+}
+
+export interface ReplayedWeek {
+  week: string;
+  result: "pass" | "fail";
+  consecutiveCountAfter: number;
+}
+
+/**
+ * Rebuilds one employee+KPI's full issue trajectory from their current
+ * weekly results, for comparison against (and correction of) what was
+ * actually folded in and stored.
+ *
+ * Mirrors persistence.ts's own per-week folding exactly: a week only
+ * carries a history row once an issue exists (from its opened week
+ * onward), which is why weeks before the first fail are dropped here
+ * rather than recorded with a null issue.
+ */
+export function replayEmployeeKpiHistory(
+  weeklyResults: Array<{ week: string; status: "pass" | "warning" | "fail" }>,
+  config: ActionItemEngineConfig = DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
+): { issue: PerformanceIssueState | null; history: ReplayedWeek[] } {
+  const weeks = weeklyResults.map((r) => ({
+    week: r.week,
+    result: (r.status === "fail" ? "FAIL" : "PASS") as WeeklyResult,
+  }));
+
+  const { issue, history } = runWeeklyHistory(weeks, config);
+
+  const replayed: ReplayedWeek[] = [];
+  history.forEach((outcome, i) => {
+    if (!outcome.issue) return;
+    replayed.push({
+      week: weeks[i].week,
+      result: weeks[i].result === "FAIL" ? "fail" : "pass",
+      consecutiveCountAfter: outcome.issue.consecutivePassingWeeks,
+    });
+  });
+
+  return { issue, history: replayed };
 }
