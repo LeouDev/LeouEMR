@@ -358,6 +358,16 @@ export interface MboNode {
   children: MboNode[];
 }
 
+export interface TopAgent {
+  employeeId: string;
+  eid: string;
+  name: string;
+  supervisor: string | null;
+  /** The PAR production rating, 1.00–5.00 — the same key the stack rank sorts on. */
+  productionRate: number;
+  mbo: number | null;
+}
+
 export interface MboOverview {
   sites: MboNode[];
   /** Mean MBO attainment across scored people. */
@@ -366,6 +376,15 @@ export interface MboOverview {
   passRate: number | null;
   scored: number;
   passing: number;
+  /**
+   * Everyone in the span with a production rating, best first.
+   *
+   * Ranked on PAR rather than MBO so this says something the MBO tree beside
+   * it does not: MBO is a share of gates cleared and saturates at 100%, which
+   * cannot separate the top of a team where everyone clears every gate.
+   * The caller takes as many as it has room for.
+   */
+  topAgents: TopAgent[];
 }
 
 /**
@@ -401,7 +420,7 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
         : null;
 
   if (!range || range.start === null || range.end === null) {
-    return { sites: [], overall: null, scored: 0, passing: 0, passRate: null };
+    return { sites: [], overall: null, scored: 0, passing: 0, passRate: null, topAgents: [] };
   }
 
   const period: Period = {
@@ -442,6 +461,32 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
     metrics.filter((m) => m.kpiCode === "MBO").map((m) => [m.employeeId, m.actualValue]),
   );
   const rows = roster.map((r) => ({ ...r, mbo: mboByEmployee.get(r.employeeId) ?? null }));
+
+  // The same pass already carries every KPI, PAR included, so ranking the
+  // span costs nothing extra. Someone without a rating this period is left
+  // out rather than ranked last: this is a leaderboard, not a roster.
+  const parByEmployee = new Map(
+    metrics
+      .filter((m) => m.kpiCode === "PRODUCTION_RATE")
+      .map((m) => [m.employeeId, Number(m.actualValue)]),
+  );
+  const topAgents: TopAgent[] = rows
+    .flatMap((r) => {
+      const productionRate = parByEmployee.get(r.employeeId);
+      return productionRate === undefined || !Number.isFinite(productionRate)
+        ? []
+        : [
+            {
+              employeeId: r.employeeId,
+              eid: r.eid,
+              name: r.name,
+              supervisor: r.supervisor,
+              productionRate,
+              mbo: r.mbo === null ? null : Number(r.mbo),
+            },
+          ];
+    })
+    .sort((a, b) => b.productionRate - a.productionRate || a.name.localeCompare(b.name));
 
   const UNASSIGNED = "Unassigned";
 
@@ -514,6 +559,7 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
     passRate: scored > 0 ? (passing / scored) * 100 : null,
     scored,
     passing,
+    topAgents,
   };
 }
 

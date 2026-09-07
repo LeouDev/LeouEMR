@@ -1,4 +1,4 @@
-import { BarList, ChartFrame, StatusBar, TrendChart } from "@/components/charts";
+import { BarList, ChartFrame, RankList, StatusBar, TrendChart } from "@/components/charts";
 import { Card, CardHeader, STATUS_LABELS, StatCard } from "@/components/ui";
 import { getAnalytics, getMboOverview, type AnalyticsFilters } from "@/lib/queries/analytics";
 import type { Period } from "@/lib/queries/period";
@@ -56,6 +56,11 @@ export async function ManagerOverview({
     }))
     .filter((s) => s.scored > 0)
     .sort((a, b) => (a.passRate ?? 0) - (b.passRate ?? 0));
+
+  // This sits beside "Fail rate by KPI" and is meant to balance it, so it
+  // takes exactly as many rows as that panel has KPIs — the two frames stay
+  // the same height as KPIs are added or retired, with no hard-coded count.
+  const topAgents = mbo.topAgents.slice(0, Math.max(analytics.kpis.length, 5));
 
   if (analytics.totalEmployees === 0) {
     return (
@@ -162,6 +167,23 @@ export async function ManagerOverview({
               value: k.failRate,
               caption: `${k.failing} of ${k.total} weekly results`,
             }))}
+          />
+        </ChartFrame>
+
+        <ChartFrame
+          title="Top agents in my span"
+          subtitle={`Highest PAR rating · ${period?.label ?? "all weeks"}`}
+        >
+          <RankList
+            rows={topAgents.map((a) => ({
+              label: a.name,
+              value: a.productionRate,
+              caption: `${a.supervisor ?? "Unassigned"}${
+                a.mbo === null ? "" : ` · MBO ${a.mbo.toFixed(1)}%`
+              }`,
+              href: `/employees/${a.employeeId}`,
+            }))}
+            emptyMessage="No one in your span has a production rating for this period."
           />
         </ChartFrame>
 
