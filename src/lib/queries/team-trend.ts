@@ -255,7 +255,7 @@ export async function getOrgTrend(
       {
         key: "MBO_PASS",
         label: "MBO pass rate",
-        note: "share clearing every gate",
+        note: "share clearing every gate · target 90.0%",
         target: 90,
         unit: "percent",
         points: mboPass,

@@ -74,7 +74,12 @@ export function SupervisorOverview({
         .map((s) => ({
           key: s.kpiCode,
           label: s.kpiName,
-          note: "line = team average · bars = agents meeting target",
+          note: [
+            "line = team average · bars = agents meeting target",
+            s.target === null ? null : `target ${formatMetric(s.target, s.kpiCode)}`,
+          ]
+            .filter(Boolean)
+            .join(" · "),
           target: s.target,
           format: s.kpiCode,
           points: s.points.map((p) => ({

@@ -330,26 +330,20 @@ export function TrendLine({
           </text>
         ))}
 
+        {/* The line only. Its label used to sit above the right-hand end,
+            inside the plot, where it collided with whichever bar label
+            happened to be there — the callers put the target in the note
+            beside the title instead, which has a row to itself. */}
         {target !== null && (
-          <>
-            <line
-              x1={PAD.left}
-              x2={W - PAD.right}
-              y1={y(target)}
-              y2={y(target)}
-              stroke="var(--color-orange-brand)"
-              strokeWidth={1.5}
-              strokeDasharray="4 4"
-            />
-            <text
-              x={W - PAD.right}
-              y={y(target) - 5}
-              textAnchor="end"
-              className="fill-orange-brand text-[10px]"
-            >
-              target {formatValue(target, format)}
-            </text>
-          </>
+          <line
+            x1={PAD.left}
+            x2={W - PAD.right}
+            y1={y(target)}
+            y2={y(target)}
+            stroke="var(--color-orange-brand)"
+            strokeWidth={1.5}
+            strokeDasharray="4 4"
+          />
         )}
 
         <line

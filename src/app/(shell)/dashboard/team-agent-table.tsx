@@ -1,9 +1,6 @@
-import Link from "next/link";
-import { formatMetric, metricTone } from "@/components/ui";
-import type { TeamKpiCell, TeamPeriodComparison } from "@/lib/queries/my-stats";
+import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
 import { orderIndex } from "./kpi-groups";
-
-const SHOWN = 6;
+import { TeamAgentRows, type AgentRow } from "./team-agent-rows";
 
 /**
  * Hidden for the same reason they left the org-wide comparison: DPU and DPO
@@ -19,6 +16,12 @@ const HIDDEN = new Set(["DPU", "DPO"]);
  * Replaces the generic comparison matrix for a supervisor: the same figures,
  * but led by how many KPIs each person is below rather than by KPI, because a
  * supervisor works down people and not columns.
+ *
+ * Sorting and shaping happen here, on the server; only the show-all toggle is
+ * client-side. Seeing the rest of your own team is a change of view, not a
+ * different question, so it should not cost a navigation — "All agents" used
+ * to hand a supervisor the Employees roster, which answers something else and
+ * loses the comparison they were reading.
  */
 export function TeamAgentTable({
   data,
@@ -30,20 +33,24 @@ export function TeamAgentTable({
 }) {
   const kpis = data.kpis
     .filter((k) => !HIDDEN.has(k.code))
-    .sort((a, b) => orderIndex(a.code) - orderIndex(b.code));
+    .sort((a, b) => orderIndex(a.code) - orderIndex(b.code))
+    .map((k) => ({ code: k.code, name: k.name }));
 
   if (kpis.length === 0 || data.rows.length === 0) return null;
 
   // The count shown is the count of what is on screen: counting a hidden
   // gate would sort someone to the top for a reason the row cannot show.
-  const rows = data.rows
+  const rows: AgentRow[] = data.rows
     .map((row) => ({
-      ...row,
+      employeeId: row.employeeId,
+      name: row.name,
+      eid: row.eid,
+      cells: row.cells,
       below: kpis.filter((k) => row.cells[k.code]?.status === "FAIL").length,
+      // Flattened out of the Map here so only plain data crosses the boundary.
+      open: openByEmployee.get(row.employeeId) ?? 0,
     }))
     .sort((a, b) => b.below - a.below || a.name.localeCompare(b.name));
-
-  const shown = rows.slice(0, SHOWN);
 
   return (
     <div className="mt-7 border-t-2 border-ink pt-4">
@@ -56,106 +63,7 @@ export function TeamAgentTable({
         </span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr className="border-b-2 border-ink">
-              <th className="px-2 py-2 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">
-                Agent
-              </th>
-              <th className="px-2 py-2 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase">
-                Below
-              </th>
-              {kpis.map((kpi) => (
-                <th
-                  key={kpi.code}
-                  className="px-2 py-2 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase"
-                >
-                  {kpi.name}
-                </th>
-              ))}
-              <th className="px-2 py-2 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase">
-                Open
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((row) => (
-              <tr
-                key={row.employeeId}
-                className={`border-b border-line last:border-0 ${
-                  row.below >= 4 ? "bg-fail-bg" : "hover:bg-cream"
-                }`}
-              >
-                <td className="px-2 py-2.5">
-                  <Link
-                    href={`/employees/${row.employeeId}`}
-                    prefetch={false}
-                    className="font-semibold text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                  >
-                    {row.name}
-                  </Link>
-                  <span className="ml-1.5 font-mono text-[11px] text-muted">{row.eid}</span>
-                </td>
-                <td
-                  className={`px-2 py-2.5 text-right font-mono font-extrabold tabular-nums ${
-                    row.below > 0 ? "text-fail" : "text-muted"
-                  }`}
-                >
-                  {row.below || "—"}
-                </td>
-                {kpis.map((kpi) => (
-                  <td key={kpi.code} className="px-2 py-2.5 text-right leading-tight">
-                    <Cell cell={row.cells[kpi.code]} kpiCode={kpi.code} />
-                  </td>
-                ))}
-                <td className="px-2 py-2.5 text-right font-mono text-muted tabular-nums">
-                  {openByEmployee.get(row.employeeId) || "—"}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {rows.length > SHOWN && (
-        <p className="mt-2 text-xs text-muted">
-          Showing {shown.length} of {rows.length} ·{" "}
-          <Link href="/employees" className="text-ink underline-offset-4 hover:text-orange-brand hover:underline">
-            All agents
-          </Link>
-        </p>
-      )}
+      <TeamAgentRows kpis={kpis} rows={rows} />
     </div>
-  );
-}
-
-/**
- * One KPI for one agent, this period over the change from last.
- *
- * The arrow follows the sign and the colour follows improvement, so a falling
- * handle time reads as the good result it is.
- */
-function Cell({ cell, kpiCode }: { cell: TeamKpiCell | undefined; kpiCode: string }) {
-  if (!cell) return <span className="text-muted">—</span>;
-  return (
-    <span className="inline-flex flex-col">
-      <span className={`font-mono font-semibold tabular-nums ${metricTone(cell.status)}`}>
-        {formatMetric(cell.current, kpiCode)}
-      </span>
-      {cell.delta !== null && Math.abs(cell.delta) >= 0.005 ? (
-        <span
-          className={`font-mono text-[10px] tabular-nums ${
-            cell.improved === false ? "text-fail" : "text-muted"
-          }`}
-        >
-          {cell.delta > 0 ? "▲" : "▼"} {formatMetric(Math.abs(cell.delta), kpiCode)}
-        </span>
-      ) : (
-        <span className="font-mono text-[10px] text-muted tabular-nums">
-          {cell.previous === null ? "new" : "no change"}
-        </span>
-      )}
-    </span>
   );
 }
