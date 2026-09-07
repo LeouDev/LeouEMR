@@ -7,7 +7,7 @@ import { getActionItems } from "@/lib/queries/performance";
 export default async function ActionItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ all?: string }>;
+  searchParams: Promise<{ all?: string; employee?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -15,20 +15,37 @@ export default async function ActionItemsPage({
 
   const params = await searchParams;
   const openOnly = params.all !== "1";
-  const items = await getActionItems(user, { openOnly });
+  const items = await getActionItems(user, { openOnly, employeeId: params.employee });
+  // Scope already filtered the query; the employee's name just comes along
+  // for the ride on whichever row matched, rather than a second lookup.
+  const filteredEmployeeName = params.employee ? (items[0]?.employeeName ?? "this employee") : null;
 
   return (
     <>
       <PageBand title="Action items" subtitle="Open performance threads" />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
+        {filteredEmployeeName && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-2 border-ink bg-orange-brand-100 px-4 py-2.5 text-sm">
+            <span className="text-ink">
+              Filtered to <span className="font-semibold">{filteredEmployeeName}</span>
+            </span>
+            <Link
+              href={openOnly ? "/action-items" : "/action-items?all=1"}
+              className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+            >
+              Clear filter
+            </Link>
+          </div>
+        )}
+
         <Card>
           <CardHeader
             title={openOnly ? "Active items" : "All items"}
             subtitle={`${items.length} item${items.length === 1 ? "" : "s"}`}
             action={
               <Link
-                href={openOnly ? "/action-items?all=1" : "/action-items"}
+                href={`${openOnly ? "/action-items?all=1" : "/action-items"}${params.employee ? `${openOnly ? "&" : "?"}employee=${params.employee}` : ""}`}
                 className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
               >
                 {openOnly ? "Show resolved too" : "Show active only"}
@@ -39,7 +56,11 @@ export default async function ActionItemsPage({
           {items.length === 0 ? (
             <EmptyState
               title="No action items"
-              description="Action items are created automatically when a KPI fails its threshold."
+              description={
+                filteredEmployeeName
+                  ? `${filteredEmployeeName} has no ${openOnly ? "active " : ""}action items.`
+                  : "Action items are created automatically when a KPI fails its threshold."
+              }
             />
           ) : (
             <div className="overflow-x-auto">
