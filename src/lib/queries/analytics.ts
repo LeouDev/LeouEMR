@@ -116,7 +116,19 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     .leftJoin(employeeAssignments, assignmentAt(asOf))
     .where(scope.length ? and(...scope) : undefined);
 
-  const ids = scopedEmployees.map((e) => e.id);
+  // Headcount for the range being reported, not the payroll as it stands.
+  // Someone who left in July belongs in July's totals and not in August's,
+  // decided by when they left rather than by their status now — the same
+  // rule the MBO tree and the stack rank use.
+  const ids = await eligibleForPeriod(
+    scopedEmployees.map((e) => e.id),
+    {
+      granularity: "month",
+      start: filters.weekFrom ?? "0001-01-01",
+      end: asOf,
+      label: "range",
+    },
+  );
   const empty: AnalyticsSnapshot = {
     totalEmployees: ids.length,
     employeesWithData: 0,
