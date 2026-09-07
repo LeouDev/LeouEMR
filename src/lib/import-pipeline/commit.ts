@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   employeeAssignments,
@@ -173,95 +173,6 @@ export async function commitImport(
  * other than a week has to be re-aggregated from source grain — most of
  * these measures cannot be averaged across periods.
  */
-/**
- * Clears any earlier facts an import is about to supersede.
- *
- * Without this an import only replaces rows it collides with exactly, on
- * (employee, KPI, date). Two exports of the same month dated a day apart
- * collide on nothing, so both survive and a sum KPI counts everything twice —
- * which is how one agent's quarter came to read six critical errors against
- * four in the source.
- *
- * Scoped as tightly as the file allows: only the employees it mentions, only
- * the measures it carries, and only between its own first and last date. A
- * file covering one team's August cannot touch another team's, and a
- * productivity-only file cannot wipe the quality facts beside it.
- *
- * Nothing is deleted when a file carries no rows for that measure — an import
- * says nothing about the periods it does not cover.
- */
-/**
- * The span each employee's rows cover, grouped so employees sharing a span
- * are cleared in one statement.
- *
- * Per employee, not per file: a file whose earliest row is one agent's 1
- * August and whose latest is another's 31st must not clear a whole month for
- * both. Someone appearing on a single day supersedes a single day.
- */
-export function supersedeRanges(
-  rows: Array<{ employeeId: string; factDate: string }>,
-): Array<{ from: string; to: string; employeeIds: string[] }> {
-  const span = new Map<string, { from: string; to: string }>();
-  for (const row of rows) {
-    const seen = span.get(row.employeeId);
-    if (!seen) span.set(row.employeeId, { from: row.factDate, to: row.factDate });
-    else {
-      if (row.factDate < seen.from) seen.from = row.factDate;
-      if (row.factDate > seen.to) seen.to = row.factDate;
-    }
-  }
-
-  const grouped = new Map<string, { from: string; to: string; employeeIds: string[] }>();
-  for (const [employeeId, { from, to }] of span) {
-    const key = `${from}|${to}`;
-    const entry = grouped.get(key) ?? { from, to, employeeIds: [] };
-    entry.employeeIds.push(employeeId);
-    grouped.set(key, entry);
-  }
-  return [...grouped.values()];
-}
-
-/**
- * Clears any earlier facts an import is about to supersede.
- *
- * Without this an import only replaces rows it collides with exactly, on
- * (employee, KPI, date). Two exports of the same month dated a day apart
- * collide on nothing, so both survive and a sum KPI counts everything twice —
- * which is how one agent's quarter came to read six critical errors against
- * four in the source.
- *
- * Scoped as tightly as the file allows: only the employees it mentions, only
- * the measures it carries, and only across each employee's own first-to-last
- * date. A file covering one team's August cannot touch another team's, and a
- * productivity-only file cannot wipe the quality facts beside it.
- *
- * Nothing is cleared for a measure the file has no rows for — an import says
- * nothing about the periods it does not cover.
- */
-async function clearSupersededFacts(
-  table: typeof metricFacts | typeof skillFacts | typeof qualityFacts | typeof npsFacts,
-  rows: Array<{ employeeId: string; factDate: string }>,
-  /** Restrict to these KPIs as well, for the tables that have them. */
-  kpiIds?: string[],
-): Promise<void> {
-  if (rows.length === 0) return;
-
-  for (const { from, to, employeeIds } of supersedeRanges(rows)) {
-    await db.delete(table as never).where(
-      and(
-        ...[
-          inArray(table.employeeId, employeeIds),
-          gte(table.factDate, from),
-          lte(table.factDate, to),
-          kpiIds && kpiIds.length > 0 && "kpiId" in table
-            ? inArray((table as typeof metricFacts).kpiId, kpiIds)
-            : undefined,
-        ].filter(Boolean),
-      ),
-    );
-  }
-}
-
 async function persistFacts(
   parsed: ParseResult,
   definitions: Map<string, { id: string }>,
@@ -286,10 +197,6 @@ async function persistFacts(
       };
     })
     .filter((r) => r !== null);
-
-  await clearSupersededFacts(metricFacts, metricRows, [
-    ...new Set(metricRows.map((r) => r.kpiId)),
-  ]);
 
   for (let i = 0; i < metricRows.length; i += CHUNK) {
     await db
@@ -323,8 +230,6 @@ async function persistFacts(
     })
     .filter((r) => r !== null);
 
-  await clearSupersededFacts(skillFacts, skillRows);
-
   for (let i = 0; i < skillRows.length; i += CHUNK) {
     await db
       .insert(skillFacts)
@@ -357,8 +262,6 @@ async function persistFacts(
     })
     .filter((r) => r !== null);
 
-  await clearSupersededFacts(qualityFacts, qualityRows);
-
   for (let i = 0; i < qualityRows.length; i += CHUNK) {
     await db
       .insert(qualityFacts)
@@ -388,8 +291,6 @@ async function persistFacts(
       };
     })
     .filter((r) => r !== null);
-
-  await clearSupersededFacts(npsFacts, npsRows);
 
   for (let i = 0; i < npsRows.length; i += CHUNK) {
     await db
