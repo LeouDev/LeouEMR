@@ -45,8 +45,19 @@ export interface WeeklyEvaluationOutcome {
 export interface ActionItemEngineConfig {
   /** Number of consecutive passing weeks required to reach SUSTAINED. Default 4, per spec section 3. */
   requiredConsecutivePasses: number;
+  /**
+   * After this many days an issue whose KPI has recovered is closed on age
+   * alone, without waiting for four consecutive passing weeks.
+   *
+   * Items that never got marked done pile up: 1,012 of 1,422 live issues were
+   * past this line, and 651 of those had a passing KPI. An issue still failing
+   * is never aged out, whatever its age — that is the case the queue exists to
+   * surface, and hiding it would be the one outcome worse than a long list.
+   */
+  ageOutAfterDays: number;
 }
 
 export const DEFAULT_ACTION_ITEM_ENGINE_CONFIG: ActionItemEngineConfig = {
   requiredConsecutivePasses: 4,
+  ageOutAfterDays: 60,
 };

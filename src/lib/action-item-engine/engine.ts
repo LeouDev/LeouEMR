@@ -240,3 +240,44 @@ export function replayEmployeeKpiHistory(
 
   return { issue, history: replayed };
 }
+
+/**
+ * Whether a long-running issue should be closed on age alone.
+ *
+ * The four-consecutive-passing-weeks rule closes an issue properly, but it
+ * only fires while weeks keep arriving for that employee and KPI. An agent who
+ * recovered and then moved queue, changed skill, or simply stopped being
+ * measured on it leaves an issue open forever. Age closes those.
+ *
+ * Two conditions, both required. The issue must be older than the threshold,
+ * measured in reporting days from the week it opened — not wall-clock time,
+ * so a database restored or imported late does not age everything out at once.
+ * And its KPI must have recovered: the most recent result on record is not a
+ * failure. An issue still failing is never aged out however old it is, because
+ * closing it would delete the only standing record that someone needs help.
+ *
+ * No result at all counts as not recovered. Absence of evidence is not
+ * evidence of recovery, and an issue with nothing behind it is exactly the
+ * kind that should be looked at rather than quietly closed.
+ */
+export function shouldAgeOut(
+  issue: {
+    status: IssueStatus;
+    openedWeek: string;
+    /** Status of the most recent weekly result for this employee and KPI. */
+    latestResult: "pass" | "warning" | "fail" | null;
+  },
+  /** The newest reporting week end — this data's "today". */
+  asOf: string,
+  config: ActionItemEngineConfig = DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
+): boolean {
+  if (issue.status === "COMPLETED") return false;
+  if (issue.latestResult === null || issue.latestResult === "fail") return false;
+
+  const opened = Date.parse(`${issue.openedWeek}T00:00:00Z`);
+  const now = Date.parse(`${asOf}T00:00:00Z`);
+  if (Number.isNaN(opened) || Number.isNaN(now)) return false;
+
+  const days = (now - opened) / 86_400_000;
+  return days >= config.ageOutAfterDays;
+}

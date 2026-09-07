@@ -5,6 +5,7 @@ import {
   evaluateWeeklyResult,
   replayEmployeeKpiHistory,
   runWeeklyHistory,
+  shouldAgeOut,
   submitRcaAndActionPlan,
 } from "./engine";
 import type { PerformanceIssueState } from "./types";
@@ -188,7 +189,7 @@ describe("configurable consecutive-pass requirement", () => {
     ];
     const { issue } = runWeeklyHistory(
       weeks,
-      { requiredConsecutivePasses: 2 },
+      { requiredConsecutivePasses: 2, ageOutAfterDays: 60 },
       { autoAcknowledgeAfterFailure: true },
     );
     expect(issue).toMatchObject({ status: "SUSTAINED", consecutivePassingWeeks: 2 });
@@ -274,5 +275,50 @@ describe("replayEmployeeKpiHistory — rebuilding an issue's trajectory from cur
     ]);
     expect(result.issue).toMatchObject({ status: "OPEN", openedWeek: "2026-08-08" });
     expect(result.history).toEqual([{ week: "2026-08-08", result: "fail", consecutiveCountAfter: 0 }]);
+  });
+});
+
+describe("shouldAgeOut", () => {
+  const recovered = {
+    status: "OPEN" as const,
+    openedWeek: "2026-06-06",
+    latestResult: "pass" as const,
+  };
+
+  it("closes a recovered issue once it passes the threshold", () => {
+    expect(shouldAgeOut(recovered, "2026-08-07")).toBe(true); // 62 days
+  });
+
+  it("leaves a recovered issue alone before the threshold", () => {
+    expect(shouldAgeOut(recovered, "2026-07-05")).toBe(false); // 29 days
+  });
+
+  it("never ages out an issue that is still failing, however old", () => {
+    expect(
+      shouldAgeOut({ ...recovered, latestResult: "fail" }, "2026-12-31"),
+    ).toBe(false);
+  });
+
+  it("treats no result at all as not recovered", () => {
+    expect(shouldAgeOut({ ...recovered, latestResult: null }, "2026-12-31")).toBe(false);
+  });
+
+  it("counts a warning as recovered — it is not a failure", () => {
+    expect(shouldAgeOut({ ...recovered, latestResult: "warning" }, "2026-08-07")).toBe(true);
+  });
+
+  it("leaves an already completed issue alone", () => {
+    expect(
+      shouldAgeOut({ ...recovered, status: "COMPLETED" }, "2026-12-31"),
+    ).toBe(false);
+  });
+
+  it("honours a different threshold", () => {
+    expect(
+      shouldAgeOut(recovered, "2026-06-20", {
+        requiredConsecutivePasses: 4,
+        ageOutAfterDays: 14,
+      }),
+    ).toBe(true);
   });
 });

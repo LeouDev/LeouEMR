@@ -11,7 +11,12 @@ import {
   weeklyIssueHistory,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { canAutoReplay, evaluateWeeklyResult, replayEmployeeKpiHistory } from "./engine";
+import {
+  canAutoReplay,
+  evaluateWeeklyResult,
+  replayEmployeeKpiHistory,
+  shouldAgeOut,
+} from "./engine";
 import {
   DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
   type IssueStatus,
@@ -32,6 +37,8 @@ export interface EngineRunResult {
   opened: number;
   updated: number;
   completed: number;
+  /** Long-running issues closed on age because their KPI had recovered. */
+  agedOut: number;
   /** Issues whose already-folded history no longer matched current data and were safely rebuilt. */
   corrected: number;
   /** Same situation, but left untouched for a person to review — see canAutoReplay. */
@@ -58,7 +65,14 @@ interface LiveIssue {
  * makes a full import take many minutes.
  */
 export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRunResult> {
-  const result: EngineRunResult = { opened: 0, updated: 0, completed: 0, corrected: 0, flagged: 0 };
+  const result: EngineRunResult = {
+    opened: 0,
+    updated: 0,
+    completed: 0,
+    agedOut: 0,
+    corrected: 0,
+    flagged: 0,
+  };
   if (weeks.length === 0) return result;
 
   const live = await loadLiveIssues();
@@ -178,7 +192,113 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
     result.flagged += flagged;
   }
 
+  // Last, so it sees the statuses this run has just written rather than the
+  // ones it started with.
+  result.agedOut = await ageOutRecoveredIssues(live);
+
   return result;
+}
+
+/**
+ * Closes issues that have outlived the threshold and whose KPI has recovered.
+ *
+ * The four-passing-weeks rule needs weeks to keep arriving for that employee
+ * and KPI; an agent who recovered and then moved queue or stopped being
+ * measured leaves an issue open indefinitely. This is the other way out.
+ *
+ * Deliberately never touches an issue whose latest result is a failure, or one
+ * with no result at all — see shouldAgeOut. The point is to clear items that
+ * are done, not to make a long queue look shorter.
+ */
+/**
+ * Runs the age-out rule over the whole live backlog, outside an import.
+ *
+ * The rule normally rides along with an engine run, which only happens when
+ * weeks are imported or replayed. This applies it to the items already
+ * sitting there.
+ */
+export async function ageOutStaleIssues(dryRun = false): Promise<number> {
+  return ageOutRecoveredIssues(await loadLiveIssues(), dryRun);
+}
+
+async function ageOutRecoveredIssues(
+  live: Map<string, LiveIssue>,
+  /** Report only; nothing is written. */
+  dryRun = false,
+): Promise<number> {
+  if (live.size === 0) return 0;
+
+  // Reporting time, not wall-clock: a database imported late must not age
+  // every open item out at once.
+  const [asOf] = await db
+    .select({ week: sql<string | null>`max(${weeklyMetricResults.weekEnd})::text` })
+    .from(weeklyMetricResults);
+  if (!asOf?.week) return 0;
+  const asOfWeek = asOf.week;
+
+  const issues = [...live.values()];
+  const latest = await db
+    .select({
+      employeeId: weeklyMetricResults.employeeId,
+      kpiId: weeklyMetricResults.kpiId,
+      status: weeklyMetricResults.status,
+      week: weeklyMetricResults.weekStart,
+    })
+    .from(weeklyMetricResults)
+    .where(
+      inArray(
+        weeklyMetricResults.employeeId,
+        [...new Set(issues.map((i) => i.employeeId))],
+      ),
+    )
+    .orderBy(asc(weeklyMetricResults.weekStart));
+
+  // Last write wins, and the rows arrive oldest first, so this ends up
+  // holding each pair's most recent result.
+  const lastByPair = new Map<string, "pass" | "warning" | "fail">();
+  for (const row of latest) {
+    lastByPair.set(`${row.employeeId}|${row.kpiId}`, row.status);
+  }
+
+  const closing = issues.filter((issue) =>
+    shouldAgeOut(
+      {
+        status: issue.state.status,
+        openedWeek: issue.state.openedWeek,
+        latestResult: lastByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
+      },
+      asOfWeek,
+    ),
+  );
+  if (closing.length === 0) return 0;
+
+  if (dryRun) return closing.length;
+
+  const ids = closing.map((i) => i.id);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(performanceIssues)
+      .set({ status: "COMPLETED", resolvedWeek: asOfWeek, updatedAt: sql`now()` })
+      .where(inArray(performanceIssues.id, ids));
+    await tx
+      .update(actionItems)
+      .set({ status: "COMPLETED", updatedAt: sql`now()` })
+      .where(inArray(actionItems.performanceIssueId, ids));
+    // Recorded under its own action, so a closure on age is never mistaken
+    // for one earned through four passing weeks.
+    await tx.insert(auditLog).values(
+      closing.map((issue) => ({
+        action: "issue.aged_out",
+        entityType: "performance_issue",
+        entityId: issue.id,
+        before: { status: issue.state.status, openedWeek: issue.state.openedWeek },
+        after: { status: "COMPLETED", resolvedWeek: asOfWeek, reason: "recovered and past age threshold" },
+      })),
+    );
+  });
+
+  for (const issue of closing) live.delete(`${issue.employeeId}|${issue.kpiId}`);
+  return closing.length;
 }
 
 /**
