@@ -6,6 +6,12 @@ import { db } from "@/lib/db/client";
 import { importBatches, users } from "@/lib/db/schema";
 import { ImportWizard } from "./import-wizard";
 
+// A historical backfill can run to hundreds of thousands of rows across
+// several tables — Server Actions inherit this page's route config, and the
+// platform default (well under a minute) isn't enough for that, even though
+// the file itself no longer counts against the separate request-body limit.
+export const maxDuration = 300;
+
 export default async function ImportPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
