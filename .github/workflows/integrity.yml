@@ -1,0 +1,34 @@
+name: Data integrity
+
+# The checks that need the real database. Scheduled rather than on push,
+# because they answer "is the data still sound", not "does the code compile" —
+# and the answer can change without anyone touching the repository.
+#
+# Every problem this project has hit was invisible until somebody happened to
+# notice a wrong number: sixteen rows that no import wrote, which quietly
+# closed four real action items; a month uploaded twice, which doubled every
+# summed KPI. Both would have shown up here the same day.
+#
+# Needs a DATABASE_URL secret on the repository.
+on:
+  schedule:
+    - cron: "0 1 * * *" # 01:00 UTC daily, after the overnight imports
+  workflow_dispatch: # and on demand, e.g. straight after an upload
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Check integrity
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        # The script exits non-zero when an invariant fails, which fails the
+        # run and sends the usual GitHub notification.
+        run: npx tsx scripts/check-integrity.mts
