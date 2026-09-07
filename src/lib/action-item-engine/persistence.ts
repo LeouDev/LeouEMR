@@ -359,6 +359,11 @@ async function loadLiveIssues(): Promise<Map<string, LiveIssue>> {
 /**
  * Writes every changed issue in one statement using a VALUES join, rather
  * than one UPDATE per issue.
+ *
+ * The two tables are always meant to carry the same status — each chunk's
+ * pair of statements runs in one transaction so a dropped connection or a
+ * timeout between them can never leave one updated and the other not, with
+ * nothing else in the app positioned to notice or repair that gap later.
  */
 async function applyUpdates(updates: Array<{ issue: LiveIssue; next: PerformanceIssueState }>) {
   if (updates.length === 0) return;
@@ -377,24 +382,26 @@ async function applyUpdates(updates: Array<{ issue: LiveIssue; next: Performance
       sql`, `,
     );
 
-    await db.execute(sql`
-      update ${performanceIssues} as pi set
-        status = v.status,
-        consecutive_passing_weeks = v.consecutive_passing_weeks,
-        resolved_week = v.resolved_week,
-        last_evaluated_week = v.last_evaluated_week,
-        updated_at = now()
-      from (values ${values}) as v(id, status, consecutive_passing_weeks, resolved_week, last_evaluated_week)
-      where pi.id = v.id
-    `);
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        update ${performanceIssues} as pi set
+          status = v.status,
+          consecutive_passing_weeks = v.consecutive_passing_weeks,
+          resolved_week = v.resolved_week,
+          last_evaluated_week = v.last_evaluated_week,
+          updated_at = now()
+        from (values ${values}) as v(id, status, consecutive_passing_weeks, resolved_week, last_evaluated_week)
+        where pi.id = v.id
+      `);
 
-    await db.execute(sql`
-      update ${actionItems} as ai set
-        status = v.status,
-        updated_at = now()
-      from (values ${values}) as v(id, status, consecutive_passing_weeks, resolved_week, last_evaluated_week)
-      where ai.performance_issue_id = v.id
-    `);
+      await tx.execute(sql`
+        update ${actionItems} as ai set
+          status = v.status,
+          updated_at = now()
+        from (values ${values}) as v(id, status, consecutive_passing_weeks, resolved_week, last_evaluated_week)
+        where ai.performance_issue_id = v.id
+      `);
+    });
   }
 }
 
@@ -412,52 +419,59 @@ async function applyOpens(
   for (let i = 0; i < opens.length; i += CHUNK) {
     const slice = opens.slice(i, i + CHUNK);
 
-    const issues = await db
-      .insert(performanceIssues)
-      .values(
-        slice.map((open) => ({
-          code: sql`'PI-' || ${year} || '-' || lpad(nextval('performance_issue_seq')::text, 6, '0')`,
-          employeeId: open.employeeId,
-          kpiId: open.kpiId,
-          status: open.state.status,
-          openedWeek: open.state.openedWeek,
-          consecutivePassingWeeks: open.state.consecutivePassingWeeks,
-          lastEvaluatedWeek: week,
+    // A partial failure here is worse than a status mismatch — it's a
+    // performance issue with no action item at all, since the two rows are
+    // never both required to exist by anything short of this transaction.
+    const issues = await db.transaction(async (tx) => {
+      const issues = await tx
+        .insert(performanceIssues)
+        .values(
+          slice.map((open) => ({
+            code: sql`'PI-' || ${year} || '-' || lpad(nextval('performance_issue_seq')::text, 6, '0')`,
+            employeeId: open.employeeId,
+            kpiId: open.kpiId,
+            status: open.state.status,
+            openedWeek: open.state.openedWeek,
+            consecutivePassingWeeks: open.state.consecutivePassingWeeks,
+            lastEvaluatedWeek: week,
+          })),
+        )
+        .returning({
+          id: performanceIssues.id,
+          employeeId: performanceIssues.employeeId,
+          kpiId: performanceIssues.kpiId,
+          status: performanceIssues.status,
+          openedWeek: performanceIssues.openedWeek,
+        });
+
+      await tx.insert(actionItems).values(
+        issues.map((issue) => ({
+          code: sql`'PA-' || ${year} || '-' || lpad(nextval('action_item_seq')::text, 6, '0')`,
+          performanceIssueId: issue.id,
+          status: issue.status,
         })),
-      )
-      .returning({
-        id: performanceIssues.id,
-        employeeId: performanceIssues.employeeId,
-        kpiId: performanceIssues.kpiId,
-        status: performanceIssues.status,
-        openedWeek: performanceIssues.openedWeek,
-      });
+      );
 
-    await db.insert(actionItems).values(
-      issues.map((issue) => ({
-        code: sql`'PA-' || ${year} || '-' || lpad(nextval('action_item_seq')::text, 6, '0')`,
-        performanceIssueId: issue.id,
-        status: issue.status,
-      })),
-    );
+      await tx.insert(weeklyIssueHistory).values(
+        issues.map((issue) => ({
+          performanceIssueId: issue.id,
+          week,
+          result: "fail" as const,
+          consecutiveCountAfter: 0,
+        })),
+      ).onConflictDoNothing();
 
-    await db.insert(weeklyIssueHistory).values(
-      issues.map((issue) => ({
-        performanceIssueId: issue.id,
-        week,
-        result: "fail" as const,
-        consecutiveCountAfter: 0,
-      })),
-    ).onConflictDoNothing();
+      await tx.insert(auditLog).values(
+        issues.map((issue) => ({
+          action: "issue.opened",
+          entityType: "performance_issue",
+          entityId: issue.id,
+          after: { week, employeeId: issue.employeeId },
+        })),
+      );
 
-    await db.insert(auditLog).values(
-      issues.map((issue) => ({
-        action: "issue.opened",
-        entityType: "performance_issue",
-        entityId: issue.id,
-        after: { week, employeeId: issue.employeeId },
-      })),
-    );
+      return issues;
+    });
 
     for (const issue of issues) {
       live.set(`${issue.employeeId}|${issue.kpiId}`, {

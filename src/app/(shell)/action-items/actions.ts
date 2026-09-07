@@ -284,15 +284,25 @@ export async function acknowledge(actionItemId: string): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * A performance issue and its action item always carry the same status —
+ * two separate awaited UPDATEs left a window where a dropped connection or
+ * a timeout between them could apply one and not the other, with nothing
+ * to notice or repair it afterward (the weekly engine only ever resyncs an
+ * issue that a new week's data actually touches again). One transaction
+ * makes that impossible instead of merely unlikely.
+ */
 async function setIssueStatus(issueId: string, actionItemId: string, status: typeof performanceIssues.$inferSelect.status) {
-  await db
-    .update(performanceIssues)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(performanceIssues.id, issueId));
-  await db
-    .update(actionItems)
-    .set({ status, updatedAt: new Date() })
-    .where(eq(actionItems.id, actionItemId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(performanceIssues)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(performanceIssues.id, issueId));
+    await tx
+      .update(actionItems)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(actionItems.id, actionItemId));
+  });
 }
 
 async function notifyAgent(
