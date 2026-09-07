@@ -15,9 +15,35 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const title = "EMR Performance Command Center";
+const description =
+  "One Platform. Everything You Need. Your ultimate one-stop shop for tools, resources, and everything that keeps you moving.";
+
 export const metadata: Metadata = {
-  title: "OptumRX EMR — Performance Command Center",
-  description: "Weekly performance management for supervisors, managers, and agents.",
+  metadataBase: new URL("https://prior-auth-emr.vercel.app"),
+  title,
+  description,
+  openGraph: {
+    type: "website",
+    url: "/",
+    siteName: "EMR Performance Command Center",
+    title,
+    description,
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Astronaut injecting the earth — EMR Performance Command Center",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: ["/og-image.png"],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
