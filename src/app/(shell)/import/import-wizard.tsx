@@ -2,80 +2,97 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { previewImport, runImport, type CommitResponse, type PreviewResult } from "./actions";
-
-function describeTransportFailure(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  if (/body exceeded|413|too large/i.test(message)) {
-    return "The server rejected the upload as too large. Raise serverActions.bodySizeLimit in next.config.ts.";
-  }
-  return `The upload did not reach the server: ${message}`;
-}
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { createUploadTicket, previewImport, runImport, type CommitResponse, type PreviewResult } from "./actions";
 
 export function ImportWizard() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [storagePath, setStoragePath] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<CommitResponse["summary"] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"analyzing" | "importing" | null>(null);
+  const [busy, setBusy] = useState<"uploading" | "analyzing" | "importing" | null>(null);
 
-  function formData(): FormData | null {
+  /**
+   * Uploads straight from the browser to Storage via a signed URL, so the
+   * file never passes through a server action body — Vercel caps that at
+   * 4.5 MB regardless of any application-level setting, well under what a
+   * multi-month workbook runs to.
+   */
+  async function uploadSelectedFile(): Promise<{ path: string; name: string } | null> {
     const file = fileRef.current?.files?.[0];
     if (!file) {
       setError("Choose a file first");
       return null;
     }
-    const data = new FormData();
-    data.set("file", file);
-    return data;
+
+    setBusy("uploading");
+    const ticket = await createUploadTicket(file.name, file.size);
+    if (!ticket.ok) {
+      setError(ticket.error);
+      setBusy(null);
+      return null;
+    }
+
+    const { error: uploadError } = await createSupabaseBrowserClient()
+      .storage.from(ticket.bucket)
+      .uploadToSignedUrl(ticket.path, ticket.token, file);
+    if (uploadError) {
+      setError(`Upload failed: ${uploadError.message}`);
+      setBusy(null);
+      return null;
+    }
+
+    return { path: ticket.path, name: file.name };
   }
 
   async function analyze() {
-    const data = formData();
-    if (!data) return;
-
-    setBusy("analyzing");
     setError(null);
     setResult(null);
+    setPreview(null);
+    setStoragePath(null);
 
+    const uploaded = await uploadSelectedFile();
+    if (!uploaded) return;
+
+    setBusy("analyzing");
     try {
-      const response = await previewImport(data);
-      if (response.ok) setPreview(response);
-      else {
+      const response = await previewImport(uploaded.path, uploaded.name);
+      if (response.ok) {
+        setPreview(response);
+        setStoragePath(uploaded.path);
+      } else {
         setPreview(null);
         setError(response.error);
       }
     } catch (cause) {
-      // A rejected request (an oversized body, a dropped connection) throws
-      // rather than returning, and without this the UI would sit on
-      // "Analyzing…" forever with no explanation.
       setPreview(null);
-      setError(describeTransportFailure(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
     }
   }
 
   async function commit() {
-    const data = formData();
-    if (!data) return;
+    if (!storagePath || !fileName) return;
 
     setBusy("importing");
     setError(null);
 
     try {
-      const response = await runImport(data);
+      const response = await runImport(storagePath, fileName);
       if (response.ok) {
         setResult(response.summary ?? null);
         setPreview(null);
+        setStoragePath(null);
         router.refresh();
       } else {
         setError(response.error ?? "Import failed");
       }
     } catch (cause) {
-      setError(describeTransportFailure(cause));
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(null);
     }
@@ -101,6 +118,7 @@ export function ImportWizard() {
             accept=".xlsx,.xls,.csv"
             onChange={(e) => {
               setFileName(e.target.files?.[0]?.name ?? null);
+              setStoragePath(null);
               setPreview(null);
               setResult(null);
               setError(null);
@@ -123,7 +141,7 @@ export function ImportWizard() {
               disabled={busy !== null}
               className="border border-line px-4 py-2 text-sm font-semibold text-ink transition hover:border-navy disabled:opacity-50"
             >
-              {busy === "analyzing" ? "Analyzing…" : "Analyze"}
+              {busy === "uploading" ? "Uploading…" : busy === "analyzing" ? "Analyzing…" : "Analyze"}
             </button>
 
             {preview && (

@@ -3,11 +3,13 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   experimental: {
     serverActions: {
-      // Server Actions cap request bodies at 1 MB by default, which rejects a
-      // real weekly workbook (the current one is ~1.8 MB). The import action
-      // enforces its own 25 MB limit and returns a readable error; this ceiling
-      // is set just above it so oversized files fail there rather than as a 413.
-      bodySizeLimit: "26mb",
+      // Server Actions cap request bodies at 1 MB by default. The workbook
+      // import no longer sends the file through a server action at all (see
+      // src/app/(shell)/import/actions.ts) — it uploads straight to Storage,
+      // since Vercel hard-caps a Serverless Function's request body at
+      // 4.5 MB regardless of this setting. This ceiling just covers every
+      // other, ordinary server action in the app.
+      bodySizeLimit: "2mb",
     },
   },
 };

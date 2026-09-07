@@ -34,7 +34,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { updateSkillTarget } = await import("./(shell)/skills/actions");
 const { updateUser } = await import("./(shell)/users/actions");
-const { previewImport, runImport } = await import("./(shell)/import/actions");
+const { createUploadTicket, previewImport, runImport } = await import("./(shell)/import/actions");
 const { addRcaNote } = await import("./(shell)/action-items/actions");
 
 function signedInAs(role: UserRole): CurrentUser {
@@ -82,17 +82,18 @@ describe("admin-only mutations", () => {
       expect(result).toEqual({ ok: false, error: "Only administrators can manage users" });
     });
 
+    it("cannot request an upload ticket", async () => {
+      const result = await createUploadTicket("week.xlsx", 1024);
+      expect(result).toEqual({ ok: false, error: "Only administrators can import data" });
+    });
+
     it("cannot analyze an uploaded workbook", async () => {
-      const form = new FormData();
-      form.set("file", new File(["x"], "week.xlsx"));
-      const result = await previewImport(form);
+      const result = await previewImport("some-user-id/week.xlsx", "week.xlsx");
       expect(result).toEqual({ ok: false, error: "Only administrators can import data" });
     });
 
     it("cannot commit an import", async () => {
-      const form = new FormData();
-      form.set("file", new File(["x"], "week.xlsx"));
-      const result = await runImport(form);
+      const result = await runImport("some-user-id/week.xlsx", "week.xlsx");
       expect(result).toEqual({ ok: false, error: "Only administrators can import data" });
     });
   });
