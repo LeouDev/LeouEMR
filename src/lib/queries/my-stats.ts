@@ -1,6 +1,8 @@
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { employees, kpiDefinitions, metricFacts, npsFacts } from "@/lib/db/schema";
+import { employees, kpiDefinitions, metricFacts, npsFacts, skillFacts } from "@/lib/db/schema";
+import { normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
+import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import type { NpsMix } from "@/lib/kpi-engine/nps";
 import { getPeriodMetrics } from "./period-metrics";
 import { periodContaining, previousPeriod, type Period } from "./period";
@@ -235,6 +237,68 @@ export interface TeamPeriodComparison {
  * Columns are derived from the data rather than from the KPI catalogue, so a
  * team that never records NPS does not carry an empty NPS column.
  */
+/** The synthetic column below; not a KPI code, so it cannot collide with one. */
+const CASE_RATE_CODE = "CASE_RATE";
+
+/**
+ * Blended case rate — production weight per case — for each employee.
+ *
+ * Case rate is a skill metric, not a KPI: skills measured this way emit no
+ * cases-per-hour or handle-time facts at all (see aggregate.ts), which is why
+ * a case-rate agent's Cases Per Hour column is empty. Their output is scored
+ * through the PAR production rate instead. This reads the same per-skill facts
+ * PAR is built from so the underlying number is at least visible.
+ *
+ * Deliberately unscored: each skill carries its own case-rate target (8 to 15
+ * across the reference table), so a single blended target would be arbitrary,
+ * and a wrong one would paint honest work red. Callers render it with a null
+ * status, which metricTone shows in muted grey rather than pass or fail.
+ */
+async function getCaseRates(
+  employeeIds: string[],
+  period: Period,
+): Promise<Map<string, number>> {
+  const [rows, refs] = await Promise.all([
+    db
+      .select({
+        employeeId: skillFacts.employeeId,
+        skillLabel: skillFacts.skillLabel,
+        cases: sql<number>`sum(${skillFacts.cases})::double precision`,
+        prodWeight: sql<number>`sum(${skillFacts.prodWeight})::double precision`,
+      })
+      .from(skillFacts)
+      .where(
+        and(
+          inArray(skillFacts.employeeId, employeeIds),
+          gte(skillFacts.factDate, period.start),
+          lte(skillFacts.factDate, period.end),
+        ),
+      )
+      .groupBy(skillFacts.employeeId, skillFacts.skillLabel),
+    loadSkillReferences(),
+  ]);
+
+  // Summed across the employee's case-rate skills, then divided once — the
+  // same reason period-metrics recomputes ratios from their components rather
+  // than averaging them: a skill with three cases would otherwise weigh as
+  // much as one with three hundred.
+  const totals = new Map<string, { prodWeight: number; cases: number }>();
+  for (const row of rows) {
+    const ref = refs.get(normalizeSkill(row.skillLabel));
+    if (ref?.metric !== "case_rate") continue;
+    const entry = totals.get(row.employeeId) ?? { prodWeight: 0, cases: 0 };
+    entry.prodWeight += row.prodWeight;
+    entry.cases += row.cases;
+    totals.set(row.employeeId, entry);
+  }
+
+  const rates = new Map<string, number>();
+  for (const [employeeId, t] of totals) {
+    if (t.cases > 0 && t.prodWeight > 0) rates.set(employeeId, t.prodWeight / t.cases);
+  }
+  return rates;
+}
+
 export async function getTeamPeriodComparison(
   employeeIds: string[],
   current: Period,
@@ -244,13 +308,15 @@ export async function getTeamPeriodComparison(
     return { period: current, previous, kpis: [], rows: [] };
   }
 
-  const [currentMetrics, previousMetrics, roster] = await Promise.all([
+  const [currentMetrics, previousMetrics, roster, currentRates, previousRates] = await Promise.all([
     getPeriodMetrics(employeeIds, current),
     getPeriodMetrics(employeeIds, previous),
     db
       .select({ id: employees.id, eid: employees.eid, name: employees.name })
       .from(employees)
       .where(inArray(employees.id, employeeIds)),
+    getCaseRates(employeeIds, current),
+    getCaseRates(employeeIds, previous),
   ]);
 
   const priorByKey = new Map(previousMetrics.map((m) => [`${m.employeeId}|${m.kpiCode}`, m]));
@@ -288,6 +354,27 @@ export async function getTeamPeriodComparison(
       };
       cellsByEmployee.set(m.employeeId, cells);
     }
+  }
+
+  // Case rate joins as its own column on the same terms as a real KPI —
+  // value, change, and the same "new" / "no change" wording — but with a null
+  // status, so it reads as information rather than a verdict. The column only
+  // appears when somebody in view actually has case-rate work.
+  for (const employeeId of new Set([...currentRates.keys(), ...previousRates.keys()])) {
+    const rate = currentRates.get(employeeId) ?? null;
+    const prior = previousRates.get(employeeId) ?? null;
+    const delta = rate !== null && prior !== null ? rate - prior : null;
+    const cells = cellsByEmployee.get(employeeId) ?? {};
+    cells[CASE_RATE_CODE] = {
+      current: rate,
+      previous: prior,
+      delta,
+      // Higher is better: case_rate references are all lower_is_better = false.
+      improved: delta === null ? null : isImprovement(delta, "higher_is_better"),
+      status: null,
+    };
+    cellsByEmployee.set(employeeId, cells);
+    kpiNames.set(CASE_RATE_CODE, "Case Rate");
   }
 
   const rows: TeamPeriodRow[] = roster
