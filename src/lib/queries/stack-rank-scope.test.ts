@@ -30,10 +30,23 @@ vi.mock("./org-history", () => ({
 vi.mock("@/lib/db/client", () => ({
   db: {
     select: () => ({
-      from: () => ({ leftJoin: () => ({ where: async () => roster.rows }) }),
+      from: () => ({
+        // Awaitable on its own now that the roster query has no where-clause,
+        // while still offering .where() for the callers that do.
+        leftJoin: () => {
+          const result = Promise.resolve(roster.rows) as Promise<typeof roster.rows> & {
+            where: () => Promise<typeof roster.rows>;
+          };
+          result.where = async () => roster.rows;
+          return result;
+        },
+      }),
     }),
   },
 }));
+// Nobody in these fixtures has separated, so eligibility is a pass-through.
+// The rule itself is covered in eligibility.test.ts.
+vi.mock("./eligibility", () => ({ eligibleForPeriod: async (ids: string[]) => ids }));
 vi.mock("./period-metrics", () => ({
   getPeriodMetrics: async () =>
     [...metrics.byEmployee.entries()].flatMap(([employeeId, kpis]) =>

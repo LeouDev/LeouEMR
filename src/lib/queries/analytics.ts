@@ -15,6 +15,7 @@ import {
 } from "./org-history";
 import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
+import { eligibleForPeriod } from "./eligibility";
 import { periodContaining } from "./period";
 import type { Period } from "./period";
 
@@ -436,7 +437,7 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
   // so a realignment does not retroactively move a month of results to the
   // supervisor who inherited the person afterwards.
   const asOf = range.end;
-  const roster = await db
+  let roster = await db
     .select({
       employeeId: employees.id,
       eid: employees.eid,
@@ -455,6 +456,14 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
         ].filter(Boolean),
       ),
     );
+
+  // Who counted for this period, not who is employed today. A separated
+  // employee stays in the months they worked and leaves the ones they did
+  // not, judged on the date they left rather than on their status now.
+  const eligible = new Set(
+    await eligibleForPeriod(roster.map((r) => r.employeeId), period),
+  );
+  roster = roster.filter((r) => eligible.has(r.employeeId));
 
   const metrics = await getPeriodMetrics(roster.map((r) => r.employeeId), period);
   const mboByEmployee = new Map(

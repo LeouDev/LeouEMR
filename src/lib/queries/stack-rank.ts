@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import type { CurrentUser } from "@/lib/auth/session";
 import { resolveScopedIds } from "./performance";
 import { assignmentAt, siteOfRecord, supervisorOfRecord } from "./org-history";
 import { employeeAssignments, employees } from "@/lib/db/schema";
 import { getPeriodMetrics } from "./period-metrics";
+import { eligibleForPeriod } from "./eligibility";
 import type { Period } from "./period";
 
 export interface RankRow {
@@ -93,7 +93,7 @@ export async function getStackRanks(
   // Ranked against the teams as they stood at the end of the period. Ranking
   // August by today's structure would put people in a team they were not on,
   // and move a supervisor's result to whoever inherited their reports.
-  const roster = await db
+  const everyone = await db
     .select({
       id: employees.id,
       eid: employees.eid,
@@ -102,8 +102,13 @@ export async function getStackRanks(
       supervisorName: supervisorOfRecord,
     })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(period.end))
-    .where(eq(employees.status, "active"));
+    .leftJoin(employeeAssignments, assignmentAt(period.end));
+
+  // Who counted for THIS period, not who is employed today. Filtering on the
+  // live status would drop everyone who has since left out of every past
+  // ranking — August's board would quietly change every time someone resigns.
+  const eligible = new Set(await eligibleForPeriod(everyone.map((r) => r.id), period));
+  const roster = everyone.filter((r) => eligible.has(r.id));
 
   if (roster.length === 0) {
     return {
