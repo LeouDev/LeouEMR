@@ -11,6 +11,14 @@ type Result = { fileName: string; agents: AdherenceAgentDay[] };
 
 const STORAGE_KEY = "adherence-coding-result";
 
+type SegmentFilter = "unscheduled" | "variance" | "all";
+
+const FILTERS: Array<{ value: SegmentFilter; label: string }> = [
+  { value: "unscheduled", label: "Unscheduled only" },
+  { value: "variance", label: "With a variance" },
+  { value: "all", label: "All segments" },
+];
+
 /** A refresh mid-review shouldn't lose the scan — coding a 50-agent report is not a one-sitting task. */
 function loadSavedResult(): Result | null {
   try {
@@ -34,7 +42,13 @@ export function AdherenceUploader() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Result | null>(null);
-  const [onlyExceptions, setOnlyExceptions] = useState(true);
+  /**
+   * Unscheduled segments first, because that is what a team lead codes: time
+   * the agent spent on something the schedule never asked for. The variance
+   * view is still a click away — it answers a different question, about
+   * scheduled work that ran early or long.
+   */
+  const [filter, setFilter] = useState<SegmentFilter>("unscheduled");
 
   // Read after mount, not in the initializer — the server render has no
   // localStorage, so restoring here (rather than synchronously) avoids a
@@ -126,14 +140,24 @@ export function AdherenceUploader() {
                 {result.agents.length === 1 ? "" : "s"}, {totalExceptions} segment
                 {totalExceptions === 1 ? "" : "s"} with a variance
               </p>
-              <label className="flex items-center gap-2 text-sm text-ink">
-                <input
-                  type="checkbox"
-                  checked={onlyExceptions}
-                  onChange={(e) => setOnlyExceptions(e.target.checked)}
-                />
-                Only segments with a variance
-              </label>
+              <div className="flex border-2 border-ink">
+                {FILTERS.map((option, i) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setFilter(option.value)}
+                    className={`cursor-pointer px-3 py-1.5 text-xs font-semibold ${
+                      i > 0 ? "border-l-2 border-ink" : ""
+                    } ${
+                      filter === option.value
+                        ? "bg-ink text-white"
+                        : "bg-surface text-ink hover:bg-orange-brand-100"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -141,7 +165,7 @@ export function AdherenceUploader() {
                 <AgentTimeline
                   key={`${agent.agentId}|${agent.date ?? ""}`}
                   agent={agent}
-                  onlyExceptions={onlyExceptions}
+                  filter={filter}
                 />
               ))}
             </div>
@@ -153,30 +177,38 @@ export function AdherenceUploader() {
 
 function AgentTimeline({
   agent,
-  onlyExceptions,
+  filter,
 }: {
   agent: AdherenceAgentDay;
-  onlyExceptions: boolean;
+  filter: SegmentFilter;
 }) {
-  const rows = onlyExceptions ? agent.segments.filter((s) => s.variance) : agent.segments;
+  // "No scheduled activity" is the definition of an unscheduled segment: the
+  // agent was doing something the schedule never asked for.
+  const rows =
+    filter === "unscheduled"
+      ? agent.segments.filter((s) => !s.scheduledActivity)
+      : filter === "variance"
+        ? agent.segments.filter((s) => s.variance)
+        : agent.segments;
   const exceptionCount = agent.segments.filter((s) => s.variance).length;
+  const unscheduledCount = agent.segments.filter((s) => !s.scheduledActivity).length;
 
   return (
-    <details className="border-2 border-ink bg-surface" open={exceptionCount > 0}>
+    <details className="border-2 border-ink bg-surface" open={rows.length > 0}>
       <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-6 py-4">
         <span className="font-medium text-ink">
           {agent.agentName} <span className="ml-2 font-mono text-xs text-muted">{agent.agentId}</span>
         </span>
         <span className="text-xs text-muted">
           {agent.date && `${agent.date} · `}
-          {exceptionCount} of {agent.segments.length} segment{agent.segments.length === 1 ? "" : "s"} with a
-          variance
+          {unscheduledCount} unscheduled · {exceptionCount} with a variance · {agent.segments.length}{" "}
+          segment{agent.segments.length === 1 ? "" : "s"}
         </span>
       </summary>
 
       {rows.length === 0 ? (
         <p className="border-t-2 border-line px-6 py-4 text-sm text-muted">
-          No segments {onlyExceptions ? "with a variance" : "found"} for this agent.
+          No {filter === "unscheduled" ? "unscheduled segments" : filter === "variance" ? "segments with a variance" : "segments"} for this agent.
         </p>
       ) : (
         <div className="overflow-x-auto border-t-2 border-ink">
