@@ -28,22 +28,27 @@ const SEPARATING = ["black", "absconding"] as const;
 export async function separationDates(employeeIds: string[]): Promise<Map<string, string>> {
   if (employeeIds.length === 0) return new Map();
 
+  // The newest assessment that CARRIES a separating tag, not the newest
+  // assessment. Those differ: a supervisor filling in a later week leaves an
+  // untagged row on top, and taking that row would silently un-separate
+  // someone who has left — putting them back into every month's reporting.
   const rows = await db
     .selectDistinctOn([ewsAssessments.employeeId], {
       employeeId: ewsAssessments.employeeId,
-      attrition: ewsAssessments.attrition,
       attritionDate: ewsAssessments.attritionDate,
       week: ewsAssessments.week,
     })
     .from(ewsAssessments)
-    .where(inArray(ewsAssessments.employeeId, employeeIds))
+    .where(
+      and(
+        inArray(ewsAssessments.employeeId, employeeIds),
+        inArray(ewsAssessments.attrition, [...SEPARATING]),
+      ),
+    )
     .orderBy(ewsAssessments.employeeId, desc(ewsAssessments.week));
 
   const dates = new Map<string, string>();
-  for (const row of rows) {
-    if (!SEPARATING.includes(row.attrition as (typeof SEPARATING)[number])) continue;
-    dates.set(row.employeeId, row.attritionDate ?? row.week);
-  }
+  for (const row of rows) dates.set(row.employeeId, row.attritionDate ?? row.week);
   return dates;
 }
 

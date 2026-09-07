@@ -288,7 +288,11 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
       )
       .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
       .leftJoin(employeeAssignments, assignmentAt(asOf))
-      .where(scope.length ? and(...scope) : undefined)
+      // Narrowed to the same people the headline counts. Without this the
+      // group headcounts sum past the total on the same screen, and every
+      // fail rate divides by a denominator that still holds the leavers the
+      // page has already excluded.
+      .where(and(inArray(employees.id, ids), ...scope))
       .groupBy(column);
 
     const issuesPromise = db
@@ -299,7 +303,8 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
       .from(performanceIssues)
       .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
       .leftJoin(employeeAssignments, assignmentAt(asOf))
-      .where(issueScope.length ? and(...issueScope) : undefined)
+      // Same narrowing as the headcount beside it, for the same reason.
+      .where(and(inArray(employees.id, ids), ...issueScope))
       .groupBy(column);
 
     const [rows, issues] = await Promise.all([rowsPromise, issuesPromise]);
