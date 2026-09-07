@@ -8,12 +8,24 @@
  * using the production code path, asserts the progression, then removes
  * everything it inserted.
  *
+ * The synthetic weeks are stamped with a dedicated import batch, named so it
+ * is obvious in the table what they are. That is not bookkeeping: rows with
+ * no import behind them are indistinguishable from imported ones, and a run
+ * of this script that died before its cleanup once left sixteen such rows in
+ * production — closing four real action items on fabricated passing weeks.
+ * The batch id makes any leftovers attributable and deletable, and the
+ * NOT NULL on source_import_id (migration 0039) makes the old unstamped
+ * write impossible.
+ *
+ * The cleanup runs in a finally block for the same reason.
+ *
  *   npm run verify:four-week -- PA-2026-000610
  */
 import { and, eq, gte } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
 import {
   actionItems,
+  importBatches,
   performanceIssues,
   weeklyIssueHistory,
   weeklyMetricResults,
@@ -84,6 +96,15 @@ for (let i = 1; i <= 5; i++) {
 
 console.log(`Seeding passing weeks for ${code}: ${weeks.join(", ")}\n`);
 
+// Named so anyone reading import_batches or the rows themselves can see at a
+// glance that this is a test fixture and not imported production data.
+const [batch] = await db
+  .insert(importBatches)
+  .values({ fileName: `verify-four-week-rule ${code} (synthetic)`, status: "committed" })
+  .returning({ id: importBatches.id });
+
+let failures = 0;
+try {
 for (const week of weeks) {
   const end = new Date(`${week}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + 6);
@@ -98,6 +119,7 @@ for (const week of weeks) {
       targetValue: 11,
       status: "pass",
       sampleSize: 5,
+      sourceImportId: batch.id,
     })
     .onConflictDoNothing();
 }
@@ -110,7 +132,6 @@ const expected = [
   { week: weeks[4], status: "COMPLETED", consecutive: 5 },
 ];
 
-let failures = 0;
 for (const step of expected) {
   await runIssueEngineForWeeks([step.week]);
 
@@ -143,7 +164,10 @@ const mirrored = item.status === "COMPLETED";
 if (!mirrored) failures += 1;
 console.log(`${mirrored ? "PASS" : "FAIL"}  action item mirrors issue status (got ${item.status})`);
 
-// Clean up everything this script inserted and restore the prior state.
+} finally {
+// Always runs, including on a failed assertion or an interrupted connection:
+// leaving synthetic passing weeks behind is how four real action items were
+// closed on data nobody imported.
 console.log("\nCleaning up synthetic weeks…");
 await db
   .delete(weeklyIssueHistory)
@@ -153,15 +177,8 @@ await db
       gte(weeklyIssueHistory.week, weeks[0]),
     ),
   );
-await db
-  .delete(weeklyMetricResults)
-  .where(
-    and(
-      eq(weeklyMetricResults.employeeId, target.employeeId),
-      eq(weeklyMetricResults.kpiId, target.kpiId),
-      gte(weeklyMetricResults.weekStart, weeks[0]),
-    ),
-  );
+// By batch id, so it cannot miss a row or reach one it did not write.
+await db.delete(weeklyMetricResults).where(eq(weeklyMetricResults.sourceImportId, batch.id));
 await db
   .update(performanceIssues)
   .set({
@@ -175,6 +192,8 @@ await db
   .update(actionItems)
   .set({ status: originalStatus })
   .where(eq(actionItems.code, code));
+await db.delete(importBatches).where(eq(importBatches.id, batch.id));
+}
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

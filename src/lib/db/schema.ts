@@ -226,7 +226,9 @@ export const employeeAssignments = pgTable("employee_assignments", {
   supervisorName: text("supervisor_name"),
   managerName: text("manager_name"),
   site: text("site"),
-  sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+  sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -401,7 +403,9 @@ export const weeklyMetricResults = pgTable(
     status: kpiStatusEnum("status").notNull(),
     /** Row count behind the aggregate, e.g. number of audits or surveys. */
     sampleSize: integer("sample_size"),
-    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -437,7 +441,9 @@ export const metricFacts = pgTable(
     numerator: numeric("numerator", { mode: "number" }).notNull(),
     denominator: numeric("denominator", { mode: "number" }).notNull(),
     sampleSize: integer("sample_size").notNull().default(0),
-    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
   },
   (table) => [
     uniqueIndex("metric_facts_employee_kpi_date_idx").on(
@@ -461,7 +467,9 @@ export const skillFacts = pgTable(
     hours: numeric("hours", { mode: "number" }).notNull().default(0),
     weightHours: numeric("weight_hours", { mode: "number" }).notNull().default(0),
     prodWeight: numeric("prod_weight", { mode: "number" }).notNull().default(0),
-    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
   },
   (table) => [
     uniqueIndex("skill_facts_employee_skill_date_idx").on(
@@ -490,7 +498,9 @@ export const npsFacts = pgTable(
     promoters: integer("promoters").notNull().default(0),
     passives: integer("passives").notNull().default(0),
     detractors: integer("detractors").notNull().default(0),
-    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
   },
   (table) => [
     uniqueIndex("nps_facts_employee_date_idx").on(table.employeeId, table.factDate),
@@ -508,7 +518,9 @@ export const qualityFacts = pgTable(
     audits: integer("audits").notNull().default(0),
     imperfect: integer("imperfect").notNull().default(0),
     markdowns: integer("markdowns").notNull().default(0),
-    sourceImportId: uuid("source_import_id").references(() => importBatches.id),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
   },
   (table) => [
     uniqueIndex("quality_facts_employee_skill_date_idx").on(
