@@ -22,6 +22,13 @@ export interface EwsRow {
 
 export interface EwsBoard {
   rows: EwsRow[];
+  /**
+   * Everyone whose latest assessment carries an attrition tag — separated or
+   * on leave. Keyed off the assessment rather than employees.status so the
+   * list is right even for someone tagged before the status write existed,
+   * and so it cannot drift from the tag a supervisor actually set.
+   */
+  away: EwsRow[];
   totals: {
     black: number;
     red: number;
@@ -51,6 +58,7 @@ const RISK_RANK: Record<string, number> = { BLACK: 0, RED: 1, YELLOW: 2, unasses
 export async function getEwsBoard(user: CurrentUser): Promise<EwsBoard> {
   const empty: EwsBoard = {
     rows: [],
+    away: [],
     totals: { black: 0, red: 0, yellow: 0, green: 0, unassessed: 0 },
   };
 
@@ -127,5 +135,11 @@ export async function getEwsBoard(user: CurrentUser): Promise<EwsBoard> {
     else totals.unassessed += 1;
   }
 
-  return { rows, totals };
+  // Sorted by name: this is a register of who is off the floor, not a
+  // ranking — there is nothing to be worst at.
+  const away = rows
+    .filter((r) => r.attrition && r.attrition !== "none")
+    .sort((x, y) => x.employeeName.localeCompare(y.employeeName));
+
+  return { rows, away, totals };
 }

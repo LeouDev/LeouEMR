@@ -1,13 +1,14 @@
 "use server";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canManageActionItems, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, ewsAssessments } from "@/lib/db/schema";
-import { computeEwsRisk } from "@/lib/ews/engine";
+import { computeEwsRisk, employeeStatusFor } from "@/lib/ews/engine";
+import { closeIssuesOnSeparation } from "@/lib/action-item-engine/persistence";
 
 const schema = z.object({
   employeeId: z.string().uuid(),
@@ -97,6 +98,46 @@ export async function saveEwsAssessment(input: unknown): Promise<EwsResult> {
     after: { week: parsed.data.week, score, riskLevel },
   });
 
+  // Employment status follows the LATEST assessment, not the one just saved.
+  // A supervisor correcting a week from two months ago must not resurrect an
+  // attrition tag that has since been cleared, or clear one still standing.
+  const [latest] = await db
+    .select({ attrition: ewsAssessments.attrition, week: ewsAssessments.week })
+    .from(ewsAssessments)
+    .where(eq(ewsAssessments.employeeId, parsed.data.employeeId))
+    .orderBy(desc(ewsAssessments.week))
+    .limit(1);
+
+  const nextStatus = employeeStatusFor(latest?.attrition ?? "none");
+  const [current] = await db
+    .select({ status: employees.status })
+    .from(employees)
+    .where(eq(employees.id, parsed.data.employeeId))
+    .limit(1);
+
+  if (current && current.status !== nextStatus) {
+    await db
+      .update(employees)
+      .set({ status: nextStatus, updatedAt: new Date() })
+      .where(eq(employees.id, parsed.data.employeeId));
+
+    await db.insert(auditLog).values({
+      actorId: user.id,
+      action: "employee.status_changed",
+      entityType: "employee",
+      entityId: parsed.data.employeeId,
+      before: { status: current.status },
+      after: { status: nextStatus, from: latest?.attrition ?? "none", week: latest?.week ?? null },
+    });
+
+    // Someone who has left should not carry open work. Leave states keep
+    // theirs — they come back to it.
+    if (nextStatus === "separated") {
+      await closeIssuesOnSeparation(parsed.data.employeeId, latest?.week ?? parsed.data.week);
+    }
+  }
+
   revalidatePath(`/employees/${parsed.data.employeeId}`);
+  revalidatePath("/ews");
   return { ok: true, riskLevel, score };
 }

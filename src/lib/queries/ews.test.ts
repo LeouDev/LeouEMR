@@ -160,7 +160,22 @@ describe("getEwsBoard", () => {
     const board = await getEwsBoard(user("supervisor"));
     expect(board).toEqual({
       rows: [],
+      away: [],
       totals: { black: 0, red: 0, yellow: 0, green: 0, unassessed: 0 },
     });
+  });
+});
+
+describe("getEwsBoard away list", () => {
+  it("lists everyone carrying an attrition tag, and nobody who is not", async () => {
+    const board = await getEwsBoard(user("supervisor"));
+    for (const row of board.away) {
+      expect(row.attrition).toBeTruthy();
+      expect(row.attrition).not.toBe("none");
+    }
+    // Whoever is away must also still appear on the risk board itself.
+    for (const row of board.away) {
+      expect(board.rows.some((r) => r.employeeId === row.employeeId)).toBe(true);
+    }
   });
 });

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, EwsRiskBadge, PageBand, StatCard, formatWeek } from "@/components/ui";
+import { AwayTable } from "./away-table";
 import { EWS_RISK_GUIDANCE } from "@/lib/ews/engine";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getEwsBoard } from "@/lib/queries/ews";
@@ -154,6 +155,19 @@ export default async function EwsPage() {
             </div>
           )}
         </Card>
+
+        {/* Separately from the risk board, which ranks people still on the
+            floor. Someone who has resigned or gone on leave is not a
+            retention risk to work — they are a staffing fact to see. */}
+        {board.away.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader
+              title="Separated and on leave"
+              subtitle="Anyone in your span carrying an attrition tag on their latest assessment"
+            />
+            <AwayTable rows={board.away} />
+          </Card>
+        )}
       </main>
     </>
   );

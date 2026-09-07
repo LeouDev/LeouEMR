@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { computeEwsRisk, computeEwsScore } from "./engine";
+import { computeEwsRisk, computeEwsScore,
+  employeeStatusFor,
+} from "./engine";
 import type { EwsAssessmentInput } from "./engine";
 
 function input(over: Partial<EwsAssessmentInput> = {}): EwsAssessmentInput {
@@ -69,5 +71,24 @@ describe("computeEwsRisk — attrition overrides", () => {
     );
     expect(result.score).toBe(5);
     expect(result.riskLevel).toBe("BLACK");
+  });
+});
+
+describe("employeeStatusFor", () => {
+  it("treats a resignation as an exit", () => {
+    expect(employeeStatusFor("black")).toBe("separated");
+  });
+
+  it("treats absconding as an exit — they are not coming back either", () => {
+    expect(employeeStatusFor("absconding")).toBe("separated");
+  });
+
+  it("treats maternity and LOA as a pause, not an exit", () => {
+    expect(employeeStatusFor("maternity")).toBe("on_leave");
+    expect(employeeStatusFor("loa")).toBe("on_leave");
+  });
+
+  it("returns someone to active when the tag is cleared", () => {
+    expect(employeeStatusFor("none")).toBe("active");
   });
 });

@@ -1,9 +1,10 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   actionItems,
   actionPlans,
   auditLog,
+  employees,
   kpiDefinitions,
   performanceIssues,
   rcaEntries,
@@ -76,6 +77,10 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
   if (weeks.length === 0) return result;
 
   const live = await loadLiveIssues();
+  // Someone separated or on leave should not have new work opened against
+  // them. Their existing issues are still evaluated below — a week that
+  // happened still happened — but nothing new starts while they are away.
+  const notActive = await loadInactiveEmployeeIds();
   // One bulk read, not one per already-evaluated row: a routine re-import of
   // weeks that are mostly unchanged (the normal case for a large historical
   // file that also happens to re-cover a few recent weeks) would otherwise
@@ -179,7 +184,8 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
     }
 
     await applyUpdates(updates);
-    const opened = await applyOpens(opens, week, live);
+    const openable = opens.filter((o) => !notActive.has(o.employeeId));
+    const opened = await applyOpens(openable, week, live);
     result.opened += opened;
 
     await insertHistory(history);
@@ -219,6 +225,69 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
  */
 export async function ageOutStaleIssues(dryRun = false): Promise<number> {
   return ageOutRecoveredIssues(await loadLiveIssues(), dryRun);
+}
+
+/**
+ * Employees who are separated or on leave.
+ *
+ * Read once per engine run rather than joined into the weekly query: the
+ * weekly rows drive updates as well as opens, and filtering them at the
+ * source would stop an existing issue recording the weeks it lived through.
+ */
+async function loadInactiveEmployeeIds(): Promise<Set<string>> {
+  const rows = await db
+    .select({ id: employees.id })
+    .from(employees)
+    .where(ne(employees.status, "active"));
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * Closes every open issue for someone who has left.
+ *
+ * Called when an attrition tag marks them separated. Deliberately not called
+ * for a leave of absence or maternity: those people return, and closing their
+ * work would hand them a clean slate that misrepresents where they left off.
+ */
+export async function closeIssuesOnSeparation(
+  employeeId: string,
+  /** The week the separation was recorded, used as the resolution date. */
+  week: string,
+): Promise<number> {
+  const open = await db
+    .select({ id: performanceIssues.id, status: performanceIssues.status })
+    .from(performanceIssues)
+    .where(
+      and(
+        eq(performanceIssues.employeeId, employeeId),
+        ne(performanceIssues.status, "COMPLETED"),
+      ),
+    );
+  if (open.length === 0) return 0;
+
+  const ids = open.map((i) => i.id);
+  await db.transaction(async (tx) => {
+    await tx
+      .update(performanceIssues)
+      .set({ status: "COMPLETED", resolvedWeek: week, updatedAt: sql`now()` })
+      .where(inArray(performanceIssues.id, ids));
+    await tx
+      .update(actionItems)
+      .set({ status: "COMPLETED", updatedAt: sql`now()` })
+      .where(inArray(actionItems.performanceIssueId, ids));
+    // Its own action: closed because the person left, not because the
+    // performance recovered. The two should never be read as the same thing.
+    await tx.insert(auditLog).values(
+      open.map((issue) => ({
+        action: "issue.closed_on_separation",
+        entityType: "performance_issue",
+        entityId: issue.id,
+        before: { status: issue.status },
+        after: { status: "COMPLETED", resolvedWeek: week, reason: "employee separated" },
+      })),
+    );
+  });
+  return open.length;
 }
 
 async function ageOutRecoveredIssues(

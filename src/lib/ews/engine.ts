@@ -68,3 +68,23 @@ export const EWS_RISK_GUIDANCE: Record<EwsRiskLevel, string> = {
   RED: "Multiple warning signs. Hold a retention conversation and escalate if needed.",
   BLACK: "Confirmed resignation or termination. Begin the transition plan.",
 };
+
+export type EmployeeStatus = "active" | "on_leave" | "separated";
+
+/**
+ * The employment status an attrition tag implies.
+ *
+ * The four tags are not one thing. A resignation or an absconding is an exit:
+ * the person is not coming back, and their open work should close. Maternity
+ * and a leave of absence are a pause: they return, and closing their action
+ * items would mean they come back to a clean slate that misrepresents where
+ * they left off.
+ *
+ * Clearing the tag returns them to active, which is what makes the leave
+ * states reversible — a returning agent needs no separate action.
+ */
+export function employeeStatusFor(attrition: EwsAttrition): EmployeeStatus {
+  if (attrition === "black" || attrition === "absconding") return "separated";
+  if (attrition === "loa" || attrition === "maternity") return "on_leave";
+  return "active";
+}
