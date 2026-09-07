@@ -61,6 +61,10 @@ export default async function EmployeePage({
   const [assessment] = assessmentRows;
 
   const canAssess = canManageActionItems(user);
+  // Early warning signs are the supervisor's own read on flight risk and
+  // coachability — notes written about the agent, not for them. Leaders see
+  // them on anyone's page; an agent opening their own page does not.
+  const showsEws = user.role !== "agent";
   const openItems = issues.filter((i) => i.status !== "COMPLETED").length;
   const failingLatest = latestWeek
     ? kpis.filter((k) => cells.get(`${k.code}|${latestWeek}`)?.status === "fail").length
@@ -125,7 +129,7 @@ export default async function EmployeePage({
           </Card>
         )}
 
-        {assessmentWeek && (
+        {assessmentWeek && showsEws && (
           <Card className="mt-6">
             <CardHeader
               title="Early warning signs"

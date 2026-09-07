@@ -179,6 +179,68 @@ export function BarList({
   );
 }
 
+/**
+ * A ranked leaderboard of people scored on the PAR rating.
+ *
+ * Deliberately not a BarList: PAR is a 1.00–5.00 rating, not a percentage, so
+ * it neither reads as "%" nor scales from zero. The bar spans the rating scale
+ * itself — a 1.00 is empty and a 5.00 is full — because scaling from zero would
+ * squeeze every real rating into the top of the bar and make them look alike.
+ */
+export function RankList({
+  rows,
+  min = 1,
+  max = 5,
+  target = 3,
+  emptyMessage = "No data in this range.",
+}: {
+  rows: { label: string; value: number; caption?: string; href?: string }[];
+  min?: number;
+  max?: number;
+  /** At or above this the rating counts as meeting expectations. */
+  target?: number;
+  emptyMessage?: string;
+}) {
+  if (rows.length === 0) {
+    return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
+  }
+
+  return (
+    <ol className="space-y-2.5">
+      {rows.map((row, i) => {
+        const tone = row.value >= target ? "var(--color-pass)" : ORANGE;
+        const fill = Math.max(0, Math.min(100, ((row.value - min) / (max - min)) * 100));
+        return (
+          <li key={`${row.label}-${i}`} className="grid grid-cols-[1.25rem_1fr_auto] items-center gap-x-3 gap-y-1">
+            <span className="font-mono text-xs text-muted tabular-nums">{i + 1}</span>
+            <span className="truncate text-sm text-ink" title={row.label}>
+              {row.href ? (
+                <a href={row.href} className="hover:text-orange-brand hover:underline">
+                  {row.label}
+                </a>
+              ) : (
+                row.label
+              )}
+            </span>
+            <span
+              className="font-mono text-sm font-semibold tabular-nums"
+              style={{ color: tone }}
+            >
+              {row.value.toFixed(2)}
+            </span>
+            <div className="col-start-2 col-span-2 h-1.5 overflow-hidden bg-line">
+              <div className="h-full" style={{ width: `${fill}%`, backgroundColor: tone }} />
+            </div>
+            {row.caption && (
+              <span className="col-start-2 col-span-2 -mt-0.5 text-xs text-muted">{row.caption}</span>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 /** A single MBO attainment reading as a horizontal gauge. */
 export function MboGauge({ value, target = 100 }: { value: number | null; target?: number }) {
   if (value === null) {
