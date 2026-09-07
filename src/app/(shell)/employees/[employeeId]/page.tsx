@@ -7,8 +7,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { ewsAssessments, ewsIndicators, users } from "@/lib/db/schema";
 import { getEmployeeMatrix } from "@/lib/queries/performance";
+import { getEmployeeSkillBreakdown } from "@/lib/queries/skill-breakdown";
 import { EwsPanel } from "./ews-panel";
 import { ProgressMatrix } from "./progress-matrix";
+import { SkillBreakdownTable } from "./skill-breakdown-table";
 
 export default async function EmployeePage({
   params,
@@ -43,16 +45,20 @@ export default async function EmployeePage({
   // selected one; the matrix above shows every week's risk at a glance.
   const assessmentWeek = query.week && weeks.includes(query.week) ? query.week : latestWeek;
 
-  const [assessment] = assessmentWeek
-    ? await db
-        .select({ assessment: ewsAssessments, assessorName: users.name })
-        .from(ewsAssessments)
-        .leftJoin(users, eq(users.id, ewsAssessments.assessedBy))
-        .where(
-          and(eq(ewsAssessments.employeeId, employeeId), eq(ewsAssessments.week, assessmentWeek)),
-        )
-        .limit(1)
-    : [];
+  const [assessmentRows, skillBreakdown] = await Promise.all([
+    assessmentWeek
+      ? db
+          .select({ assessment: ewsAssessments, assessorName: users.name })
+          .from(ewsAssessments)
+          .leftJoin(users, eq(users.id, ewsAssessments.assessedBy))
+          .where(
+            and(eq(ewsAssessments.employeeId, employeeId), eq(ewsAssessments.week, assessmentWeek)),
+          )
+          .limit(1)
+      : Promise.resolve([]),
+    getEmployeeSkillBreakdown(employeeId, employee.eid, weeks),
+  ]);
+  const [assessment] = assessmentRows;
 
   const canAssess = canManageActionItems(user);
   const openItems = issues.filter((i) => i.status !== "COMPLETED").length;
@@ -108,6 +114,16 @@ export default async function EmployeePage({
           />
           <ProgressMatrix matrix={matrix} />
         </Card>
+
+        {skillBreakdown.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader
+              title="Skill breakdown"
+              subtitle="What actually fed the KPIs above, one skill at a time — a blended figure like Cases Per Hour sums every contributing skill into one number, so this is the only place to see them apart"
+            />
+            <SkillBreakdownTable rows={skillBreakdown} weeks={weeks} />
+          </Card>
+        )}
 
         {assessmentWeek && (
           <Card className="mt-6">
