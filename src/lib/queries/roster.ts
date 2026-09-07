@@ -289,4 +289,25 @@ export async function getOverdueCount(user: CurrentUser, today: string): Promise
   return row?.n ?? 0;
 }
 
+/**
+ * Open action items per employee, for the supervisor's agent table.
+ *
+ * Uses the same OPEN_STATUSES the counts elsewhere are built from, so a row's
+ * "Open" column cannot disagree with the Action Items page it links to.
+ */
+export async function getOpenIssueCounts(employeeIds: string[]): Promise<Map<string, number>> {
+  if (employeeIds.length === 0) return new Map();
+  const rows = await db
+    .select({ employeeId: performanceIssues.employeeId, n: count() })
+    .from(performanceIssues)
+    .where(
+      and(
+        inArray(performanceIssues.employeeId, employeeIds),
+        inArray(performanceIssues.status, [...OPEN_STATUSES]),
+      ),
+    )
+    .groupBy(performanceIssues.employeeId);
+  return new Map(rows.map((r) => [r.employeeId, r.n]));
+}
+
 export { desc };

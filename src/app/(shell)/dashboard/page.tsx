@@ -14,6 +14,9 @@ import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
 import { PeriodComparisonTable } from "./period-comparison-table";
 import { AgentPerformance, type AgentKpi } from "./agent-performance";
+import type { ShellActionItems } from "./dashboard-shell";
+import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
+import { TeamAgentTable } from "./team-agent-table";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getAttentionRows,
@@ -21,12 +24,13 @@ import {
   getLatestWeek,
   getTeamSummary,
 } from "@/lib/queries/performance";
-import { getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
+import { getOpenIssueCounts, getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
 import { resolveScopedIds } from "@/lib/queries/performance";
 import { reportingScopeIds } from "@/lib/queries/org-history";
 import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import { getEmployeeKpiTrend } from "@/lib/queries/trend";
+import { getTeamKpiTrend } from "@/lib/queries/team-trend";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { PeriodPicker } from "@/components/period-picker";
 
@@ -257,6 +261,55 @@ export default async function DashboardPage({
       ? await getEmployeeKpiTrend(scopedIds[0], weeks.slice(0, 12))
       : [];
 
+  const isSupervisor = user.role === "supervisor";
+
+  // The team's own figures, one row per KPI: the mean of the agents scored on
+  // it, and how many of them were below target. The mean alone hides the
+  // shape of a team, so the count travels with it everywhere it is shown.
+  const teamKpis: TeamKpi[] = isSupervisor
+    ? [...
+        periodMetrics
+          .reduce((acc, m) => {
+            const entry = acc.get(m.kpiCode) ?? {
+              code: m.kpiCode,
+              name: m.kpiName,
+              sum: 0,
+              targetSum: 0,
+              targets: 0,
+              below: 0,
+              scored: 0,
+            };
+            entry.sum += m.actualValue;
+            entry.scored += 1;
+            if (m.status === "FAIL") entry.below += 1;
+            if (m.targetValue !== null) {
+              entry.targetSum += m.targetValue;
+              entry.targets += 1;
+            }
+            acc.set(m.kpiCode, entry);
+            return acc;
+          }, new Map<string, { code: string; name: string; sum: number; targetSum: number; targets: number; below: number; scored: number }>())
+          .values(),
+      ]
+        .map((e) => ({
+          code: e.code,
+          name: e.name,
+          avg: e.sum / e.scored,
+          // Targets differ per agent — a ramping agent's are lower — so the
+          // cell shows the team's mean target rather than one person's.
+          target: e.targets > 0 ? e.targetSum / e.targets : null,
+          below: e.below,
+          scored: e.scored,
+        }))
+    : [];
+
+  const [teamSeries, openByEmployee] = await Promise.all([
+    isSupervisor && scopedIds.length > 0 && weeks.length > 0
+      ? getTeamKpiTrend(scopedIds, weeks.slice(0, 12))
+      : Promise.resolve([]),
+    isSupervisor ? getOpenIssueCounts(scopedIds) : Promise.resolve(new Map<string, number>()),
+  ]);
+
   return (
     <>
       <PageBand
@@ -318,6 +371,50 @@ export default async function DashboardPage({
                 overdue,
               }}
             />
+          )
+        ) : isSupervisor ? (
+          /*
+           * A supervisor works down people, so their view leads with how many
+           * agents are below target and which measure most of the team is
+           * missing — not with a wall of team-wide tiles that says neither.
+           */
+          teamKpis.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="No data for this period"
+                description="Your team's KPIs appear here once performance data covering this period has been imported. Try a wider period."
+              />
+            </Card>
+          ) : (
+            <>
+              <SupervisorOverview
+                kpis={teamKpis}
+                series={teamSeries}
+                periodLabel={period?.label ?? "this period"}
+                stats={{
+                  failing: periodFailing,
+                  atRisk: periodAtRisk,
+                  measured: periodMeasured,
+                  total: summary.totalEmployees,
+                  parPassing,
+                  parScored: parMetrics.length,
+                  mboPassing,
+                  mboScored,
+                  mboFailing,
+                  mboFailHref: mboHref("fail"),
+                }}
+                actionItems={{
+                  open: summary.openIssues,
+                  awaiting: summary.awaitingAcknowledgement,
+                  monitoring: summary.monitoring,
+                  sustained: summary.sustained,
+                  overdue,
+                }}
+              />
+              {comparison && (
+                <TeamAgentTable data={comparison} openByEmployee={openByEmployee} />
+              )}
+            </>
           )
         ) : (
           <>
@@ -385,6 +482,9 @@ export default async function DashboardPage({
           </>
         )}
 
+        {/* Both of these now live inside the agent and supervisor views above,
+            so they render only for the roles that still need them. */}
+        {!isAgent && !isSupervisor && (
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <StatCard label="Active action items" value={summary.openIssues} href="/action-items" />
           <StatCard
@@ -403,6 +503,7 @@ export default async function DashboardPage({
             href="/action-items"
           />
         </div>
+        )}
 
         {showsRollup && rollup.length > 0 && (
           <Card className="mt-6">
@@ -472,7 +573,9 @@ export default async function DashboardPage({
         {/* Every figure this table held for an agent is now in the KPI cells
             above, each with its own change line, so for them it was the same
             numbers a second time. Leaders still get the full matrix. */}
-        {comparison && !isAgent && <PeriodComparisonTable data={comparison} forSelf={false} />}
+        {comparison && !isAgent && !isSupervisor && (
+          <PeriodComparisonTable data={comparison} forSelf={false} />
+        )}
 
         <Card className="mt-6">
           <CardHeader
