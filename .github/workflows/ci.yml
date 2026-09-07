@@ -1,0 +1,32 @@
+name: CI
+
+# Every push and pull request. The three checks below are the ones that can
+# run without touching the database; the data-integrity check runs on its own
+# schedule in integrity.yml, because it needs production and a failure there
+# means something is wrong with the data rather than with the code.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      # Runs last because it also regenerates the Next.js type files that a
+      # standalone tsc --noEmit would otherwise report as missing.
+      - name: Build
+        run: npm run build
