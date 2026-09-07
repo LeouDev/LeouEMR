@@ -6,6 +6,8 @@ import { db } from "@/lib/db/client";
 import { skillReferences } from "@/lib/db/schema";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getMonthComparison, getNpsBreakdown, getOwnEmployee } from "@/lib/queries/my-stats";
+import { getTrackerSkills } from "@/lib/queries/case-tracker-targets";
+import { CaseTracker } from "./case-tracker";
 import { NpsCalculator } from "./nps-calculator";
 import { ProductivityCalculator, type CalculatorSkill } from "./productivity-calculator";
 
@@ -55,9 +57,15 @@ export default async function MyStatsPage() {
   const range = await getFactDateRange();
   const anchor = range?.last ?? new Date().toISOString().slice(0, 10);
 
-  const [{ period, previous, rows }, skills] = await Promise.all([
+  // The tracker's own "today" is the real calendar day, not the anchor above:
+  // it is a live day tracker, and the anchor deliberately lags to the last day
+  // with imported data.
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [{ period, previous, rows }, skills, trackerSkills] = await Promise.all([
     getMonthComparison(employee.id, anchor),
     db.select().from(skillReferences).where(eq(skillReferences.active, true)).orderBy(asc(skillReferences.sortOrder)),
+    getTrackerSkills(employee.id, today),
   ]);
   const nps = await getNpsBreakdown(employee.id, period);
 
@@ -75,6 +83,18 @@ export default async function MyStatsPage() {
       <PageBand title="My stats" subtitle={`${employee.name} · ${period.label}`} />
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+        {/* First, and deliberately: this is the surface an agent has open
+            through the shift, while everything below it is a once-a-day
+            glance at numbers that only move when a workbook is imported. */}
+        {trackerSkills.length > 0 && (
+          <CaseTracker
+            employeeId={employee.id}
+            employeeName={employee.name}
+            skills={trackerSkills}
+            today={today}
+          />
+        )}
+
         <Card>
           <CardHeader
             title="Month to date by KPI"
