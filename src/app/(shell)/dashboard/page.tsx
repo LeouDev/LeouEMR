@@ -242,8 +242,10 @@ export default async function DashboardPage({
                 code: "CASE_RATE",
                 name: "Case Rate",
                 value: myKpiCells.CASE_RATE.current,
+                // No target on the cell, but the verdict travels with it: the
+                // agent's own skill mix decided it upstream.
                 target: null,
-                status: null,
+                status: myKpiCells.CASE_RATE.status,
                 delta: myKpiCells.CASE_RATE.delta,
                 improved: myKpiCells.CASE_RATE.improved,
                 previous: myKpiCells.CASE_RATE.previous,

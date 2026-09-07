@@ -250,15 +250,19 @@ const CASE_RATE_CODE = "CASE_RATE";
  * through the PAR production rate instead. This reads the same per-skill facts
  * PAR is built from so the underlying number is at least visible.
  *
- * Deliberately unscored: each skill carries its own case-rate target (8 to 15
- * across the reference table), so a single blended target would be arbitrary,
- * and a wrong one would paint honest work red. Callers render it with a null
- * status, which metricTone shows in muted grey rather than pass or fail.
+ * Scored against the agent's own skill mix rather than one blended number.
+ * Each case-rate skill carries its own target (8 to 15 across the reference
+ * table), so the bar is the weight those skills expected for the cases
+ * actually worked: sum(target x cases). Producing at least that much passes.
+ *
+ * That comparison is the same one a per-skill ratio makes, just summed first —
+ * which is what stops a handful of cases on a demanding skill from dragging a
+ * verdict that three hundred cases on an easier one had already earned.
  */
 async function getCaseRates(
   employeeIds: string[],
   period: Period,
-): Promise<Map<string, number>> {
+): Promise<Map<string, { rate: number; target: number; status: "PASS" | "FAIL" }>> {
   const [rows, refs] = await Promise.all([
     db
       .select({
@@ -283,19 +287,26 @@ async function getCaseRates(
   // same reason period-metrics recomputes ratios from their components rather
   // than averaging them: a skill with three cases would otherwise weigh as
   // much as one with three hundred.
-  const totals = new Map<string, { prodWeight: number; cases: number }>();
+  const totals = new Map<string, { prodWeight: number; cases: number; expected: number }>();
   for (const row of rows) {
     const ref = refs.get(normalizeSkill(row.skillLabel));
     if (ref?.metric !== "case_rate") continue;
-    const entry = totals.get(row.employeeId) ?? { prodWeight: 0, cases: 0 };
+    const entry = totals.get(row.employeeId) ?? { prodWeight: 0, cases: 0, expected: 0 };
     entry.prodWeight += row.prodWeight;
     entry.cases += row.cases;
+    // What this skill expected of the cases they actually worked on it.
+    entry.expected += ref.target * row.cases;
     totals.set(row.employeeId, entry);
   }
 
-  const rates = new Map<string, number>();
+  const rates = new Map<string, { rate: number; target: number; status: "PASS" | "FAIL" }>();
   for (const [employeeId, t] of totals) {
-    if (t.cases > 0 && t.prodWeight > 0) rates.set(employeeId, t.prodWeight / t.cases);
+    if (t.cases <= 0 || t.prodWeight <= 0) continue;
+    rates.set(employeeId, {
+      rate: t.prodWeight / t.cases,
+      target: t.expected / t.cases,
+      status: t.prodWeight >= t.expected ? "PASS" : "FAIL",
+    });
   }
   return rates;
 }
@@ -371,13 +382,14 @@ export async function getTeamPeriodComparison(
     }
   }
 
-  // Case rate joins as its own column on the same terms as a real KPI —
-  // value, change, and the same "new" / "no change" wording — but with a null
-  // status, so it reads as information rather than a verdict. The column only
+  // Case rate joins as its own column on the same terms as a real KPI: value,
+  // change, and a pass/fail against the agent's own skill mix. The column only
   // appears when somebody in view actually has case-rate work.
   for (const employeeId of new Set([...currentRates.keys(), ...previousRates.keys()])) {
-    const rate = currentRates.get(employeeId) ?? null;
-    const prior = previousRates.get(employeeId) ?? null;
+    const now = currentRates.get(employeeId) ?? null;
+    const before = previousRates.get(employeeId) ?? null;
+    const rate = now?.rate ?? null;
+    const prior = before?.rate ?? null;
     const delta = rate !== null && prior !== null ? rate - prior : null;
     const cells = cellsByEmployee.get(employeeId) ?? {};
     cells[CASE_RATE_CODE] = {
@@ -386,7 +398,7 @@ export async function getTeamPeriodComparison(
       delta,
       // Higher is better: case_rate references are all lower_is_better = false.
       improved: delta === null ? null : isImprovement(delta, "higher_is_better"),
-      status: null,
+      status: now?.status ?? null,
     };
     cellsByEmployee.set(employeeId, cells);
     kpiNames.set(CASE_RATE_CODE, "Case Rate");

@@ -4,6 +4,23 @@ import type { SkillBreakdownRow } from "@/lib/queries/skill-breakdown";
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
 const STICKY = "sticky left-0 z-10 min-w-52 bg-surface px-6 py-2";
 
+/**
+ * Each skill is judged against its own target, which is the point of this
+ * table — a blended figure cannot say which skill was carrying the average
+ * and which was dragging it. Handle time inverts: lower is the good result.
+ *
+ * A skill with no configured target stays neutral rather than green. Nothing
+ * was cleared, so nothing should read as cleared.
+ */
+function toneFor(
+  cell: { actual: number | null; target: number | null },
+  lowerIsBetter: boolean,
+): string {
+  if (cell.actual === null || cell.target === null) return "text-ink";
+  const met = lowerIsBetter ? cell.actual <= cell.target : cell.actual >= cell.target;
+  return met ? "font-semibold text-pass" : "font-semibold text-fail";
+}
+
 const METRIC_LABELS: Record<SkillBreakdownRow["metric"], string> = {
   cph: "Cases/hr",
   aht: "Handle time",
@@ -72,7 +89,9 @@ export function SkillBreakdownTable({ rows, weeks }: { rows: SkillBreakdownRow[]
                       (cell.rating !== null ? ` · rating ${cell.rating.toFixed(2)}` : "")
                     }
                   >
-                    <span className="text-ink">{formatActual(row.metric, cell.actual)}</span>
+                    <span className={toneFor(cell, row.lowerIsBetter)}>
+                      {formatActual(row.metric, cell.actual)}
+                    </span>
                     <span className="ml-1.5 text-[11px] text-muted">
                       {cell.cases}/{cell.hours.toFixed(1)}h
                     </span>

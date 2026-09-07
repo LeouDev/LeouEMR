@@ -107,11 +107,18 @@ export async function getEmployeeKpiTrend(
  * the grid and not plot. Unscored, for the same reason it is unscored in the
  * comparison table: each skill carries its own target.
  */
+export interface WeeklyCaseRate {
+  rate: number;
+  /** What this agent's own skill mix expected of the cases they worked. */
+  target: number;
+  status: "PASS" | "FAIL";
+}
+
 export async function getCaseRateByWeek(
   employeeId: string,
   /** Reporting week starts to cover. */
   weeks: string[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, WeeklyCaseRate>> {
   if (weeks.length === 0) return new Map();
   const sorted = [...weeks].sort();
   const lastWeekEnd = periodContaining("week", sorted[sorted.length - 1]).end;
@@ -139,21 +146,29 @@ export async function getCaseRateByWeek(
   // Bucketed with periodContaining rather than by date arithmetic here, so
   // these weeks are the same Saturday-to-Friday weeks the ledger uses.
   const wanted = new Set(sorted);
-  const totals = new Map<string, { prodWeight: number; cases: number }>();
+  const totals = new Map<string, { prodWeight: number; cases: number; expected: number }>();
   for (const row of rows) {
     const ref = refs.get(normalizeSkill(row.skillLabel));
     if (ref?.metric !== "case_rate") continue;
     const weekStart = periodContaining("week", row.factDate).start;
     if (!wanted.has(weekStart)) continue;
-    const entry = totals.get(weekStart) ?? { prodWeight: 0, cases: 0 };
+    const entry = totals.get(weekStart) ?? { prodWeight: 0, cases: 0, expected: 0 };
     entry.prodWeight += row.prodWeight;
     entry.cases += row.cases;
+    // Weighted by the cases actually worked on each skill, so a week spent
+    // mostly on a demanding skill is judged against a demanding bar.
+    entry.expected += ref.target * row.cases;
     totals.set(weekStart, entry);
   }
 
-  const rates = new Map<string, number>();
+  const rates = new Map<string, WeeklyCaseRate>();
   for (const [week, t] of totals) {
-    if (t.cases > 0 && t.prodWeight > 0) rates.set(week, t.prodWeight / t.cases);
+    if (t.cases <= 0 || t.prodWeight <= 0) continue;
+    rates.set(week, {
+      rate: t.prodWeight / t.cases,
+      target: t.expected / t.cases,
+      status: t.prodWeight >= t.expected ? "PASS" : "FAIL",
+    });
   }
   return rates;
 }
@@ -165,15 +180,18 @@ async function getCaseRateSeries(
 ): Promise<TrendSeries | null> {
   const rates = await getCaseRateByWeek(employeeId, weeks);
   const points: TrendPoint[] = [...rates.entries()]
-    .map(([weekStart, value]) => ({ weekStart, value, status: null }))
+    .map(([weekStart, r]) => ({ weekStart, value: r.rate, status: r.status }))
     .sort((a, b) => a.weekStart.localeCompare(b.weekStart));
 
   if (points.length === 0) return null;
+  const latest = [...rates.entries()].sort((a, b) => b[0].localeCompare(a[0]))[0];
   return {
     kpiCode: "CASE_RATE",
     kpiName: "Case Rate",
     direction: "higher_is_better",
-    target: null,
+    // The blend moves with the skill mix, so the line is drawn at the most
+    // recent week's rather than an average matching no week actually plotted.
+    target: latest?.[1].target ?? null,
     points,
   };
 }

@@ -585,8 +585,9 @@ export async function getEmployeeMatrix(
   // Case rate is a skill metric with no KPI definition and no row in the
   // weekly ledger, so it cannot arrive with the query above — but for an
   // agent scored on it, it is the output measure their PAR is built from, and
-  // the plan showed an empty Cases Per Hour row instead. Unscored: each skill
-  // carries its own target, so there is nothing here to pass or fail.
+  // the plan showed an empty Cases Per Hour row instead. Scored against the
+  // agent's own skill mix: the weight those skills expected of the cases
+  // actually worked.
   const caseRates = await getCaseRateByWeek(employeeId, weeks);
   if (caseRates.size > 0) {
     kpiOrder.set("CASE_RATE", {
@@ -594,11 +595,11 @@ export async function getEmployeeMatrix(
       name: "Case Rate",
       direction: "higher_is_better",
     });
-    for (const [week, value] of caseRates) {
+    for (const [week, r] of caseRates) {
       cells.set(`CASE_RATE|${week}`, {
-        actualValue: value,
-        targetValue: null,
-        status: null,
+        actualValue: r.rate,
+        targetValue: r.target,
+        status: r.status === "PASS" ? "pass" : "fail",
         sampleSize: null,
       });
     }
