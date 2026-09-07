@@ -6,13 +6,15 @@ import {
   CardHeader,
   EmptyState,
   PageBand,
-  StatCard,
   StatusBadge,
   formatMetric,
 } from "@/components/ui";
 import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
 import { PeriodComparisonTable } from "./period-comparison-table";
+import { AgentPerformance, type AgentKpi } from "./agent-performance";
+import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
+import { TeamAgentTable } from "./team-agent-table";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getAttentionRows,
@@ -20,11 +22,13 @@ import {
   getLatestWeek,
   getTeamSummary,
 } from "@/lib/queries/performance";
-import { getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
+import { getOpenIssueCounts, getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
 import { resolveScopedIds } from "@/lib/queries/performance";
 import { reportingScopeIds } from "@/lib/queries/org-history";
 import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
+import { getEmployeeKpiTrend } from "@/lib/queries/trend";
+import { getTeamKpiTrend } from "@/lib/queries/team-trend";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { PeriodPicker } from "@/components/period-picker";
 
@@ -152,16 +156,11 @@ export default async function DashboardPage({
   // Only people with a result this period can be classified; the roster is
   // usually larger, and that difference is unmeasured rather than passing.
   const periodMeasured = periodByEmployee.size;
-  const periodUnmeasured = Math.max(0, summary.totalEmployees - periodMeasured);
 
   // Which KPIs actually had data. A boundary week can carry only attendance,
   // and reporting that as "nothing failing" reads as an all-clear when the
   // truth is that almost nothing was measured.
   const evaluatedKpis = [...new Set(weekMetrics.map((m) => m.kpiName))];
-  // What the passing / at-risk / failing counts are actually built from.
-  // Without naming these, "14 passing" reads as a clean bill of health when
-  // it can mean one KPI had data and nobody failed it.
-  const periodKpis = [...new Set(periodMetrics.map((m) => m.kpiName))].sort();
 
   // Production Rate (PAR) on its own terms. The generic "passing" count asks
   // whether every measured KPI held; this asks the single question the
@@ -180,7 +179,6 @@ export default async function DashboardPage({
 
   const parMetrics = periodMetrics.filter((m) => m.kpiCode === "PRODUCTION_RATE");
   const parPassing = parMetrics.filter((m) => m.status === "PASS").length;
-  const parTarget = parMetrics.find((m) => m.targetValue !== null)?.targetValue ?? null;
   const thinCoverage = weekMetrics.length > 0 && evaluatedKpis.length <= 2;
 
   // MBO is a composite gate rather than a threshold, so it is counted on its
@@ -209,6 +207,101 @@ export default async function DashboardPage({
 
   const unscoped = !user.employeeEid && user.role !== "manager";
 
+  // An agent's own row from the comparison above, so each KPI can carry its
+  // change without a second query. Case rate rides in on the same row: it is
+  // a skill metric with no KPI definition, so it never appears in
+  // periodMetrics, but for a case-rate agent it is the only output figure
+  // they have — see getCaseRates in my-stats.ts.
+  const myRow = isAgent ? (comparison?.rows[0] ?? null) : null;
+  const myKpiCells = myRow?.cells ?? {};
+  const agentKpis: AgentKpi[] = isAgent
+    ? [
+        ...myKpis.map((m) => ({
+          code: m.kpiCode,
+          name: m.kpiName,
+          value: m.actualValue,
+          target: m.targetValue,
+          status: m.status as string | null,
+          delta: myKpiCells[m.kpiCode]?.delta ?? null,
+          improved: myKpiCells[m.kpiCode]?.improved ?? null,
+          previous: myKpiCells[m.kpiCode]?.previous ?? null,
+        })),
+        ...(myKpiCells.CASE_RATE?.current !== null && myKpiCells.CASE_RATE?.current !== undefined
+          ? [
+              {
+                code: "CASE_RATE",
+                name: "Case Rate",
+                value: myKpiCells.CASE_RATE.current,
+                target: null,
+                status: null,
+                delta: myKpiCells.CASE_RATE.delta,
+                improved: myKpiCells.CASE_RATE.improved,
+                previous: myKpiCells.CASE_RATE.previous,
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  // The trend is deliberately weekly and independent of the period picker
+  // above: the cards answer "how did this period go", the chart answers
+  // "which way am I heading", and a month-grained trend of three points
+  // cannot answer the second. Twelve weeks are fetched and the client trims
+  // to six, so switching the range costs no round trip.
+  const trendSeries =
+    isAgent && scopedIds.length > 0 && weeks.length > 0
+      ? await getEmployeeKpiTrend(scopedIds[0], weeks.slice(0, 12))
+      : [];
+
+  const isSupervisor = user.role === "supervisor";
+
+  // The team's own figures, one row per KPI: the mean of the agents scored on
+  // it, and how many of them were below target. The mean alone hides the
+  // shape of a team, so the count travels with it everywhere it is shown.
+  const teamKpis: TeamKpi[] = isSupervisor
+    ? [...
+        periodMetrics
+          .reduce((acc, m) => {
+            const entry = acc.get(m.kpiCode) ?? {
+              code: m.kpiCode,
+              name: m.kpiName,
+              sum: 0,
+              targetSum: 0,
+              targets: 0,
+              below: 0,
+              scored: 0,
+            };
+            entry.sum += m.actualValue;
+            entry.scored += 1;
+            if (m.status === "FAIL") entry.below += 1;
+            if (m.targetValue !== null) {
+              entry.targetSum += m.targetValue;
+              entry.targets += 1;
+            }
+            acc.set(m.kpiCode, entry);
+            return acc;
+          }, new Map<string, { code: string; name: string; sum: number; targetSum: number; targets: number; below: number; scored: number }>())
+          .values(),
+      ]
+        .map((e) => ({
+          code: e.code,
+          name: e.name,
+          avg: e.sum / e.scored,
+          // Targets differ per agent — a ramping agent's are lower — so the
+          // cell shows the team's mean target rather than one person's.
+          target: e.targets > 0 ? e.targetSum / e.targets : null,
+          below: e.below,
+          scored: e.scored,
+        }))
+    : [];
+
+  const [teamSeries, openByEmployee] = await Promise.all([
+    isSupervisor && scopedIds.length > 0 && weeks.length > 0
+      ? getTeamKpiTrend(scopedIds, weeks.slice(0, 12))
+      : Promise.resolve([]),
+    isSupervisor ? getOpenIssueCounts(scopedIds) : Promise.resolve(new Map<string, number>()),
+  ]);
+
   return (
     <>
       <PageBand
@@ -229,7 +322,19 @@ export default async function DashboardPage({
       <main className="mx-auto max-w-7xl px-6 py-8">
 
         {user.role === "manager" && (
-          <ManagerOverview managerName={user.managerName ?? user.name} period={period} />
+          <ManagerOverview
+            managerName={user.managerName ?? user.name}
+            period={period}
+            weeks={weeks}
+            rollup={rollup}
+            actionItems={{
+              open: summary.openIssues,
+              awaiting: summary.awaitingAcknowledgement,
+              monitoring: summary.monitoring,
+              sustained: summary.sustained,
+              overdue,
+            }}
+          />
         )}
 
         {unscoped && (
@@ -250,7 +355,7 @@ export default async function DashboardPage({
            * nothing they do not already know ("Me: 1"). What they need is
            * their own numbers against their own targets.
            */
-          myKpis.length === 0 ? (
+          agentKpis.length === 0 ? (
             <Card>
               <EmptyState
                 title="No data for this period"
@@ -258,175 +363,71 @@ export default async function DashboardPage({
               />
             </Card>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {myKpis.map((m) => (
-                <StatCard
-                  key={m.kpiCode}
-                  label={m.kpiName}
-                  value={formatMetric(m.actualValue, m.kpiCode)}
-                  tone={
-                    m.status === "FAIL" ? "fail" : m.status === "WARNING" ? "warn" : "pass"
-                  }
-                  hint={
-                    m.targetValue === null
-                      ? period?.label
-                      : `target ${formatMetric(m.targetValue, m.kpiCode)} · ${m.sampleSize || 0} record${m.sampleSize === 1 ? "" : "s"}`
-                  }
-                />
-              ))}
-            </div>
+            <AgentPerformance
+              kpis={agentKpis}
+              series={trendSeries}
+              periodLabel={period?.label ?? "this period"}
+              actionItems={{
+                open: summary.openIssues,
+                awaiting: summary.awaitingAcknowledgement,
+                monitoring: summary.monitoring,
+                sustained: summary.sustained,
+                overdue,
+              }}
+            />
           )
-        ) : (
-          <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label={user.role === "agent" ? "Me" : "Employees"}
-              value={summary.totalEmployees}
-              hint={
-                periodUnmeasured > 0
-                  ? `${periodMeasured} with data · ${periodUnmeasured} without`
-                  : period?.label
-              }
-            />
-            <StatCard
-              label="Passing PAR"
-              value={parMetrics.length === 0 ? "—" : parPassing}
-              tone={parMetrics.length === 0 ? "default" : "pass"}
-              hint={
-                parMetrics.length === 0
-                  ? "No production rate scored this period"
-                  : `of ${parMetrics.length} scored${parTarget === null ? "" : ` · target ${parTarget.toFixed(2)}`}`
-              }
-            />
-            <StatCard label="At risk" value={periodAtRisk} tone="warn" hint={period?.label} />
-            <StatCard
-              label="Agents w/ Failing KPI"
-              value={periodFailing}
-              tone="fail"
-              hint={period?.label}
-            />
-          </div>
+        ) : isSupervisor ? (
+          /*
+           * A supervisor works down people, so their view leads with how many
+           * agents are below target and which measure most of the team is
+           * missing — not with a wall of team-wide tiles that says neither.
+           */
+          teamKpis.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="No data for this period"
+                description="Your team's KPIs appear here once performance data covering this period has been imported. Try a wider period."
+              />
+            </Card>
+          ) : (
+            <>
+              <SupervisorOverview
+                kpis={teamKpis}
+                series={teamSeries}
+                periodLabel={period?.label ?? "this period"}
+                stats={{
+                  failing: periodFailing,
+                  atRisk: periodAtRisk,
+                  measured: periodMeasured,
+                  total: summary.totalEmployees,
+                  parPassing,
+                  parScored: parMetrics.length,
+                  mboPassing,
+                  mboScored,
+                  mboFailing,
+                  mboFailHref: mboHref("fail"),
+                }}
+                actionItems={{
+                  open: summary.openIssues,
+                  awaiting: summary.awaitingAcknowledgement,
+                  monitoring: summary.monitoring,
+                  sustained: summary.sustained,
+                  overdue,
+                }}
+              />
+              {comparison && (
+                <TeamAgentTable data={comparison} openByEmployee={openByEmployee} />
+              )}
+            </>
+          )
+        ) : null}
 
-          <p className="mt-3 text-xs text-muted">
-            {periodKpis.length === 0
-              ? "No KPI had data for this period, so nobody could be classified."
-              : `Counted across ${periodKpis.length} KPI${periodKpis.length === 1 ? "" : "s"} with data this period: ${periodKpis.join(", ")}.`}
-            {periodKpis.length === 1 &&
-              " One KPI alone is not a full picture — try a wider period."}
-          </p>
-
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              label="Passing MBO"
-              value={mboScored === 0 ? "—" : mboPassing}
-              tone={mboScored === 0 ? "default" : "pass"}
-              hint={
-                mboScored === 0
-                  ? "No MBO scored this period"
-                  : `of ${mboScored} scored · ${period?.label ?? ""}`
-              }
-              href={mboHref("pass")}
-            />
-            <StatCard
-              label="Failing MBO"
-              value={mboScored === 0 ? "—" : mboFailing}
-              tone={mboScored === 0 ? "default" : "fail"}
-              hint={
-                mboScored === 0
-                  ? "Try a wider period"
-                  : "See who and which gate they missed"
-              }
-              href={mboHref("fail")}
-            />
-          </div>
-          </>
+        {/* Every figure this table held for an agent is now in the KPI cells
+            above, each with its own change line, so for them it was the same
+            numbers a second time. Leaders still get the full matrix. */}
+        {comparison && !isAgent && !isSupervisor && (
+          <PeriodComparisonTable data={comparison} forSelf={false} />
         )}
-
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <StatCard label="Active action items" value={summary.openIssues} href="/action-items" />
-          <StatCard
-            label="Awaiting acknowledgement"
-            value={summary.awaitingAcknowledgement}
-            tone="warn"
-            href="/action-items"
-          />
-          <StatCard label="Monitoring" value={summary.monitoring} />
-          <StatCard label="Sustained" value={summary.sustained} tone="pass" />
-          <StatCard
-            label="Overdue"
-            value={overdue}
-            tone={overdue > 0 ? "fail" : "default"}
-            hint={overdue > 0 ? "Past the action plan due date" : undefined}
-            href="/action-items"
-          />
-        </div>
-
-        {showsRollup && rollup.length > 0 && (
-          <Card className="mt-6">
-            <CardHeader
-              title="By supervisor"
-              subtitle="Where the open work sits across your organization"
-            />
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[620px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-cream">
-                    <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Supervisor</th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">Team</th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">
-                      Failing this week
-                    </th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">
-                      Open items
-                    </th>
-                    <th className="px-6 py-2.5 font-semibold text-ink">
-                      Awaiting ack
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rollup.map((row) => (
-                    <tr
-                      key={row.supervisorName}
-                      className="border-b-2 border-line last:border-0 hover:bg-orange-brand-100"
-                    >
-                      <td className="px-6 py-2">
-                        <Link
-                          href={`/employees?supervisor=${encodeURIComponent(row.supervisorName)}${
-                            week ? `&week=${week}` : ""
-                          }`}
-                          className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                        >
-                          {row.supervisorName}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-muted">
-                        {row.teamSize}
-                      </td>
-                      <td
-                        className={`px-3 py-2 font-mono tabular-nums ${row.failingThisWeek > 0 ?"text-fail" : "text-muted"
-                        }`}
-                      >
-                        {row.failingThisWeek || "—"}
-                      </td>
-                      <td className="px-3 py-2 font-mono tabular-nums text-ink">
-                        {row.openIssues || "—"}
-                      </td>
-                      <td
-                        className={`px-6 py-2 font-mono tabular-nums ${row.awaitingAcknowledgement > 0 ?"text-warn" : "text-muted"
-                        }`}
-                      >
-                        {row.awaitingAcknowledgement || "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        )}
-
-        {comparison && <PeriodComparisonTable data={comparison} forSelf={isAgent} />}
 
         <Card className="mt-6">
           <CardHeader
