@@ -301,6 +301,12 @@ export async function getTeamPeriodComparison(
         failing: Object.values(cells).filter((c) => c.status === "FAIL").length,
       };
     })
+    // Nothing measured this period on any KPI — someone who left the queue
+    // before it started, say — reads as a wall of dashes rather than a real
+    // result. A leftover previous-period value still shows as "no change"
+    // on an empty cell (see Cell in period-comparison-table.tsx), so this
+    // checks current specifically rather than whether the cell exists at all.
+    .filter((row) => Object.values(row.cells).some((c) => c.current !== null))
     // Most failures first: the table exists to be worked down.
     .sort((a, b) => b.failing - a.failing || a.name.localeCompare(b.name));
 
