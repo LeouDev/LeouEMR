@@ -20,6 +20,7 @@ import {
   getAttentionRows,
   getAvailableWeeks,
   getLatestWeek,
+  getLatestWeekInScope,
   getTeamSummary,
 } from "@/lib/queries/performance";
 import { getOpenIssueCounts, getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
@@ -65,10 +66,11 @@ export default async function DashboardPage({
   // Every query below is a round trip to the database, so independent ones
   // are issued together rather than in sequence — the page is otherwise
   // dominated by latency it never needed to pay.
-  const [params, weeks, latest, range, cookieStore] = await Promise.all([
+  const [params, weeks, latest, scopedLatest, range, cookieStore] = await Promise.all([
     searchParams,
     getAvailableWeeks(),
     getLatestWeek(),
+    getLatestWeekInScope(user),
     getFactDateRange(),
     cookies(),
   ]);
@@ -108,17 +110,25 @@ export default async function DashboardPage({
     params.granularity ?? cookieStore.get("periodGranularity")?.value,
   );
   const periods = range ? periodsBetween(granularity, range.first, range.last) : [];
+  // Open on the newest period this viewer has results for, not the newest
+  // that exists. The period list is built from the whole imported range, so
+  // a team whose data ends earlier than someone else's would otherwise open
+  // on a period that is empty for them and look like a total collapse.
+  const inScope = scopedLatest
+    ? periods.find((p) => p.start <= scopedLatest && scopedLatest <= p.end)
+    : undefined;
   const period =
     periods.find((p) => p.start === params.period) ??
     (!params.period
       ? periods.find((p) => p.start === cookieStore.get("periodStart")?.value)
       : undefined) ??
+    inScope ??
     periods[0] ??
     (latest ? periodContaining("week", latest) : null);
 
   // The attention table and issue counts stay weekly, since an action item
   // belongs to a week.
-  const week = params.week && weeks.includes(params.week) ? params.week : latest;
+  const week = params.week && weeks.includes(params.week) ? params.week : (scopedLatest ?? latest);
 
   // Managers get a per-supervisor breakdown; supervisors and agents have no
   // one below them to roll up. (Admins returned above with the org-wide view.)

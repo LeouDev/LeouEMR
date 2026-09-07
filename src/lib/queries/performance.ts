@@ -48,6 +48,29 @@ export async function getLatestWeek(): Promise<string | null> {
   return row?.week ?? null;
 }
 
+/**
+ * The newest reporting week this user actually has results for.
+ *
+ * The dashboard used to open on the newest week that exists anywhere, which
+ * is only the same thing while every team is imported together. Sixteen rows
+ * inserted for one agent four weeks past everyone else's data was enough to
+ * land every manager, supervisor and agent on an empty dashboard by default.
+ *
+ * Falls back to the global latest so an account with no results of its own
+ * still opens somewhere real rather than on nothing at all.
+ */
+export async function getLatestWeekInScope(user: CurrentUser): Promise<string | null> {
+  const scope = employeeScope(user);
+  if (scope === null) return null;
+
+  const [row] = await db
+    .select({ week: max(weeklyMetricResults.weekStart) })
+    .from(weeklyMetricResults)
+    .innerJoin(employees, eq(employees.id, weeklyMetricResults.employeeId))
+    .where(scope === "all" ? undefined : scope);
+  return row?.week ?? null;
+}
+
 /** Employee ids the user may see. Returns null when the user may see none. */
 async function scopedEmployeeIds(user: CurrentUser): Promise<string[] | "all" | null> {
   const scope = employeeScope(user);
