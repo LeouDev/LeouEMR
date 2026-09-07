@@ -13,6 +13,7 @@ import {
 import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
 import { PeriodComparisonTable } from "./period-comparison-table";
+import { AgentPerformance, type AgentKpi } from "./agent-performance";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getAttentionRows,
@@ -25,6 +26,7 @@ import { resolveScopedIds } from "@/lib/queries/performance";
 import { reportingScopeIds } from "@/lib/queries/org-history";
 import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
+import { getEmployeeKpiTrend } from "@/lib/queries/trend";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { PeriodPicker } from "@/components/period-picker";
 
@@ -209,6 +211,52 @@ export default async function DashboardPage({
 
   const unscoped = !user.employeeEid && user.role !== "manager";
 
+  // An agent's own row from the comparison above, so each KPI can carry its
+  // change without a second query. Case rate rides in on the same row: it is
+  // a skill metric with no KPI definition, so it never appears in
+  // periodMetrics, but for a case-rate agent it is the only output figure
+  // they have — see getCaseRates in my-stats.ts.
+  const myRow = isAgent ? (comparison?.rows[0] ?? null) : null;
+  const myKpiCells = myRow?.cells ?? {};
+  const agentKpis: AgentKpi[] = isAgent
+    ? [
+        ...myKpis.map((m) => ({
+          code: m.kpiCode,
+          name: m.kpiName,
+          value: m.actualValue,
+          target: m.targetValue,
+          status: m.status as string | null,
+          delta: myKpiCells[m.kpiCode]?.delta ?? null,
+          improved: myKpiCells[m.kpiCode]?.improved ?? null,
+          previous: myKpiCells[m.kpiCode]?.previous ?? null,
+        })),
+        ...(myKpiCells.CASE_RATE?.current !== null && myKpiCells.CASE_RATE?.current !== undefined
+          ? [
+              {
+                code: "CASE_RATE",
+                name: "Case Rate",
+                value: myKpiCells.CASE_RATE.current,
+                target: null,
+                status: null,
+                delta: myKpiCells.CASE_RATE.delta,
+                improved: myKpiCells.CASE_RATE.improved,
+                previous: myKpiCells.CASE_RATE.previous,
+              },
+            ]
+          : []),
+      ]
+    : [];
+
+  // The trend is deliberately weekly and independent of the period picker
+  // above: the cards answer "how did this period go", the chart answers
+  // "which way am I heading", and a month-grained trend of three points
+  // cannot answer the second. Twelve weeks are fetched and the client trims
+  // to six, so switching the range costs no round trip.
+  const trendSeries =
+    isAgent && scopedIds.length > 0 && weeks.length > 0
+      ? await getEmployeeKpiTrend(scopedIds[0], weeks.slice(0, 12))
+      : [];
+
   return (
     <>
       <PageBand
@@ -250,7 +298,7 @@ export default async function DashboardPage({
            * nothing they do not already know ("Me: 1"). What they need is
            * their own numbers against their own targets.
            */
-          myKpis.length === 0 ? (
+          agentKpis.length === 0 ? (
             <Card>
               <EmptyState
                 title="No data for this period"
@@ -258,23 +306,18 @@ export default async function DashboardPage({
               />
             </Card>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {myKpis.map((m) => (
-                <StatCard
-                  key={m.kpiCode}
-                  label={m.kpiName}
-                  value={formatMetric(m.actualValue, m.kpiCode)}
-                  tone={
-                    m.status === "FAIL" ? "fail" : m.status === "WARNING" ? "warn" : "pass"
-                  }
-                  hint={
-                    m.targetValue === null
-                      ? period?.label
-                      : `target ${formatMetric(m.targetValue, m.kpiCode)} · ${m.sampleSize || 0} record${m.sampleSize === 1 ? "" : "s"}`
-                  }
-                />
-              ))}
-            </div>
+            <AgentPerformance
+              kpis={agentKpis}
+              series={trendSeries}
+              periodLabel={period?.label ?? "this period"}
+              actionItems={{
+                open: summary.openIssues,
+                awaiting: summary.awaitingAcknowledgement,
+                monitoring: summary.monitoring,
+                sustained: summary.sustained,
+                overdue,
+              }}
+            />
           )
         ) : (
           <>
@@ -426,7 +469,10 @@ export default async function DashboardPage({
           </Card>
         )}
 
-        {comparison && <PeriodComparisonTable data={comparison} forSelf={isAgent} />}
+        {/* Every figure this table held for an agent is now in the KPI cells
+            above, each with its own change line, so for them it was the same
+            numbers a second time. Leaders still get the full matrix. */}
+        {comparison && !isAgent && <PeriodComparisonTable data={comparison} forSelf={false} />}
 
         <Card className="mt-6">
           <CardHeader
