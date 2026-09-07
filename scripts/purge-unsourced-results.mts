@@ -10,8 +10,12 @@
  * advances an issue on consecutive passing weeks, so fabricated passing weeks
  * can close a real performance issue. Re-run the engine afterwards.
  *
+ * Purge first, then re-evaluate. Run in the other order and the engine simply
+ * re-derives the same state from the rows still sitting there.
+ *
  *   npm run purge:unsourced            # report only
  *   npm run purge:unsourced -- --apply # delete, in one transaction
+ *   npm run reevaluate                 # then rebuild the issues (no flag; always applies)
  */
 import { isNull } from "drizzle-orm";
 import { db } from "../src/lib/db/client";
@@ -24,6 +28,9 @@ import {
 import { eq } from "drizzle-orm";
 
 const apply = process.argv.includes("--apply");
+// Printed so a run that quietly stayed a dry run is obvious in the output
+// rather than looking like a purge that found nothing to do.
+console.log(`mode: ${apply ? "APPLY (will delete)" : "dry run"}  argv: ${process.argv.slice(2).join(" ") || "(none)"}`);
 
 const weekly = await db
   .select({
@@ -78,5 +85,5 @@ await db.transaction(async (tx) => {
 });
 
 console.log(`\nDeleted ${weekly.length} weekly results and ${facts.length} daily facts.`);
-console.log("Now re-run the action-item engine: npm run reevaluate -- --apply");
+console.log("Now re-run the action-item engine: npm run reevaluate");
 process.exit(0);
