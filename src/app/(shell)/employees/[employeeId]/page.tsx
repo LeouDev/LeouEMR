@@ -144,8 +144,14 @@ export default async function EmployeePage({
                     <Link
                       key={week}
                       href={`/employees/${employeeId}?week=${week}`}
-                    prefetch={false}
-                      className={`border px-2 py-0.5 text-xs font-medium transition ${week === assessmentWeek ? "border-ink bg-ink text-white"
+                      prefetch={false}
+                      // Stay put. This panel sits near the bottom of a long
+                      // page, and the default jump to the top meant scrolling
+                      // back down after every week you looked at.
+                      scroll={false}
+                      className={`border px-2 py-0.5 text-xs font-medium transition ${
+                        week === assessmentWeek
+                          ? "border-ink bg-ink text-white"
                           : "border-line bg-surface text-muted hover:border-orange-brand hover:text-ink"
                       }`}
                     >
