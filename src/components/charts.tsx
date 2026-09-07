@@ -22,6 +22,11 @@ function severity(rate: number): string {
   return NAVY;
 }
 
+/** Colour by how far a pass rate is from acceptable — the inverse of a fail rate's reading, and the same 90% split the MBO stat card above it already uses. */
+function passRateSeverity(rate: number): string {
+  return rate >= 90 ? "var(--color-pass)" : ORANGE;
+}
+
 export function ChartFrame({
   title,
   subtitle,
@@ -134,15 +139,19 @@ export function TrendChart({
 export function BarList({
   rows,
   emptyMessage = "No data in this range.",
+  tone = "worse-when-higher",
 }: {
   rows: { label: string; value: number; caption?: string }[];
   emptyMessage?: string;
+  /** A fail rate reads worse the higher it climbs; a pass rate reads the opposite way. */
+  tone?: "worse-when-higher" | "better-when-higher";
 }) {
   if (rows.length === 0) {
     return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
   }
 
   const max = Math.max(...rows.map((r) => r.value), 1);
+  const colorFor = tone === "better-when-higher" ? passRateSeverity : severity;
 
   return (
     <ul className="space-y-2.5">
@@ -159,7 +168,7 @@ export function BarList({
               className="h-full"
               style={{
                 width: `${(row.value / max) * 100}%`,
-                backgroundColor: severity(row.value),
+                backgroundColor: colorFor(row.value),
               }}
             />
           </div>
