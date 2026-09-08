@@ -15,7 +15,12 @@ import {
   type Period,
 } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
-import { getSkillMetricsBySupervisor } from "@/lib/queries/skill-supervisor-breakdown";
+import {
+  ahtChartRows,
+  cphChartRows,
+  getSkillMetricsBySupervisor,
+  type SkillSupervisorRow,
+} from "@/lib/queries/skill-supervisor-breakdown";
 
 /** How many trailing buckets the Critical IO trend plots, ending at the selected period. */
 const TREND_BUCKETS = 12;
@@ -106,17 +111,19 @@ export default async function AnalyticsPage({
       label: s.skillName,
       value: s.passRate,
       caption: `${s.passing} of ${s.scored} meeting target`,
-    }));
+    }))
+    .sort((a, b) => b.value - a.value);
 
   const supervisors = [...new Set(skillMetrics.map((r) => r.supervisor))].sort();
-  const skillKeys = [...new Map(skillMetrics.map((r) => [r.skillCode, r.skillName])).entries()];
-  const groupsFor = (metric: "cph" | "aht") =>
+  const cphRows = cphChartRows(skillMetrics);
+  const ahtRows = ahtChartRows(skillMetrics);
+  const cphSkillKeys = [...new Map(cphRows.map((r) => [r.skillCode, r.skillName])).entries()];
+  const ahtSkillKeys = [...new Map(ahtRows.map((r) => [r.skillCode, r.skillName])).entries()];
+  const groupsFor = (rows: SkillSupervisorRow[], metric: "cph" | "aht") =>
     supervisors.map((supervisor) => ({
       label: supervisor,
       values: Object.fromEntries(
-        skillMetrics
-          .filter((r) => r.supervisor === supervisor)
-          .map((r) => [r.skillCode, r[metric]]),
+        rows.filter((r) => r.supervisor === supervisor).map((r) => [r.skillCode, r[metric]]),
       ),
     }));
 
@@ -196,20 +203,23 @@ export default async function AnalyticsPage({
         <div className="mt-4 grid gap-4">
           <ChartFrame
             title="Cases per hour, every skill, by supervisor"
-            subtitle={`${period.label} · shown for every skill, including those scored on case rate`}
+            subtitle={`${period.label} · includes skills scored on case rate; excludes those scored on average handle time`}
           >
             <GroupedBarChart
-              groups={groupsFor("cph")}
-              series={skillKeys.map(([code, name]) => ({ key: code, label: name }))}
+              groups={groupsFor(cphRows, "cph")}
+              series={cphSkillKeys.map(([code, name]) => ({ key: code, label: name }))}
               unit="/hr"
               emptyMessage="No production data this period."
             />
           </ChartFrame>
 
-          <ChartFrame title="Average handle time, every skill, by supervisor" subtitle={`${period.label} · seconds per case`}>
+          <ChartFrame
+            title="Average handle time, every skill, by supervisor"
+            subtitle={`${period.label} · seconds per case · excludes skills scored on cases per hour or case rate`}
+          >
             <GroupedBarChart
-              groups={groupsFor("aht")}
-              series={skillKeys.map(([code, name]) => ({ key: code, label: name }))}
+              groups={groupsFor(ahtRows, "aht")}
+              series={ahtSkillKeys.map(([code, name]) => ({ key: code, label: name }))}
               unit="s"
               decimals={0}
               emptyMessage="No production data this period."
