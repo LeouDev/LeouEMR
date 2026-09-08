@@ -1,91 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { sustainedPassingKpis, type MatrixCell } from "./performance";
+import { isDevelopmentItemStale } from "./performance";
 
 /**
- * A KPI drops off the development plan once it has passed the most recent
- * SUSTAINED_PASS_WEEKS (8) weeks in a row — the plan exists to show what
- * still needs work, not a long clean streak. These pin down the exact
- * window and the "too new / too shaky to judge" cases that must stay
- * visible rather than risk hiding something that isn't actually settled.
+ * A row on the "Development item" table drops off once it has passed the
+ * most recent SUSTAINED_PASS_WEEKS (8) weeks in a row, or has nothing
+ * recorded against it at all in that same window — resolved, or gone
+ * stale. These pin down the exact window and the cases that must stay
+ * visible: too little history to judge, a fail breaking the streak, and a
+ * mix of some weeks with data and some without (neither a clean pass nor
+ * fully empty).
  */
 
-const cell = (status: MatrixCell["status"]): MatrixCell => ({
-  actualValue: 1,
-  targetValue: 1,
-  status,
-  sampleSize: null,
-});
+type Point = { result: "pass" | "fail"; consecutiveCountAfter: number };
+const pass = (n = 1): Point => ({ result: "pass", consecutiveCountAfter: n });
+const fail: Point = { result: "fail", consecutiveCountAfter: 0 };
 
 /** 12 ascending week starts, W01 oldest .. W12 latest. */
 const WEEKS = Array.from({ length: 12 }, (_, i) => `2026-W${String(i + 1).padStart(2, "0")}`);
 
-function cellsFor(code: string, statuses: Array<MatrixCell["status"] | undefined>): Map<string, MatrixCell> {
-  const cells = new Map<string, MatrixCell>();
-  statuses.forEach((status, i) => {
-    if (status !== undefined) cells.set(`${code}|${WEEKS[i]}`, cell(status));
+function historyFor(points: Array<Point | undefined>): Map<string, Point> {
+  const history = new Map<string, Point>();
+  points.forEach((point, i) => {
+    if (point !== undefined) history.set(WEEKS[i], point);
   });
-  return cells;
+  return history;
 }
 
-describe("sustainedPassingKpis", () => {
-  it("hides a KPI that passed the most recent 8 weeks straight", () => {
-    const statuses = [
-      "fail", "fail", "fail", "fail",
-      "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass",
-    ] as const;
-    const cells = cellsFor("FAX", [...statuses]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX"], cells)).toEqual(new Set(["FAX"]));
+describe("isDevelopmentItemStale", () => {
+  it("hides a row that passed the most recent 8 weeks straight", () => {
+    const history = historyFor([fail, fail, fail, fail, pass(1), pass(2), pass(3), pass(4), pass(5), pass(6), pass(7), pass(8)]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(true);
   });
 
-  it("keeps a KPI visible when one of the last 8 weeks failed", () => {
-    const statuses = [
-      "pass", "pass", "pass", "pass",
-      "pass", "pass", "fail", "pass", "pass", "pass", "pass", "pass",
-    ] as const;
-    const cells = cellsFor("FAX", [...statuses]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX"], cells)).toEqual(new Set());
+  it("hides a row with nothing recorded in the most recent 8 weeks", () => {
+    // All its history is from the opening weeks, none of it recent —
+    // never followed up since, or the KPI stopped being measured.
+    const history = historyFor([fail, pass(1), pass(2), pass(3)]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(true);
   });
 
-  it("keeps a KPI visible when one of the last 8 weeks is a warning, not a clean pass", () => {
-    const statuses = [
-      "pass", "pass", "pass", "pass",
-      "warning", "pass", "pass", "pass", "pass", "pass", "pass", "pass",
-    ] as const;
-    const cells = cellsFor("FAX", [...statuses]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX"], cells)).toEqual(new Set());
+  it("keeps a row visible when one of the last 8 weeks failed", () => {
+    const history = historyFor([pass(1), pass(2), pass(3), pass(4), pass(5), pass(6), fail, pass(1)]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(false);
   });
 
-  it("keeps a KPI visible when a week in the window has no cell at all", () => {
-    const statuses = [
-      "pass", "pass", "pass", "pass",
-      "pass", "pass", undefined, "pass", "pass", "pass", "pass", "pass",
-    ] as const;
-    const cells = cellsFor("FAX", [...statuses]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX"], cells)).toEqual(new Set());
+  it("keeps a row visible on a mix of some recent weeks with data and some without", () => {
+    // Neither a clean 8-week pass nor fully empty — still worth a look.
+    const history = historyFor([fail, pass(1), pass(2), undefined, undefined, pass(1), undefined, pass(2)]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(false);
   });
 
-  it("keeps a KPI visible with fewer than 8 weeks of history, even if every one passed", () => {
+  it("keeps a row visible with fewer than 8 weeks of plan history, even with nothing recorded", () => {
     const shortWeeks = WEEKS.slice(0, 5);
-    const cells = cellsFor("CASE_RATE", ["pass", "pass", "pass", "pass", "pass"]);
-    expect(sustainedPassingKpis(shortWeeks, ["CASE_RATE"], cells)).toEqual(new Set());
+    expect(isDevelopmentItemStale(shortWeeks, new Map())).toBe(false);
   });
 
-  it("judges each KPI independently — one sustained, one not, in the same call", () => {
-    const cells = new Map([
-      ...cellsFor("FAX", ["pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass"]),
-      ...cellsFor("QUALITY", ["pass", "pass", "pass", "pass", "pass", "pass", "fail", "pass", "pass", "pass", "pass", "pass"]),
-    ]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX", "QUALITY"], cells)).toEqual(new Set(["FAX"]));
+  it("keeps a freshly opened item visible — its own opening fail sits inside the window", () => {
+    const history = historyFor([undefined, undefined, undefined, undefined, undefined, undefined, undefined, fail]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(false);
   });
 
-  it("looks only at the most recent 8 — an old streak broken since then does not exempt it", () => {
-    // Passed weeks 1-8, then a fail at week 9, then passing again 10-12 —
-    // only 3 clean weeks since the fail, well short of 8.
-    const statuses = [
-      "pass", "pass", "pass", "pass", "pass", "pass", "pass", "pass",
-      "fail", "pass", "pass", "pass",
-    ] as const;
-    const cells = cellsFor("FAX", [...statuses]);
-    expect(sustainedPassingKpis(WEEKS, ["FAX"], cells)).toEqual(new Set());
+  it("looks only at the most recent 8 — an old clean streak that then went stale still hides", () => {
+    // Passed weeks 1-4, then nothing recorded for the 8 weeks since —
+    // the streak itself isn't what's being read, only the current window.
+    const history = historyFor([pass(1), pass(2), pass(3), pass(4)]);
+    expect(isDevelopmentItemStale(WEEKS, history)).toBe(true);
   });
 });

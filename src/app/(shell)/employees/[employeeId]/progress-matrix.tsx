@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { formatMetric, formatWeek } from "@/components/ui";
 import { EwsRiskBadge } from "@/components/ui";
-import type { EmployeeMatrix } from "@/lib/queries/performance";
+import { isDevelopmentItemStale, type EmployeeMatrix } from "@/lib/queries/performance";
 
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
 const STICKY = "sticky left-0 z-10 min-w-52 bg-surface px-6 py-2";
@@ -43,6 +43,10 @@ function Marker({ done, label }: { done: boolean; label: string }) {
 
 export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
   const { weeks, kpis, cells, ews, issues } = matrix;
+  // Resolved, or gone stale with nothing tracked against it recently — the
+  // KPI grid above stays the full history regardless; only this table's
+  // rows are ever trimmed by it.
+  const visibleIssues = issues.filter((issue) => !isDevelopmentItemStale(weeks, issue.history));
 
   if (weeks.length === 0) {
     return (
@@ -126,105 +130,111 @@ export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
         </tbody>
       </table>
 
-      {issues.length > 0 && (
-        <table className="w-full border-collapse border-t-2 border-line text-sm">
-          <thead>
-            <tr className="border-b border-line bg-cream">
-              <th className={`${STICKY} border-r border-line bg-cream font-semibold text-ink`}>
-                Development item
-              </th>
-              {weeks.map((week) => (
-                <th
-                  key={week}
-                  className="min-w-28 border-l border-line/60 px-3 py-2.5 font-semibold whitespace-nowrap text-ink"
-                >
-                  {formatWeek(week)}
+      {visibleIssues.length > 0 && (
+        <details className="group border-t-2 border-line">
+          <summary className="cursor-pointer list-none px-6 py-3 text-sm font-semibold text-orange-brand-dark marker:hidden hover:text-orange-brand-pressed [&::-webkit-details-marker]:hidden">
+            <span className="group-open:hidden">Expand to see development items</span>
+            <span className="hidden group-open:inline">Collapse development items</span>
+          </summary>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-line bg-cream">
+                <th className={`${STICKY} border-r border-line bg-cream font-semibold text-ink`}>
+                  Development item
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {issues.map((issue) => (
-              <tr key={issue.actionItemId} className="border-b border-line/70 last:border-0">
-                <td className={`${STICKY} border-r border-line`}>
-                  <Link
-                    href={`/action-items/${issue.actionItemId}`}
-                    prefetch={false}
-                    className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                {weeks.map((week) => (
+                  <th
+                    key={week}
+                    className="min-w-28 border-l border-line/60 px-3 py-2.5 font-semibold whitespace-nowrap text-ink"
                   >
-                    {issue.kpiName}
-                  </Link>
-                  <span className="ml-2 font-mono text-xs text-muted">{issue.actionItemCode}</span>
-                  <p className="mt-1 flex items-center gap-1.5">
-                    <Marker done={issue.hasRca} label="RCA" />
-                    <Marker done={issue.hasActionPlan} label="Plan" />
-                    <span className="text-xs text-muted">
-                      {issue.consecutivePassingWeeks}/4 sustained
-                    </span>
-                  </p>
-                </td>
+                    {formatWeek(week)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visibleIssues.map((issue) => (
+                <tr key={issue.actionItemId} className="border-b border-line/70 last:border-0">
+                  <td className={`${STICKY} border-r border-line`}>
+                    <Link
+                      href={`/action-items/${issue.actionItemId}`}
+                      prefetch={false}
+                      className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                    >
+                      {issue.kpiName}
+                    </Link>
+                    <span className="ml-2 font-mono text-xs text-muted">{issue.actionItemCode}</span>
+                    <p className="mt-1 flex items-center gap-1.5">
+                      <Marker done={issue.hasRca} label="RCA" />
+                      <Marker done={issue.hasActionPlan} label="Plan" />
+                      <span className="text-xs text-muted">
+                        {issue.consecutivePassingWeeks}/4 sustained
+                      </span>
+                    </p>
+                  </td>
 
-                {weeks.map((week) => {
-                  const point = issue.history.get(week);
-                  if (!point) {
+                  {weeks.map((week) => {
+                    const point = issue.history.get(week);
+                    if (!point) {
+                      return (
+                        <td key={week} className={`${CELL} text-muted/40`}>
+                          ·
+                        </td>
+                      );
+                    }
+
+                    const opened = issue.openedWeek === week;
+                    const failed = point.result === "fail";
+                    const noted = issue.noteWeeks.has(week);
+                    // A pass logged before the item was acknowledged does not
+                    // advance the counter. Showing it as "Pass 0/4" read as no
+                    // progress when the truth is that monitoring had not begun.
+                    const counted = !failed && point.consecutiveCountAfter > 0;
+
                     return (
-                      <td key={week} className={`${CELL} text-muted/40`}>
-                        ·
+                      <td
+                        key={week}
+                        className={`${CELL} p-0 ${failed ? "bg-fail-bg" : ""}`}
+                      >
+                        {/* The whole cell is the link: clicking the week you
+                            failed is the natural way to reach its RCA and plan,
+                            rather than hunting for the KPI name. */}
+                        <Link
+                          href={`/action-items/${issue.actionItemId}`}
+                          prefetch={false}
+                          title={
+                            noted
+                              ? "This week has a note against the root cause — open to read it"
+                              : opened
+                              ? "Failed — the week this item opened. Open to record the RCA and action plan."
+                              : failed
+                                ? "Failed — the four-week counter reset to zero. Open to review the RCA and plan."
+                                : counted
+                                  ? `Passed — ${point.consecutiveCountAfter} of 4 sustained weeks`
+                                  : "Passed, but before the item was acknowledged — monitoring had not started, so it does not count"
+                          }
+                          className={`block px-3 py-2 underline-offset-4 hover:underline ${
+                            failed ? "font-semibold text-fail" : counted ? "text-pass" : "text-muted"
+                          }`}
+                        >
+                          {failed ? "Fail" : counted ? `Pass ${point.consecutiveCountAfter}/4` : "Pass"}
+                          {/* A note means the circumstances that week differed
+                              from the item's original root cause. */}
+                          {noted && (
+                            <span
+                              aria-label="has a note"
+                              className="ml-1.5 inline-block h-1.5 w-1.5 align-middle bg-orange-brand"
+                            />
+                          )}
+                        </Link>
                       </td>
                     );
-                  }
-
-                  const opened = issue.openedWeek === week;
-                  const failed = point.result === "fail";
-                  const noted = issue.noteWeeks.has(week);
-                  // A pass logged before the item was acknowledged does not
-                  // advance the counter. Showing it as "Pass 0/4" read as no
-                  // progress when the truth is that monitoring had not begun.
-                  const counted = !failed && point.consecutiveCountAfter > 0;
-
-                  return (
-                    <td
-                      key={week}
-                      className={`${CELL} p-0 ${failed ? "bg-fail-bg" : ""}`}
-                    >
-                      {/* The whole cell is the link: clicking the week you
-                          failed is the natural way to reach its RCA and plan,
-                          rather than hunting for the KPI name. */}
-                      <Link
-                        href={`/action-items/${issue.actionItemId}`}
-                        prefetch={false}
-                        title={
-                          noted
-                            ? "This week has a note against the root cause — open to read it"
-                            : opened
-                            ? "Failed — the week this item opened. Open to record the RCA and action plan."
-                            : failed
-                              ? "Failed — the four-week counter reset to zero. Open to review the RCA and plan."
-                              : counted
-                                ? `Passed — ${point.consecutiveCountAfter} of 4 sustained weeks`
-                                : "Passed, but before the item was acknowledged — monitoring had not started, so it does not count"
-                        }
-                        className={`block px-3 py-2 underline-offset-4 hover:underline ${
-                          failed ? "font-semibold text-fail" : counted ? "text-pass" : "text-muted"
-                        }`}
-                      >
-                        {failed ? "Fail" : counted ? `Pass ${point.consecutiveCountAfter}/4` : "Pass"}
-                        {/* A note means the circumstances that week differed
-                            from the item's original root cause. */}
-                        {noted && (
-                          <span
-                            aria-label="has a note"
-                            className="ml-1.5 inline-block h-1.5 w-1.5 align-middle bg-orange-brand"
-                          />
-                        )}
-                      </Link>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
       )}
     </div>
   );

@@ -116,16 +116,7 @@ export default async function EmployeePage({
                 : "No weeks imported"
             }
           />
-          {/* Collapsed by default: the grid can run wide and heavy on a page
-              that opens straight to it, and a native <details> gets that for
-              free — no client component just to hold one open/closed bit. */}
-          <details className="group">
-            <summary className="cursor-pointer list-none border-b-2 border-ink px-6 py-3 text-sm font-semibold text-orange-brand-dark marker:hidden hover:text-orange-brand-pressed [&::-webkit-details-marker]:hidden">
-              <span className="group-open:hidden">Expand to see development plan</span>
-              <span className="hidden group-open:inline">Collapse development plan</span>
-            </summary>
-            <ProgressMatrix matrix={matrix} />
-          </details>
+          <ProgressMatrix matrix={matrix} />
         </Card>
 
         {skillBreakdown.length > 0 && (

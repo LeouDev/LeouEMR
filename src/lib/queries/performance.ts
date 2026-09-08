@@ -45,11 +45,13 @@ export const OPEN_STATUSES = [
 ] as const;
 
 /**
- * Weeks of an unbroken pass, ending at the latest week, before a KPI drops
- * off the development plan entirely. Unrelated to the 4-week counter that
- * closes an already-open action item (SUSTAINED_WEEKS in development.ts) —
- * this one governs whether a KPI's row appears on the plan at all, not
- * whether an existing issue is done.
+ * Weeks of an unbroken pass, ending at the latest week — or with no data
+ * recorded at all — before a row drops off the "Development item" table.
+ * Unrelated to the 4-week counter that actually closes an open action item
+ * (SUSTAINED_WEEKS in development.ts): that one changes the item's real
+ * status; this one only governs whether its row is worth showing right now.
+ * The KPI grid itself is never filtered by this — it stays the full history
+ * regardless.
  */
 export const SUSTAINED_PASS_WEEKS = 8;
 
@@ -489,26 +491,30 @@ export interface MatrixCell {
 }
 
 /**
- * KPI codes to drop from a development plan: an unbroken pass across the
- * exact most recent `SUSTAINED_PASS_WEEKS` weeks. A development plan exists
- * to show what still needs work, so a KPI that has cleared its target for
- * that long just pushes the KPIs that still need attention further down.
+ * Whether a row on the "Development item" table has stopped needing a
+ * supervisor's attention right now: an unbroken pass across the exact most
+ * recent `SUSTAINED_PASS_WEEKS` weeks, or nothing recorded against it at
+ * all in that same window. The first means it is resolved; the second means
+ * it has gone stale, sitting with no new weeks of tracking to show — the
+ * KPI grid above this table is the full history regardless and is never
+ * filtered by this, only the item list is.
  *
- * Requires the full window to be present and passing — fewer weeks than
- * that (too new to judge), a single fail anywhere in it, or a week with no
- * cell at all, all keep the KPI visible rather than risk hiding something
- * still shaky.
+ * Requires the full window to be present before judging either way: fewer
+ * weeks than that in the whole plan (too new to judge), or a mix of some
+ * weeks with data and some without, both keep the row visible rather than
+ * risk hiding something still actually in progress.
  */
-export function sustainedPassingKpis(
+export function isDevelopmentItemStale(
   weeks: string[],
-  kpiCodes: string[],
-  cells: Map<string, MatrixCell>,
-): Set<string> {
+  history: Map<string, { result: "pass" | "fail"; consecutiveCountAfter: number }>,
+): boolean {
   const recentWeeks = weeks.slice(-SUSTAINED_PASS_WEEKS);
-  if (recentWeeks.length < SUSTAINED_PASS_WEEKS) return new Set();
-  return new Set(
-    kpiCodes.filter((code) => recentWeeks.every((week) => cells.get(`${code}|${week}`)?.status === "pass")),
-  );
+  if (recentWeeks.length < SUSTAINED_PASS_WEEKS) return false;
+
+  const points = recentWeeks.map((week) => history.get(week));
+  const noRecentData = points.every((point) => point === undefined);
+  const passedThroughout = points.every((point) => point?.result === "pass");
+  return noRecentData || passedThroughout;
 }
 
 export interface EmployeeMatrix {
@@ -658,12 +664,10 @@ export async function getEmployeeMatrix(
       ])
     : [[], []];
 
-  const hidden = sustainedPassingKpis(weeks, [...kpiOrder.keys()], cells);
-
   return {
     employee,
     weeks,
-    kpis: [...kpiOrder.values()].filter((kpi) => !hidden.has(kpi.code)),
+    kpis: [...kpiOrder.values()],
     cells,
     ews: new Map(assessments.map((a) => [a.week, { riskLevel: a.riskLevel, score: a.score }])),
     issues: issueRows.map((row) => ({
