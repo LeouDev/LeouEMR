@@ -12,7 +12,7 @@ import {
   type ActivityBlock,
   type LoggedCase,
 } from "@/lib/case-tracker/tracker";
-import { CaseForm } from "./case-tracker-case-form";
+import { CaseForm, type CaseFormProgress } from "./case-tracker-case-form";
 import { ScheduleCard } from "./case-tracker-schedule";
 import { CELL, ConfirmDelete, FIELD, HEAD, LABEL, NUM, fmt } from "./case-tracker-ui";
 
@@ -190,6 +190,8 @@ export function CaseTracker({
   const day = summarizeDay(date, state.blocks, state.cases, targets);
   const dayCases = state.cases.filter((c) => c.date === date);
   const percent = progressPercent(day);
+  const gaugeTone: CaseFormProgress["tone"] =
+    day.totalHours === 0 ? "muted" : day.met ? "pass" : percent >= 60 ? "warn" : "fail";
 
   const apply = (fn: (prev: TrackerState) => TrackerState) => setNotice(store.update(fn));
 
@@ -501,7 +503,9 @@ export function CaseTracker({
                             ? "bg-pass-bg text-pass"
                             : c.decision === "Deny"
                               ? "bg-fail-bg text-fail"
-                              : "bg-warn-bg text-warn"
+                              : c.decision === "Cancel"
+                                ? "bg-cream-dark text-muted"
+                                : "bg-warn-bg text-warn"
                         }`}
                       >
                         {c.decision}
@@ -654,6 +658,12 @@ export function CaseTracker({
           date={date}
           skills={skills.map((s) => ({ code: s.code, name: s.name }))}
           existingNumbers={new Set(dayCases.map((c) => c.caseNumber.toLowerCase()))}
+          progress={{
+            percent,
+            totalCases: day.totalCases,
+            target: day.totalRequired === 0 ? null : Math.ceil(day.totalRequired),
+            tone: gaugeTone,
+          }}
           onClose={() => setLogging(false)}
           onSave={(entry) =>
             apply((prev) => ({

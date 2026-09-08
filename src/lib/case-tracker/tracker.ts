@@ -35,7 +35,7 @@ export interface LoggedCase {
   caseNumber: string;
   /** Which skill it was worked on, so it lands in the same bucket as its hours. */
   skillCode: string | null;
-  decision: "Pend" | "Deny" | "Approved";
+  decision: "Pend" | "Deny" | "Approved" | "Cancel";
   activeApproval: "Y" | "N";
   cancellationNote: "Y" | "N";
   urgent: "Y" | "N";

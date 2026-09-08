@@ -15,6 +15,7 @@ import { normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
  */
 export const ACTIVITY_SKILLS = [
   { activity: "CSBO-PA-OGS Fax", skillCode: "fax" },
+  { activity: "CSBO-PA-Fax Only", skillCode: "fax" },
   { activity: "CSBO-PA-CRG-Part D", skillCode: "fax" },
   { activity: "CSBO-PA-CRG-Chart Checkers", skillCode: "glp_1" },
   { activity: "CSBO-PA-Outreach", skillCode: "outreach" },
