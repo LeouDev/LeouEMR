@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { AnalyticsScene } from "@/components/analytics-scene";
 import { ChartFrame, TrendBarChart, TrendLineChart } from "@/components/charts";
 import { Card, EmptyState, PageBand } from "@/components/ui";
@@ -213,6 +214,224 @@ function KpiCard({ kpi }: { kpi: Kpi }) {
   );
 }
 
+/** A ChartFrame with the real title already in place and a pulsing placeholder body — the Suspense fallback for a chart whose data is still on its way. */
+function ChartSkeleton({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <ChartFrame title={title} subtitle={subtitle}>
+      <div className="h-48 w-full animate-pulse bg-line motion-reduce:animate-none" />
+    </ChartFrame>
+  );
+}
+
+/**
+ * The one piece of the Overview tab that needs MBO history beyond the
+ * current and prior period. Rendered inside its own Suspense boundary so
+ * fetching several more trailing `getMboOverview` calls — the single most
+ * expensive query on this page — never blocks the KPI cards or the rest of
+ * the tab from showing up first.
+ */
+async function MboTrendChart({
+  trendBuckets,
+  mboCurrent,
+  mboPrior,
+  periodNoun,
+}: {
+  trendBuckets: Period[];
+  mboCurrent: MboOverview;
+  mboPrior: MboOverview | null;
+  periodNoun: string;
+}) {
+  const olderBuckets = trendBuckets.slice(0, Math.max(0, trendBuckets.length - 2));
+  const olderMbo =
+    olderBuckets.length > 0
+      ? await mapWithConcurrency(olderBuckets, TREND_FETCH_CONCURRENCY, (b) =>
+          getMboOverview({ weekFrom: b.start, weekTo: b.end }),
+        )
+      : [];
+  const mboTrend: MboOverview[] = [...olderMbo, ...(mboPrior ? [mboPrior] : []), mboCurrent];
+
+  return (
+    <ChartFrame
+      title={`MBO pass rate, trailing ${mboTrend.length} ${periodNoun}${mboTrend.length === 1 ? "" : "s"}`}
+      subtitle="Share of scored people clearing every gate"
+    >
+      <TrendLineChart
+        buckets={trendBuckets.map((p) => p.label)}
+        values={mboTrend.map((m) => m.passRate)}
+        selectedIndex={mboTrend.length - 1}
+        target={ANALYTICS_TARGETS.passRate}
+        unit="%"
+        decimals={0}
+      />
+    </ChartFrame>
+  );
+}
+
+interface Signal {
+  title: string;
+  who: string;
+  level: "High" | "Medium" | "Low";
+}
+
+const SIGNAL_TONE: Record<Signal["level"], { dot: string; bg: string; fg: string }> = {
+  High: { dot: "bg-fail", bg: "bg-fail-bg", fg: "text-fail" },
+  Medium: { dot: "bg-warn", bg: "bg-warn-bg", fg: "text-warn" },
+  Low: { dot: "bg-ink-faint", bg: "bg-line", fg: "text-muted" },
+};
+
+/**
+ * The Risks tab's derived signals — the same Suspense isolation as
+ * MboTrendChart, and for the same reason: only the first signal below
+ * needs MBO history beyond current/prior, but keeping all five together
+ * means they stream in already sorted by priority rather than popping in
+ * one at a time out of order.
+ */
+async function EarlyWarningSignalsCard({
+  trendBuckets,
+  mboCurrent,
+  mboPrior,
+  priorPeriod,
+  analyticsCurrent,
+  analyticsPrior,
+  criticalBySupervisorCurrent,
+  criticalErrorsCurrent,
+  supervisorSite,
+  skillMetrics,
+  skillMetricsPrior,
+  periodNoun,
+}: {
+  trendBuckets: Period[];
+  mboCurrent: MboOverview;
+  mboPrior: MboOverview | null;
+  priorPeriod: Period | null;
+  analyticsCurrent: AnalyticsSnapshot;
+  analyticsPrior: AnalyticsSnapshot | null;
+  criticalBySupervisorCurrent: Record<string, number>;
+  criticalErrorsCurrent: number;
+  supervisorSite: Map<string, string>;
+  skillMetrics: SkillSupervisorRow[];
+  skillMetricsPrior: SkillSupervisorRow[];
+  periodNoun: string;
+}) {
+  const olderBuckets = trendBuckets.slice(0, Math.max(0, trendBuckets.length - 2));
+  const olderMbo =
+    olderBuckets.length > 0
+      ? await mapWithConcurrency(olderBuckets, TREND_FETCH_CONCURRENCY, (b) =>
+          getMboOverview({ weekFrom: b.start, weekTo: b.end }),
+        )
+      : [];
+  const mboTrend: MboOverview[] = [...olderMbo, ...(mboPrior ? [mboPrior] : []), mboCurrent];
+
+  const critBySup = Object.entries(criticalBySupervisorCurrent)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, count]) => ({ name, count }));
+
+  const signals: Signal[] = [];
+
+  // Pass rate down 3 consecutive buckets.
+  if (mboTrend.length >= 4) {
+    for (const { node, site } of flattenSupervisors(mboCurrent)) {
+      const series = mboTrend
+        .slice(-4)
+        .map((m) => flattenSupervisors(m).find((s) => s.node.label === node.label)?.node.passRate ?? null);
+      if (series.some((v) => v === null)) continue;
+      const [a, b, c, d] = series as number[];
+      if (a > b && b > c && c > d) {
+        signals.push({
+          title: "Pass rate down 3 consecutive periods",
+          who: `${node.label} · ${site} · ${a.toFixed(0)}% → ${d.toFixed(0)}%`,
+          level: "High",
+        });
+        break;
+      }
+    }
+  }
+
+  // Two supervisors carrying half or more of critical errors.
+  if (criticalErrorsCurrent > 0 && critBySup.length >= 2) {
+    const topTwo = critBySup[0].count + critBySup[1].count;
+    if (topTwo / criticalErrorsCurrent >= 0.5) {
+      signals.push({
+        title: "Critical errors concentrated in two teams",
+        who: `${critBySup[0].name} and ${critBySup[1].name} carry ${topTwo} of ${criticalErrorsCurrent} org-wide`,
+        level: "High",
+      });
+    }
+  }
+
+  // Any team with more than 25 open items.
+  const overloaded = analyticsCurrent.bySupervisor.filter((r) => r.openIssues > 25);
+  if (overloaded.length > 0) {
+    signals.push({
+      title: "Open action items above 25 per team",
+      who: overloaded.map((r) => `${r.label} (${r.openIssues})`).join(", "),
+      level: "Medium",
+    });
+  }
+
+  // Site AHT trending up vs the prior period — a genuine cases-weighted
+  // aggregate across every AHT-scored row for that site's supervisors, not
+  // a mean of already-averaged per-supervisor figures.
+  if (priorPeriod && skillMetricsPrior.length > 0) {
+    const priorSupervisorSite = new Map(flattenSupervisors(mboPrior ?? mboCurrent).map(({ node, site }) => [node.label, site]));
+    const currentBySite = bucketRowsBySite(ahtChartRows(skillMetrics), (s) => supervisorSite.get(s));
+    const priorBySite = bucketRowsBySite(ahtChartRows(skillMetricsPrior), (s) => priorSupervisorSite.get(s));
+    for (const [site, rows] of currentBySite) {
+      const currentAht = weightedAverageRows(rows, "aht");
+      const priorRows = priorBySite.get(site);
+      const priorAht = priorRows ? weightedAverageRows(priorRows, "aht") : null;
+      if (currentAht !== null && priorAht !== null && currentAht > priorAht) {
+        signals.push({
+          title: "AHT trending up vs the prior period",
+          who: `${site} site · +${Math.round(currentAht - priorAht)}s vs ${priorPeriod.label}`,
+          level: "Medium",
+        });
+        break;
+      }
+    }
+  }
+
+  // Attendance-gate fail share rising, org-wide (no per-site KPI breakdown exists to be more specific).
+  const attendanceCurrent = analyticsCurrent.kpis.find((k) => k.code === "ATTENDANCE");
+  const attendancePrior = analyticsPrior?.kpis.find((k) => k.code === "ATTENDANCE");
+  if (attendanceCurrent && attendancePrior && attendanceCurrent.failRate > attendancePrior.failRate) {
+    signals.push({
+      title: "Attendance gate misses rising",
+      who: `Org-wide · ${attendancePrior.failRate.toFixed(1)}% → ${attendanceCurrent.failRate.toFixed(1)}%`,
+      level: "Low",
+    });
+  }
+
+  const shownSignals = signals.slice(0, 5);
+
+  return (
+    <ChartFrame title="Early warning signals" subtitle={`Patterns that need a decision this ${periodNoun}`}>
+      {shownSignals.length === 0 ? (
+        <EmptyState title="Nothing flagged" description="No signal pattern is met this period." />
+      ) : (
+        <div>
+          {shownSignals.map((g, i) => {
+            const tone = SIGNAL_TONE[g.level];
+            return (
+              <div key={i} className="grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-3.5 border-b-2 border-line py-3.5 last:border-0">
+                <span className={`h-3 w-3 ${tone.dot}`} />
+                <div>
+                  <div className="text-sm font-bold text-ink">{g.title}</div>
+                  <div className="mt-0.5 text-xs text-muted">{g.who}</div>
+                </div>
+                <span className={`whitespace-nowrap px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] uppercase ${tone.bg} ${tone.fg}`}>
+                  {g.level}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ChartFrame>
+  );
+}
+
 export default async function AnalyticsPage({
   searchParams,
 }: {
@@ -279,18 +498,12 @@ export default async function AnalyticsPage({
       priorPeriod ? getEwsRiskCounts(priorPeriod) : Promise.resolve(null),
     ]);
 
-  // The trend line (Overview) and the "pass rate down 3 periods" signal
-  // (Risks) are the only things that need MBO history beyond the current
-  // and prior period, so this only runs for those two tabs — the Teams tab
-  // never pays for it. `period` and `priorPeriod` are already fetched
-  // above; only the strictly-older buckets are fetched here, capped and
-  // concurrency-limited for the same reason TREND_BUCKETS is kept modest.
-  const needsMboTrend = tab === "overview" || tab === "risks";
-  const olderBuckets = trendBuckets.slice(0, Math.max(0, trendBuckets.length - 2));
-  const olderMbo = needsMboTrend && olderBuckets.length > 0
-    ? await mapWithConcurrency(olderBuckets, TREND_FETCH_CONCURRENCY, (b) => getMboOverview({ weekFrom: b.start, weekTo: b.end }))
-    : [];
-  const mboTrend: MboOverview[] = needsMboTrend ? [...olderMbo, ...(mboPrior ? [mboPrior] : []), mboCurrent] : [];
+  // The trend line (Overview) and the early-warning signals (Risks) are the
+  // only things that need MBO history beyond the current and prior period —
+  // each fetches its own older buckets lazily, inside its own component
+  // below, so the Teams tab never pays for it and the rest of whichever tab
+  // does need it renders without waiting on it. See `MboTrendChart` and
+  // `EarlyWarningSignalsCard`.
 
   const criticalBySupervisorCurrent = criticalTrend[criticalTrend.length - 1]?.bySupervisor ?? {};
   const criticalBySupervisorPrior =
@@ -459,93 +672,8 @@ export default async function AnalyticsPage({
       pct: criticalErrorsCurrent > 0 ? (count / criticalErrorsCurrent) * 100 : 0,
     }));
 
-  interface Signal {
-    title: string;
-    who: string;
-    level: "High" | "Medium" | "Low";
-  }
-  const signals: Signal[] = [];
-
-  // Pass rate down 3 consecutive buckets.
-  if (mboTrend.length >= 4) {
-    for (const { node, site } of flattenSupervisors(mboCurrent)) {
-      const series = mboTrend
-        .slice(-4)
-        .map((m) => flattenSupervisors(m).find((s) => s.node.label === node.label)?.node.passRate ?? null);
-      if (series.some((v) => v === null)) continue;
-      const [a, b, c, d] = series as number[];
-      if (a > b && b > c && c > d) {
-        signals.push({
-          title: "Pass rate down 3 consecutive periods",
-          who: `${node.label} · ${site} · ${a.toFixed(0)}% → ${d.toFixed(0)}%`,
-          level: "High",
-        });
-        break;
-      }
-    }
-  }
-
-  // Two supervisors carrying half or more of critical errors.
-  if (criticalErrorsCurrent > 0 && critBySup.length >= 2) {
-    const topTwo = critBySup[0].count + critBySup[1].count;
-    if (topTwo / criticalErrorsCurrent >= 0.5) {
-      signals.push({
-        title: "Critical errors concentrated in two teams",
-        who: `${critBySup[0].name} and ${critBySup[1].name} carry ${topTwo} of ${criticalErrorsCurrent} org-wide`,
-        level: "High",
-      });
-    }
-  }
-
-  // Any team with more than 25 open items.
-  const overloaded = analyticsCurrent.bySupervisor.filter((r) => r.openIssues > 25);
-  if (overloaded.length > 0) {
-    signals.push({
-      title: "Open action items above 25 per team",
-      who: overloaded.map((r) => `${r.label} (${r.openIssues})`).join(", "),
-      level: "Medium",
-    });
-  }
-
-  // Site AHT trending up vs the prior period — a genuine cases-weighted
-  // aggregate across every AHT-scored row for that site's supervisors, not
-  // a mean of already-averaged per-supervisor figures.
-  if (priorPeriod && skillMetricsPrior.length > 0) {
-    const priorSupervisorSite = new Map(flattenSupervisors(mboPrior ?? mboCurrent).map(({ node, site }) => [node.label, site]));
-    const currentBySite = bucketRowsBySite(ahtChartRows(skillMetrics), (s) => supervisorSite.get(s));
-    const priorBySite = bucketRowsBySite(ahtChartRows(skillMetricsPrior), (s) => priorSupervisorSite.get(s));
-    for (const [site, rows] of currentBySite) {
-      const currentAht = weightedAverageRows(rows, "aht");
-      const priorRows = priorBySite.get(site);
-      const priorAht = priorRows ? weightedAverageRows(priorRows, "aht") : null;
-      if (currentAht !== null && priorAht !== null && currentAht > priorAht) {
-        signals.push({
-          title: "AHT trending up vs the prior period",
-          who: `${site} site · +${Math.round(currentAht - priorAht)}s vs ${priorPeriod.label}`,
-          level: "Medium",
-        });
-        break;
-      }
-    }
-  }
-
-  // Attendance-gate fail share rising, org-wide (no per-site KPI breakdown exists to be more specific).
-  const attendanceCurrent = analyticsCurrent.kpis.find((k) => k.code === "ATTENDANCE");
-  const attendancePrior = analyticsPrior?.kpis.find((k) => k.code === "ATTENDANCE");
-  if (attendanceCurrent && attendancePrior && attendanceCurrent.failRate > attendancePrior.failRate) {
-    signals.push({
-      title: "Attendance gate misses rising",
-      who: `Org-wide · ${attendancePrior.failRate.toFixed(1)}% → ${attendanceCurrent.failRate.toFixed(1)}%`,
-      level: "Low",
-    });
-  }
-
-  const shownSignals = signals.slice(0, 5);
-  const SIGNAL_TONE: Record<Signal["level"], { dot: string; bg: string; fg: string }> = {
-    High: { dot: "bg-fail", bg: "bg-fail-bg", fg: "text-fail" },
-    Medium: { dot: "bg-warn", bg: "bg-warn-bg", fg: "text-warn" },
-    Low: { dot: "bg-ink-faint", bg: "bg-line", fg: "text-muted" },
-  };
+  // Early-warning signals need MBO history beyond current/prior — moved
+  // into EarlyWarningSignalsCard below, which fetches that lazily.
 
   const tabControl =
     "flex h-8 min-w-8 items-center justify-center border-2 border-ink bg-surface px-2.5 text-sm font-bold text-ink";
@@ -609,19 +737,16 @@ export default async function AnalyticsPage({
             </div>
 
             <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] gap-4">
-              <ChartFrame
-                title={`MBO pass rate, trailing ${mboTrend.length} ${periodNoun}${mboTrend.length === 1 ? "" : "s"}`}
-                subtitle="Share of scored people clearing every gate"
+              <Suspense
+                fallback={
+                  <ChartSkeleton
+                    title={`MBO pass rate, trailing ${trendBuckets.length} ${periodNoun}${trendBuckets.length === 1 ? "" : "s"}`}
+                    subtitle="Share of scored people clearing every gate"
+                  />
+                }
               >
-                <TrendLineChart
-                  buckets={trendBuckets.map((p) => p.label)}
-                  values={mboTrend.map((m) => m.passRate)}
-                  selectedIndex={mboTrend.length - 1}
-                  target={ANALYTICS_TARGETS.passRate}
-                  unit="%"
-                  decimals={0}
-                />
-              </ChartFrame>
+                <MboTrendChart trendBuckets={trendBuckets} mboCurrent={mboCurrent} mboPrior={mboPrior} periodNoun={periodNoun} />
+              </Suspense>
 
               <ChartFrame
                 title="Teams needing attention"
@@ -826,29 +951,29 @@ export default async function AnalyticsPage({
                 )}
               </ChartFrame>
 
-              <ChartFrame title="Early warning signals" subtitle={`Patterns that need a decision this ${periodNoun}`}>
-                {shownSignals.length === 0 ? (
-                  <EmptyState title="Nothing flagged" description="No signal pattern is met this period." />
-                ) : (
-                  <div>
-                    {shownSignals.map((g, i) => {
-                      const tone = SIGNAL_TONE[g.level];
-                      return (
-                        <div key={i} className="grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-3.5 border-b-2 border-line py-3.5 last:border-0">
-                          <span className={`h-3 w-3 ${tone.dot}`} />
-                          <div>
-                            <div className="text-sm font-bold text-ink">{g.title}</div>
-                            <div className="mt-0.5 text-xs text-muted">{g.who}</div>
-                          </div>
-                          <span className={`whitespace-nowrap px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] uppercase ${tone.bg} ${tone.fg}`}>
-                            {g.level}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </ChartFrame>
+              <Suspense
+                fallback={
+                  <ChartSkeleton
+                    title="Early warning signals"
+                    subtitle={`Patterns that need a decision this ${periodNoun}`}
+                  />
+                }
+              >
+                <EarlyWarningSignalsCard
+                  trendBuckets={trendBuckets}
+                  mboCurrent={mboCurrent}
+                  mboPrior={mboPrior}
+                  priorPeriod={priorPeriod}
+                  analyticsCurrent={analyticsCurrent}
+                  analyticsPrior={analyticsPrior}
+                  criticalBySupervisorCurrent={criticalBySupervisorCurrent}
+                  criticalErrorsCurrent={criticalErrorsCurrent}
+                  supervisorSite={supervisorSite}
+                  skillMetrics={skillMetrics}
+                  skillMetricsPrior={skillMetricsPrior}
+                  periodNoun={periodNoun}
+                />
+              </Suspense>
             </div>
           </div>
         )}
