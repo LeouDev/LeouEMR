@@ -10,8 +10,10 @@ import { AdherenceUploader } from "./adherence-uploader";
  * wading through the report's own summary and percentage tables, which this
  * tool never shows.
  *
- * Nothing here is stored: parsing happens per request and the result lives
- * only in the browser tab that uploaded it.
+ * The database stores nothing from this page: parsing happens per request.
+ * The parsed result IS kept in the browser's localStorage, namespaced to
+ * this account, so a refresh mid-review does not lose it — see the note in
+ * adherence-uploader.tsx on why that key must be per-user rather than global.
  */
 export default async function AdherencePage() {
   const user = await getCurrentUser();
@@ -27,7 +29,7 @@ export default async function AdherencePage() {
         subtitle="Upload the WFM adherence PDF to review segments needing action"
       />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <AdherenceUploader />
+        <AdherenceUploader userId={user.id} />
       </main>
     </>
   );

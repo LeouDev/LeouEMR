@@ -294,6 +294,13 @@ export async function getOverdueCount(user: CurrentUser, today: string): Promise
  *
  * Uses the same OPEN_STATUSES the counts elsewhere are built from, so a row's
  * "Open" column cannot disagree with the Action Items page it links to.
+ *
+ * Trusts `employeeIds` completely — it applies no scope of its own. Its one
+ * caller today (dashboard/page.tsx) already passes ids that came out of
+ * `employeeScope`/`resolveScopedIds`, which is what makes this safe. This is
+ * not a general-purpose "counts for anyone" helper: a future caller handing
+ * it unvalidated ids (from a request body, say) would leak open-issue counts
+ * for arbitrary employees. Scope before calling this, not after.
  */
 export async function getOpenIssueCounts(employeeIds: string[]): Promise<Map<string, number>> {
   if (employeeIds.length === 0) return new Map();

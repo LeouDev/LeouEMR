@@ -12,6 +12,10 @@ export default async function SkillsPage() {
 
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
+  // Matches its LEADER_ONLY_NAV siblings (/mbo, /ews, /ramp): an agent's own
+  // slot is My Stats, not the scoring policy table itself — a hidden nav
+  // link is not a permission check, so this page has to say so too.
+  if (user.role === "agent") redirect("/dashboard");
 
   const rows = await db
     .select()

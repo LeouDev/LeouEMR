@@ -2,6 +2,7 @@
 
 import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { notifications } from "@/lib/db/schema";
@@ -23,6 +24,12 @@ export async function markAllRead(): Promise<{ ok: boolean }> {
 export async function markRead(notificationId: string): Promise<{ ok: boolean }> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false };
+
+  // A malformed id would otherwise reach the database as a raw uuid-typed
+  // comparison and throw a Postgres cast error — an unhandled exception from
+  // a server action surfaces to the caller as a generic failure screen
+  // rather than the clean { ok: false } every other rejection here returns.
+  if (!z.string().uuid().safeParse(notificationId).success) return { ok: false };
 
   await db
     .update(notifications)

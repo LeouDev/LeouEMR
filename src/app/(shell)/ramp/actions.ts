@@ -124,7 +124,12 @@ export async function clearRampAssignment(input: unknown): Promise<RampResult> {
 
   await db
     .delete(employeeRampAssignments)
-    .where(eq(employeeRampAssignments.employeeId, parsed.data.employeeId));
+    .where(
+      and(
+        eq(employeeRampAssignments.employeeId, parsed.data.employeeId),
+        eq(employeeRampAssignments.skillReferenceId, parsed.data.skillReferenceId),
+      ),
+    );
 
   await db.insert(auditLog).values({
     actorId: user.id,
