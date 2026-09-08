@@ -27,7 +27,12 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  // Refreshes the auth token and keeps the session cookie current.
+  // Refreshes the auth token and keeps the session cookie current. Supabase
+  // refresh tokens are single-use: Next.js prefetches every <Link> in the
+  // viewport, so a burst of simultaneous requests each racing this same
+  // getUser() call can rotate the token out from under one another. The
+  // real navigation still runs this — the matcher below is what stops
+  // background prefetches from entering this race in the first place.
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -53,5 +58,17 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    {
+      source: "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+      // Next.js's own documented pattern for excluding prefetch-only
+      // requests: a real navigation never carries either header, so this
+      // only skips the background loads a visible <Link> triggers on its
+      // own, never an actual click or full page load.
+      missing: [
+        { type: "header", key: "next-router-prefetch" },
+        { type: "header", key: "purpose", value: "prefetch" },
+      ],
+    },
+  ],
 };
