@@ -95,14 +95,18 @@ function LoginForm() {
     const next = searchParams.get("next") ?? "/dashboard";
     window.location.assign(next);
 
-    // If the navigation has not taken effect shortly after, something is
-    // wrong — surface it rather than leaving the scene spinning.
+    // If the navigation has not taken effect after a while, something is
+    // wrong — surface it rather than leaving the scene spinning. 20s rather
+    // than a shorter window: the destination route still has to resolve the
+    // session server-side before it can even start streaming a response,
+    // and that one lookup landing on a slow moment shouldn't read as a
+    // failed sign-in.
     setTimeout(() => {
       setSubmitting(false);
       setError(
         "Signed in, but the dashboard did not load. Please try again — if this repeats, tell your administrator.",
       );
-    }, 8000);
+    }, 20000);
   }
 
   if (submitting) {
