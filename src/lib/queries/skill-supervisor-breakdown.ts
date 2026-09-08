@@ -1,9 +1,9 @@
 import { and, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { employeeAssignments, employees, skillFacts } from "@/lib/db/schema";
+import { employees, skillFacts } from "@/lib/db/schema";
 import { normalize, loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import { eligibleForPeriod } from "./eligibility";
-import { assignmentAt, supervisorOfRecord } from "./org-history";
+import { joinPeriodOwner, periodOwnerSubquery, supervisorOfRecord } from "./org-history";
 import type { Period } from "./period";
 
 export interface SkillSupervisorRow {
@@ -36,10 +36,11 @@ const UNASSIGNED = "Unassigned";
  * this is a supplementary read of the same underlying facts.
  */
 export async function getSkillMetricsBySupervisor(period: Period): Promise<SkillSupervisorRow[]> {
+  const owner = periodOwnerSubquery(period);
   const roster = await db
-    .select({ employeeId: employees.id, supervisor: supervisorOfRecord })
+    .select({ employeeId: employees.id, supervisor: supervisorOfRecord(owner) })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(period.end));
+    .leftJoin(owner, joinPeriodOwner(owner));
 
   const eligible = new Set(await eligibleForPeriod(roster.map((r) => r.employeeId), period));
   const supervisorById = new Map(

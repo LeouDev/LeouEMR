@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employeeAssignments, employees } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -18,30 +18,160 @@ import { resolveScopedIds } from "@/lib/queries/performance";
  * even after the org moves underneath them.
  */
 
+/** An inclusive date range. Any `Period` satisfies this structurally. */
+export interface DateRange {
+  start: string;
+  end: string;
+}
+
 /**
- * Employee ids whose results belong to this leader for a period ending `asOf`.
+ * A derived table: for each employee, the org structure that held them for
+ * the MOST DAYS within `period` — not merely whoever held them on the last
+ * day of it.
  *
- * One rule, used for both scoping and grouping: a person's results belong to
- * whoever they reported to at the END of the period being viewed. Viewing
- * August therefore asks who held them on 31 August, which is the supervisor
- * who actually managed that month's work — not whoever holds them today.
+ * A single end-date snapshot was the original rule, and it has a real
+ * failure mode: someone who moves teams on the 29th of a 31-day month hands
+ * the whole month's results to their new supervisor, who actually managed
+ * three days of it, while the supervisor who ran the other twenty-eight
+ * gets nothing. Summing days per candidate and taking the largest total
+ * fixes that, while keeping the same guarantee the single-date rule gave —
+ * exactly one owner per person per period, so a figure is never counted
+ * twice toward two different supervisors.
  *
- * A single date rather than an overlap test on purpose. Overlap would place
- * someone who moved mid-period on two supervisors' teams at once, so a figure
- * would be counted twice and two managers would each believe the result was
- * theirs. One date gives every person exactly one owner per period.
+ * Two aggregation stages, not one, because a single supervisor's tenure is
+ * sometimes recorded as several adjacent assignment rows rather than one
+ * continuous interval: the workbook does not always carry a supervisor EID,
+ * and a week where it's blank does not `sameOrg()` with a week where it
+ * isn't, so the import's own interval-collapsing cannot merge them even
+ * though the supervisor's name never changed. Grouping by
+ * (employeeId, supervisorName, managerName, site) before summing heals
+ * that — rows that are really one tenure, split only by a blank EID column,
+ * are counted as one candidate rather than several small ones that each
+ * lose to a genuinely different supervisor's single larger block.
+ *
+ * Ties (equal day counts) resolve to whichever candidate's stint starts
+ * earliest, for a deterministic answer rather than one that depends on scan
+ * order.
+ */
+export function periodOwnerSubquery(period: DateRange) {
+  const overlapDays = sql<number>`
+    (least(coalesce(${employeeAssignments.effectiveTo}, ${period.end}::date), ${period.end}::date)
+     - greatest(${employeeAssignments.effectiveFrom}, ${period.start}::date) + 1)
+  `.as("overlap_days");
+
+  const stints = db
+    .select({
+      employeeId: employeeAssignments.employeeId,
+      supervisorEid: employeeAssignments.supervisorEid,
+      supervisorName: employeeAssignments.supervisorName,
+      managerName: employeeAssignments.managerName,
+      site: employeeAssignments.site,
+      effectiveFrom: employeeAssignments.effectiveFrom,
+      overlapDays,
+    })
+    .from(employeeAssignments)
+    .where(
+      and(
+        lte(employeeAssignments.effectiveFrom, period.end),
+        or(isNull(employeeAssignments.effectiveTo), gte(employeeAssignments.effectiveTo, period.start)),
+      ),
+    )
+    .as("stints");
+
+  const totals = db
+    .select({
+      employeeId: stints.employeeId,
+      // Best-effort: at least one of the fragments sharing this identity
+      // usually carries the EID even on weeks where the others don't.
+      supervisorEid: sql<string | null>`max(${stints.supervisorEid})`.as("supervisor_eid"),
+      supervisorName: stints.supervisorName,
+      managerName: stints.managerName,
+      site: stints.site,
+      totalDays: sql<number>`sum(${stints.overlapDays})`.as("total_days"),
+      earliestStart: sql<string>`min(${stints.effectiveFrom})`.as("earliest_start"),
+    })
+    .from(stints)
+    .groupBy(stints.employeeId, stints.supervisorName, stints.managerName, stints.site)
+    .as("totals");
+
+  return db
+    .selectDistinctOn([totals.employeeId], {
+      employeeId: totals.employeeId,
+      supervisorEid: totals.supervisorEid,
+      supervisorName: totals.supervisorName,
+      managerName: totals.managerName,
+      site: totals.site,
+      totalDays: totals.totalDays,
+    })
+    .from(totals)
+    .orderBy(totals.employeeId, sql`${totals.totalDays} desc`, totals.earliestStart)
+    .as("period_owner");
+}
+
+export type PeriodOwner = ReturnType<typeof periodOwnerSubquery>;
+
+/** Join condition attaching a period-owner subquery to `employees`. */
+export function joinPeriodOwner(owner: PeriodOwner): SQL {
+  return eq(owner.employeeId, employees.id);
+}
+
+/**
+ * Structure as of the period, falling back to the current row.
+ *
+ * The fallback covers anyone whose assignment history does not reach the
+ * period at all — someone who joined after it, or data that predates this
+ * table. It degrades to exactly the behaviour the app had before
+ * assignments existed, rather than to a null that would drop them out of a
+ * grouping entirely.
+ */
+export function siteOfRecord(owner: PeriodOwner) {
+  return sql<string | null>`coalesce(${owner.site}, ${employees.site})`;
+}
+export function managerOfRecord(owner: PeriodOwner) {
+  return sql<string | null>`coalesce(${owner.managerName}, ${employees.managerName})`;
+}
+export function supervisorOfRecord(owner: PeriodOwner) {
+  return sql<string | null>`coalesce(${owner.supervisorName}, ${employees.supervisorName})`;
+}
+/**
+ * `owner.supervisorEid` needs an explicit, hardcoded qualifier here — every
+ * other field on `owner` is a genuine column passed through unchanged from
+ * `employee_assignments`, but this one is `max(...)` inside
+ * periodOwnerSubquery's aggregate stage. Drizzle correctly re-qualifies a
+ * real column reference across nested subqueries; a field that originates
+ * as a raw `sql` aggregate loses that qualification by the time it reaches
+ * a THIRD layer, and the ${owner.supervisorEid} interpolation below renders
+ * as a bare, unqualified "supervisor_eid" — ambiguous the moment this joins
+ * against `employees`, which has a same-named column of its own. Safe to
+ * hardcode: the "period_owner" alias is the literal string periodOwnerSubquery
+ * itself gives its outermost `.as(...)` call, not something that can drift
+ * out from under this independently.
+ */
+export function supervisorEidOfRecord(owner: PeriodOwner) {
+  void owner;
+  return sql<string | null>`coalesce(${sql.raw('"period_owner"."supervisor_eid"')}, ${employees.supervisorEid})`;
+}
+
+/**
+ * Employee ids whose results belong to this leader for `period`.
+ *
+ * One rule, used for both scoping and grouping: a person's results belong
+ * to whoever held them the most days of the period being viewed — see
+ * periodOwnerSubquery for why that beats a single end-date snapshot.
  *
  * Fails closed exactly as the operational scope does: an unlinked account
  * resolves to nobody rather than to everybody.
  */
-export async function reportingScopeIds(user: CurrentUser, asOf: string): Promise<string[]> {
+export async function reportingScopeIds(user: CurrentUser, period: DateRange): Promise<string[]> {
   if (user.role === "admin" || user.role === "agent") return resolveScopedIds(user);
+
+  const owner = periodOwnerSubquery(period);
 
   const match =
     user.role === "manager"
-      ? eq(managerOfRecord, user.managerName ?? user.name)
+      ? eq(managerOfRecord(owner), user.managerName ?? user.name)
       : user.employeeEid
-        ? eq(supervisorEidOfRecord, user.employeeEid)
+        ? eq(supervisorEidOfRecord(owner), user.employeeEid)
         : null;
 
   // A supervisor with no linked employee id cannot be matched to anyone, which
@@ -51,7 +181,7 @@ export async function reportingScopeIds(user: CurrentUser, asOf: string): Promis
   const rows = await db
     .select({ id: employees.id })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    .leftJoin(owner, joinPeriodOwner(owner))
     .where(match);
   return rows.map((r) => r.id);
 }
@@ -65,6 +195,11 @@ export interface OrgOfRecord {
 
 /**
  * Who each person reported to on `date`, falling back to their current row.
+ *
+ * A point-in-time question, deliberately distinct from the period-owner
+ * rule above: "who supervised them on this one day" does not have the
+ * fragmented-tenure or split-credit problem a whole period does, since a
+ * single date can only ever fall inside one assignment interval.
  *
  * The fallback matters for anyone whose history does not reach back that far —
  * someone who joined after the date, or data imported before this table
@@ -113,43 +248,3 @@ export async function orgOfRecord(
   for (const row of assigned) out.set(row.employeeId, row);
   return out;
 }
-
-/**
- * Join condition selecting the assignment that covers `date`.
- *
- * Paired with a LEFT JOIN and the `*OfRecord` expressions below, this turns
- * any query that groups by supervisor, manager or site into one that groups by
- * who held that role at the time. The database guarantees assignments are
- * disjoint, so the join can never fan out and inflate a count.
- */
-export function assignmentAt(date: string) {
-  return and(
-    eq(employeeAssignments.employeeId, employees.id),
-    lte(employeeAssignments.effectiveFrom, date),
-    or(isNull(employeeAssignments.effectiveTo), gte(employeeAssignments.effectiveTo, date)),
-  );
-}
-
-/**
- * Structure as of the joined date, falling back to the current row.
- *
- * The fallback covers anyone whose history does not reach the date — someone
- * who joined later, or data that predates this table. It degrades to exactly
- * the behaviour the app had before assignments existed, rather than to a null
- * that would drop them out of a grouping entirely.
- */
-export const siteOfRecord = sql<
-  string | null
->`coalesce(${employeeAssignments.site}, ${employees.site})`;
-
-export const managerOfRecord = sql<
-  string | null
->`coalesce(${employeeAssignments.managerName}, ${employees.managerName})`;
-
-export const supervisorOfRecord = sql<
-  string | null
->`coalesce(${employeeAssignments.supervisorName}, ${employees.supervisorName})`;
-
-export const supervisorEidOfRecord = sql<
-  string | null
->`coalesce(${employeeAssignments.supervisorEid}, ${employees.supervisorEid})`;

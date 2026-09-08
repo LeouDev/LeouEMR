@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { assignmentAt, reportingScopeIds, supervisorOfRecord } from "./org-history";
-import { employeeAssignments, employees } from "@/lib/db/schema";
+import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorOfRecord } from "./org-history";
+import { employees } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { getPeriodMetrics } from "./period-metrics";
@@ -41,21 +41,22 @@ export interface MboRoster {
  * score entirely, matching how the composite is computed at import.
  */
 export async function getMboRoster(user: CurrentUser, period: Period): Promise<MboRoster> {
-  // Scoped to the team as it stood at the end of the period, so a leader's MBO
-  // roster for August lists the people whose August it actually was.
-  const ids = await reportingScopeIds(user, period.end);
+  // Scoped to the team that actually did the period's work — whoever held
+  // each person for the most days of it, not just on the last one.
+  const ids = await reportingScopeIds(user, period);
   if (ids.length === 0) return { rows: [], passing: 0, failing: 0, unscored: 0 };
 
+  const owner = periodOwnerSubquery(period);
   const [roster, metrics] = await Promise.all([
     db
       .select({
         id: employees.id,
         eid: employees.eid,
         name: employees.name,
-        supervisorName: supervisorOfRecord,
+        supervisorName: supervisorOfRecord(owner),
       })
       .from(employees)
-      .leftJoin(employeeAssignments, assignmentAt(period.end))
+      .leftJoin(owner, joinPeriodOwner(owner))
       .where(inArray(employees.id, ids)),
     getPeriodMetrics(ids, period),
   ]);

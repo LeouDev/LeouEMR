@@ -1,8 +1,8 @@
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { employeeAssignments, employees, kpiDefinitions, metricFacts } from "@/lib/db/schema";
+import { employees, kpiDefinitions, metricFacts } from "@/lib/db/schema";
 import { eligibleForPeriod } from "./eligibility";
-import { assignmentAt, supervisorOfRecord } from "./org-history";
+import { joinPeriodOwner, periodOwnerSubquery, supervisorOfRecord } from "./org-history";
 import type { Period } from "./period";
 
 const UNASSIGNED = "Unassigned";
@@ -16,19 +16,21 @@ export interface CriticalErrorsTrendBucket {
 /**
  * Critical error counts per bucket, broken out by supervisor.
  *
- * Every bucket resolves its own org structure at its own end date — except
- * the supervisor a person's counts are attributed to, which is fixed once
- * at the LAST bucket's end and held for the whole trend. That is the same
- * simplification getOrgTrend already makes for its own per-supervisor
- * breakdown: re-resolving who reported to whom bucket-by-bucket would let
- * one person's errors split across two supervisors' lines mid-trend, which
- * reads as two different people rather than one person who moved teams.
+ * The supervisor a person's counts are attributed to is fixed once across
+ * the whole trend — whoever held them the most days of it — rather than
+ * re-resolved bucket by bucket: re-resolving would let one person's errors
+ * split across two supervisors' lines mid-trend, which reads as two
+ * different people rather than one person who moved teams. That is the
+ * same simplification getOrgTrend already makes for its own per-supervisor
+ * breakdown, just anchored on the plurality-of-days rule (see
+ * periodOwnerSubquery) instead of a single end-date snapshot — a
+ * twelve-bucket trend should not hand a year's worth of errors to whoever
+ * happened to be supervising on the very last day of it.
  */
 export async function getCriticalErrorsTrendBySupervisor(
   buckets: Period[],
 ): Promise<CriticalErrorsTrendBucket[]> {
   if (buckets.length === 0) return [];
-  const asOf = buckets[buckets.length - 1].end;
 
   const [critical] = await db
     .select({ id: kpiDefinitions.id })
@@ -37,13 +39,15 @@ export async function getCriticalErrorsTrendBySupervisor(
     .limit(1);
   if (!critical) return buckets.map((period) => ({ period, bySupervisor: {} }));
 
-  const roster = await db
-    .select({ employeeId: employees.id, supervisor: supervisorOfRecord })
-    .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(asOf));
-
   const rangeStart = buckets[0].start;
   const rangeEnd = buckets[buckets.length - 1].end;
+
+  const owner = periodOwnerSubquery({ start: rangeStart, end: rangeEnd });
+  const roster = await db
+    .select({ employeeId: employees.id, supervisor: supervisorOfRecord(owner) })
+    .from(employees)
+    .leftJoin(owner, joinPeriodOwner(owner));
+
   const eligible = new Set(
     await eligibleForPeriod(roster.map((r) => r.employeeId), {
       granularity: "month",

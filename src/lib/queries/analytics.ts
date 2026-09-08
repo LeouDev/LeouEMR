@@ -1,17 +1,18 @@
 import { type SQL, and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
-  employeeAssignments,
   employees,
   kpiDefinitions,
   performanceIssues,
   weeklyMetricResults,
 } from "@/lib/db/schema";
 import {
-  assignmentAt,
+  joinPeriodOwner,
   managerOfRecord,
+  periodOwnerSubquery,
   siteOfRecord,
   supervisorOfRecord,
+  type PeriodOwner,
 } from "./org-history";
 import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
@@ -104,16 +105,24 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
   // period being viewed, not as it stands today. Without this a realignment
   // retroactively moves a whole month's results to the new supervisor.
   const asOf = filters.weekTo ?? (await getFactDateRange())?.last ?? todayIso();
+  // Unbounded start reads as "since the beginning of time," matching the
+  // same sentinel eligibleForPeriod is given a few lines down — a filter
+  // with no From date has never meant "just the end date" anywhere else on
+  // this page, and the owner resolution should not either.
+  const owner: PeriodOwner = periodOwnerSubquery({
+    start: filters.weekFrom ?? "0001-01-01",
+    end: asOf,
+  });
 
   const scope = [
-    filters.site ? eq(siteOfRecord, filters.site) : undefined,
-    filters.manager ? eq(managerOfRecord, filters.manager) : undefined,
+    filters.site ? eq(siteOfRecord(owner), filters.site) : undefined,
+    filters.manager ? eq(managerOfRecord(owner), filters.manager) : undefined,
   ].filter(Boolean);
 
   const scopedEmployees = await db
     .select({ id: employees.id })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    .leftJoin(owner, joinPeriodOwner(owner))
     .where(scope.length ? and(...scope) : undefined);
 
   // Headcount for the range being reported, not the payroll as it stands.
@@ -234,10 +243,10 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     .from(performanceIssues)
     .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
     // issueScope filters on managerOfRecord/siteOfRecord when those filters are
-    // set, and both reference employee_assignments in their SQL — without this
-    // join Postgres has nothing to resolve that table against and the whole
-    // query throws, which is exactly what picking a manager did here.
-    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    // set, and both reference the owner subquery's columns — without this
+    // join Postgres has nothing to resolve them against and the whole query
+    // throws, which is exactly what picking a manager did here.
+    .leftJoin(owner, joinPeriodOwner(owner))
     .where(issueScope.length ? and(...issueScope) : undefined)
     .groupBy(performanceIssues.status);
 
@@ -287,7 +296,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
         ),
       )
       .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-      .leftJoin(employeeAssignments, assignmentAt(asOf))
+      .leftJoin(owner, joinPeriodOwner(owner))
       // Narrowed to the same people the headline counts. Without this the
       // group headcounts sum past the total on the same screen, and every
       // fail rate divides by a denominator that still holds the leavers the
@@ -302,7 +311,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
       })
       .from(performanceIssues)
       .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
-      .leftJoin(employeeAssignments, assignmentAt(asOf))
+      .leftJoin(owner, joinPeriodOwner(owner))
       // Same narrowing as the headcount beside it, for the same reason.
       .where(and(inArray(employees.id, ids), ...issueScope))
       .groupBy(column);
@@ -323,9 +332,9 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
   };
 
   const [bySite, byManager, bySupervisor] = await Promise.all([
-    groupBy(siteOfRecord),
-    groupBy(managerOfRecord),
-    groupBy(supervisorOfRecord),
+    groupBy(siteOfRecord(owner)),
+    groupBy(managerOfRecord(owner)),
+    groupBy(supervisorOfRecord(owner)),
   ]);
 
   const latest = trendRows.at(-1);
@@ -450,26 +459,27 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
     label: `${range.start} to ${range.end}`,
   };
 
-  // The tree is built from the structure as it stood at the end of the range,
-  // so a realignment does not retroactively move a month of results to the
-  // supervisor who inherited the person afterwards.
-  const asOf = range.end;
+  // The tree is built from the team that actually ran the range — whoever
+  // held each person for the most days of it, not just its last one. A
+  // realignment on the range's final day must not hand the whole range's
+  // results to whoever inherited the person that one day.
+  const owner = periodOwnerSubquery(period);
   let roster = await db
     .select({
       employeeId: employees.id,
       eid: employees.eid,
       name: employees.name,
-      site: siteOfRecord,
-      manager: managerOfRecord,
-      supervisor: supervisorOfRecord,
+      site: siteOfRecord(owner),
+      manager: managerOfRecord(owner),
+      supervisor: supervisorOfRecord(owner),
     })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(asOf))
+    .leftJoin(owner, joinPeriodOwner(owner))
     .where(
       and(
         ...[
-          filters.site ? eq(siteOfRecord, filters.site) : undefined,
-          filters.manager ? eq(managerOfRecord, filters.manager) : undefined,
+          filters.site ? eq(siteOfRecord(owner), filters.site) : undefined,
+          filters.manager ? eq(managerOfRecord(owner), filters.manager) : undefined,
         ].filter(Boolean),
       ),
     );

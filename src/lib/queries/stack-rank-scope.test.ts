@@ -23,9 +23,10 @@ const metrics = vi.hoisted(() => ({
 
 vi.mock("./performance", () => ({ resolveScopedIds: async () => scope.ids }));
 vi.mock("./org-history", () => ({
-  assignmentAt: () => undefined,
-  siteOfRecord: "site",
-  supervisorOfRecord: "supervisorName",
+  periodOwnerSubquery: () => undefined,
+  joinPeriodOwner: () => undefined,
+  siteOfRecord: () => "site",
+  supervisorOfRecord: () => "supervisorName",
 }));
 vi.mock("@/lib/db/client", () => ({
   db: {

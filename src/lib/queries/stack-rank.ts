@@ -1,8 +1,8 @@
 import { db } from "@/lib/db/client";
 import type { CurrentUser } from "@/lib/auth/session";
 import { resolveScopedIds } from "./performance";
-import { assignmentAt, siteOfRecord, supervisorOfRecord } from "./org-history";
-import { employeeAssignments, employees } from "@/lib/db/schema";
+import { joinPeriodOwner, periodOwnerSubquery, siteOfRecord, supervisorOfRecord } from "./org-history";
+import { employees } from "@/lib/db/schema";
 import { getPeriodMetrics } from "./period-metrics";
 import { eligibleForPeriod } from "./eligibility";
 import type { Period } from "./period";
@@ -90,19 +90,22 @@ export async function getStackRanks(
   // where you stand — but quality and attendance are personnel matters, not
   // ranking inputs, so they are shown only for the viewer's own scope.
   const visible = new Set(await resolveScopedIds(viewer));
-  // Ranked against the teams as they stood at the end of the period. Ranking
-  // August by today's structure would put people in a team they were not on,
-  // and move a supervisor's result to whoever inherited their reports.
+  // Ranked against the team that actually ran the period — whoever held
+  // each person for the most days of it. Ranking August by today's
+  // structure would put people in a team they were not on, and a single
+  // end-date snapshot would move a supervisor's whole result to whoever
+  // inherited their reports on the period's very last day.
+  const owner = periodOwnerSubquery(period);
   const everyone = await db
     .select({
       id: employees.id,
       eid: employees.eid,
       name: employees.name,
-      site: siteOfRecord,
-      supervisorName: supervisorOfRecord,
+      site: siteOfRecord(owner),
+      supervisorName: supervisorOfRecord(owner),
     })
     .from(employees)
-    .leftJoin(employeeAssignments, assignmentAt(period.end));
+    .leftJoin(owner, joinPeriodOwner(owner));
 
   // Who counted for THIS period, not who is employed today. Filtering on the
   // live status would drop everyone who has since left out of every past
