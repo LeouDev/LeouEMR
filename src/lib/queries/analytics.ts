@@ -100,6 +100,19 @@ export interface AnalyticsFilters {
   grain?: TrendGrain;
 }
 
+/**
+ * Executive-report benchmarks — an aspirational read for the org as a whole,
+ * not the KPI gates an individual result is scored against (those live on
+ * `kpi_definitions` and stay exactly as configured). Changing a number here
+ * changes only what tone a headline card takes, never anyone's rating.
+ */
+export const ANALYTICS_TARGETS = {
+  passRate: 75,
+  attainment: 95,
+  openIssues: 120,
+  criticalErrors: 30,
+} as const;
+
 export async function getAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSnapshot> {
   // Everything below is cut by the org structure as it stood at the END of the
   // period being viewed, not as it stands today. Without this a realignment

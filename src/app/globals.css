@@ -340,6 +340,29 @@ img:not([data-keep-color]) {
 }
 
 /**
+ * The Analytics page-band's small scene: an astronaut hops in place over
+ * the one planet still filling. Lifted from Analytics Executive.dc.html
+ * unchanged.
+ */
+@keyframes ax-hop {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+@keyframes ax-jab {
+  0%, 80% { transform: translateY(0); }
+  88% { transform: translateY(5px); }
+  96%, 100% { transform: translateY(0); }
+}
+@keyframes ax-twinkle {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+@keyframes ax-fill {
+  0%, 72% { transform: translateY(24px); }
+  82%, 100% { transform: translateY(0); }
+}
+
+/**
  * The EOD send overlay: an astronaut travels 8 planets, injecting each one
  * orange, timed to --eod-dur (set per-mount by EodSendingOverlay). Lifted
  * from Send EOD Loading.dc.html unchanged — same geometry, same percentages,

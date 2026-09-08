@@ -1,9 +1,10 @@
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employees, ewsAssessments, users } from "@/lib/db/schema";
 import { employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import type { EwsAttrition, EwsRiskLevel } from "@/lib/ews/engine";
+import type { Period } from "./period";
 
 export interface EwsRow {
   employeeId: string;
@@ -142,4 +143,52 @@ export async function getEwsBoard(user: CurrentUser): Promise<EwsBoard> {
     .sort((x, y) => x.employeeName.localeCompare(y.employeeName));
 
   return { rows, away, totals };
+}
+
+export interface EwsRiskCounts {
+  stable: number;
+  watch: number;
+  atRisk: number;
+  critical: number;
+  unassessed: number;
+}
+
+/**
+ * Risk distribution as of a period's end date, org-wide — for a historical
+ * or comparison read, unlike `getEwsBoard`'s always-latest "right now"
+ * board. Everyone's most recent assessment recorded on or before the
+ * period's end counts; an assessment made after that date does not, even
+ * though `getEwsBoard` would already be showing it today. Someone with no
+ * assessment that early counts as unassessed, same as the board does.
+ */
+export async function getEwsRiskCounts(period: Period): Promise<EwsRiskCounts> {
+  const roster = await db.select({ id: employees.id }).from(employees);
+  if (roster.length === 0) {
+    return { stable: 0, watch: 0, atRisk: 0, critical: 0, unassessed: 0 };
+  }
+  const ids = roster.map((r) => r.id);
+
+  const latest = await db
+    .selectDistinctOn([ewsAssessments.employeeId], {
+      employeeId: ewsAssessments.employeeId,
+      riskLevel: ewsAssessments.riskLevel,
+    })
+    .from(ewsAssessments)
+    .where(and(inArray(ewsAssessments.employeeId, ids), lte(ewsAssessments.week, period.end)))
+    .orderBy(ewsAssessments.employeeId, desc(ewsAssessments.week));
+
+  const counts: EwsRiskCounts = {
+    stable: 0,
+    watch: 0,
+    atRisk: 0,
+    critical: 0,
+    unassessed: roster.length - latest.length,
+  };
+  for (const a of latest) {
+    if (a.riskLevel === "BLACK") counts.critical += 1;
+    else if (a.riskLevel === "RED") counts.atRisk += 1;
+    else if (a.riskLevel === "YELLOW") counts.watch += 1;
+    else if (a.riskLevel === "GREEN") counts.stable += 1;
+  }
+  return counts;
 }
