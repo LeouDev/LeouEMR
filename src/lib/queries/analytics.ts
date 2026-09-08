@@ -269,6 +269,23 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
     ? periodContaining(filters.grain === "month" ? "month" : "week", latestWeek)
     : null;
 
+  // The group breakdowns put a per-supervisor headcount right beside the
+  // MBO tree's own count for the same people (manager-overview.tsx renders
+  // "Team" from getMboOverview and "X of Y evaluated" from this function on
+  // the same row). `ids` only excludes people who separated — an
+  // attendance-only agent is still in it, since attrition never touched
+  // them — so without this, that agent inflates the "evaluated" denominator
+  // shown right next to a Team count that has already excluded them, and
+  // reads as if the exclusion silently stopped applying to them.
+  const reportingIds = new Set(
+    await hasReportableData(ids, {
+      granularity: "month",
+      start: filters.weekFrom ?? "0001-01-01",
+      end: asOf,
+      label: "range",
+    }),
+  );
+
   const groupBy = async (column: SQL<string | null>) => {
     const rowsPromise = db
       .select({
@@ -297,11 +314,12 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
       )
       .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
       .leftJoin(owner, joinPeriodOwner(owner))
-      // Narrowed to the same people the headline counts. Without this the
-      // group headcounts sum past the total on the same screen, and every
-      // fail rate divides by a denominator that still holds the leavers the
-      // page has already excluded.
-      .where(and(inArray(employees.id, ids), ...scope))
+      // Narrowed to the same people the headline counts, further narrowed to
+      // those with something to actually evaluate. Without the first, the
+      // group headcounts sum past the total on the same screen; without the
+      // second, an attendance-only agent counts toward a supervisor's
+      // "evaluated" figure with nothing that could ever fail.
+      .where(and(inArray(employees.id, [...reportingIds]), ...scope))
       .groupBy(column);
 
     const issuesPromise = db
@@ -313,7 +331,7 @@ export async function getAnalytics(filters: AnalyticsFilters): Promise<Analytics
       .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
       .leftJoin(owner, joinPeriodOwner(owner))
       // Same narrowing as the headcount beside it, for the same reason.
-      .where(and(inArray(employees.id, ids), ...issueScope))
+      .where(and(inArray(employees.id, [...reportingIds]), ...issueScope))
       .groupBy(column);
 
     const [rows, issues] = await Promise.all([rowsPromise, issuesPromise]);
