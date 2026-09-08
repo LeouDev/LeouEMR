@@ -92,8 +92,20 @@ export function localDateString(now: Date): string {
 
 /* ---------------------------------------------------------------- parsing */
 
-/** `9:05 PM`, `9:05PM`, `21:05` and the `A.M.` the OCR sometimes produces. */
-const TIME_TOKEN = /(\d{1,2}):(\d{2})\s*([AaPp])?\.?\s*[Mm]?\.?/g;
+/**
+ * `9:05 PM`, `9:05PM`, `21:05` and the `A.M.` the OCR sometimes produces.
+ *
+ * The meridiem is one atomic group rather than four independently optional
+ * pieces (letter, dot, space, M, dot). Independently optional meant a bare
+ * "P" or "M" belonging to the NEXT word — "Part D", "Meeting", "Approved" —
+ * matched as the current time's meridiem on its own, which both corrupted
+ * the time (`to24Hour` rejects an hour above 12 with a meridiem, so a stray
+ * "17:00 P" from "Part D" silently vanished) and ate that letter out of the
+ * activity name. Requiring the whole "P.M." (or "PM") together, or nothing
+ * at all, means a time is never misread just because the next word happens
+ * to start with A, P or M.
+ */
+const TIME_TOKEN = /(\d{1,2}):([0-5]\d)(?:\s*([AaPp])\.?\s*[Mm]\.?)?/g;
 
 /** One token from a scanned line, normalised to 24-hour `HH:MM`. */
 export function to24Hour(hour: number, minute: number, meridiem: string | null): string | null {
@@ -152,9 +164,13 @@ export interface ScannedRow {
 /**
  * Turns scanned lines into reviewable rows.
  *
- * Uses the last two times on a line as its start and end: a schedule row
- * carries its own pair, and taking the last two survives a leading date
- * column the OCR folded into the same line.
+ * Uses the FIRST two times on a line as start and end. A date is not a time
+ * token at all — it is slash-separated, not colon-separated — so a leading
+ * date column was never actually a hazard here; a trailing Duration column
+ * is. An IEX schedule row often reads Activity, Start, Stop, Duration, and
+ * taking the last two of those would read Duration as the end time — for a
+ * 10:00-11:00 block with a "1:00" duration column, that silently commits an
+ * 11:00-to-1:00 block instead of a one-hour one.
  */
 export function parseScheduleLines(
   lines: Array<{ text: string; confidence?: number | null }>,
@@ -167,7 +183,7 @@ export function parseScheduleLines(
     const times = timesOnLine(text);
     if (times.length < 2) continue;
 
-    const [start, end] = times.slice(-2);
+    const [start, end] = times.slice(0, 2);
     const raw = activityNameFrom(text);
     if (!raw) continue;
 
@@ -278,7 +294,12 @@ export function summarizeDay(
       const target = targets.get(code)!;
       const hours = hoursBySkill.get(code) ?? 0;
       const caseCount = casesBySkill.get(code) ?? 0;
-      const required = hours * target.target;
+      // Rounded to six decimal places: hours (minutes/60) times a decimal
+      // ramp target lands a hair above an exact integer often enough that
+      // Math.ceil below would round a genuine 62 up to a phantom 63 — an
+      // agent who has already made the goal would be told they are one
+      // case short of it forever.
+      const required = Math.round(hours * target.target * 1e6) / 1e6;
       return {
         skillCode: code,
         skillName: target.name,
@@ -296,7 +317,9 @@ export function summarizeDay(
 
   const totalHours = skills.reduce((sum, s) => sum + s.hours, 0);
   const totalCases = skills.reduce((sum, s) => sum + s.cases, 0);
-  const totalRequired = skills.reduce((sum, s) => sum + s.required, 0);
+  // Rounded again: summing several already-rounded per-skill requirements
+  // can still land a whole-day total a hair above an integer.
+  const totalRequired = Math.round(skills.reduce((sum, s) => sum + s.required, 0) * 1e6) / 1e6;
 
   return {
     date,

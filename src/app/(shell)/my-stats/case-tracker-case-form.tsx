@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { LoggedCase } from "@/lib/case-tracker/tracker";
 
 const LABEL = "block text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase";
@@ -100,6 +100,42 @@ export function CaseForm({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [duplicateOk, setDuplicateOk] = useState(false);
+  const caseNumberRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Focused on mount, and again after every save: the checklist resets for
+  // the next case but focus does not move on its own, so without this an
+  // agent logging cases back to back has to reach for the mouse between
+  // every single one.
+  useEffect(() => {
+    caseNumberRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const trimmed = caseNumber.trim();
   const isDuplicate = trimmed.length > 0 && existingNumbers.has(trimmed.toLowerCase());
@@ -145,6 +181,7 @@ export function CaseForm({
     setError(null);
     setSaved(`${trimmed} logged. Ready for the next one.`);
     reset();
+    caseNumberRef.current?.focus();
   };
 
   return (
@@ -154,7 +191,7 @@ export function CaseForm({
       aria-modal="true"
       aria-label="Log a case"
     >
-      <div className="w-full max-w-3xl border-2 border-ink bg-surface">
+      <div ref={dialogRef} className="w-full max-w-3xl border-2 border-ink bg-surface">
         <div className="flex items-center justify-between border-b-2 border-ink bg-navy-800 px-6 py-4">
           <div>
             <h2 className="text-base font-bold text-cream">Log a case</h2>
@@ -177,6 +214,7 @@ export function CaseForm({
               </label>
               <input
                 id="ct-case-number"
+                ref={caseNumberRef}
                 value={caseNumber}
                 onChange={(e) => {
                   setCaseNumber(e.target.value);

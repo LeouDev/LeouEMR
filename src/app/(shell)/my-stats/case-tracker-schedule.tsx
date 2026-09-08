@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
 import {
@@ -39,8 +39,13 @@ export function ScheduleCard({
   const [scanning, setScanning] = useState(false);
   const [review, setReview] = useState<ScannedRow[] | null>(null);
   const [counted, setCounted] = useState<Record<number, boolean>>({});
-  const [manual, setManual] = useState<{ skillCode: string; start: string; end: string }>({
-    skillCode: ACTIVITY_SKILLS[0].skillCode,
+  // Keyed on the activity code, not the skill code: two activities (both
+  // Fax queues) share a skill, so a select keyed on skillCode would carry
+  // two options with the same value — a controlled select resolves that to
+  // whichever option comes first, so choosing the second one snapped right
+  // back to the first.
+  const [manual, setManual] = useState<{ activity: string; start: string; end: string }>({
+    activity: ACTIVITY_SKILLS[0].activity,
     start: "",
     end: "",
   });
@@ -78,22 +83,52 @@ export function ScheduleCard({
 
   const commitReview = () => {
     if (!review) return;
+
+    // Scanning the same screenshot twice — an absent-minded second paste, a
+    // retry after "did that work?" — must not double the day's hours. A
+    // block already on the day with the same start, end and skill is
+    // treated as the same block, not a second one.
+    const existing = new Set(dayBlocks.map((b) => `${b.start}|${b.end}|${b.skillCode ?? ""}`));
+
     const rows: ActivityBlock[] = [];
+    let skipped = 0;
     for (const [index, row] of review.entries()) {
       if (!counted[index] || row.hours === null) continue;
-      rows.push({
-        id: id(),
-        date,
-        activity: row.raw,
-        start: row.start,
-        end: row.end,
-        skillCode: row.match?.skillCode ?? null,
-      });
+      const skillCode = row.match?.skillCode ?? null;
+      const key = `${row.start}|${row.end}|${skillCode ?? ""}`;
+      if (existing.has(key)) {
+        skipped++;
+        continue;
+      }
+      existing.add(key);
+      rows.push({ id: id(), date, activity: row.raw, start: row.start, end: row.end, skillCode });
     }
     onAdd(rows);
+    if (skipped > 0) {
+      onNotice(
+        `${skipped} row${skipped === 1 ? "" : "s"} matched a block already on today\u2019s schedule and ${skipped === 1 ? "was" : "were"} not added again.`,
+      );
+    }
     setReview(null);
     setCounted({});
   };
+
+  // A schedule screenshot is normally a clipboard capture with no file on
+  // disk at all (Win+Shift+S, macOS Cmd+Shift+4) — the file picker below is
+  // the exception, not the common path. Bound to the window rather than the
+  // dropzone so a paste anywhere on the page while this card is mounted is
+  // read, the same as the original tool.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image"));
+      if (!item) return;
+      const file = item.getAsFile();
+      if (file) void scan(file);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <Card>
@@ -112,7 +147,7 @@ export function ScheduleCard({
           }}
         >
           <span>
-            Drop a schedule screenshot here, or choose a file. It is read in this browser and never uploaded.
+            Paste a screenshot (Ctrl/Cmd+V), drop one here, or choose a file. It is read in this browser and never uploaded.
           </span>
           <input
             type="file"
@@ -218,12 +253,12 @@ export function ScheduleCard({
           </label>
           <select
             id="ct-manual-skill"
-            value={manual.skillCode}
-            onChange={(e) => setManual((prev) => ({ ...prev, skillCode: e.target.value }))}
+            value={manual.activity}
+            onChange={(e) => setManual((prev) => ({ ...prev, activity: e.target.value }))}
             className={`${FIELD} mt-1.5`}
           >
             {ACTIVITY_SKILLS.map((entry) => (
-              <option key={entry.activity} value={entry.skillCode}>
+              <option key={entry.activity} value={entry.activity}>
                 {entry.activity}
               </option>
             ))}
@@ -262,16 +297,16 @@ export function ScheduleCard({
               onNotice("That start and end time do not make a workable block.");
               return;
             }
-            const label =
-              ACTIVITY_SKILLS.find((a) => a.skillCode === manual.skillCode)?.activity ?? "Other";
+            const skillCode =
+              ACTIVITY_SKILLS.find((a) => a.activity === manual.activity)?.skillCode ?? null;
             onAdd([
               {
                 id: id(),
                 date,
-                activity: label,
+                activity: manual.activity || "Other",
                 start: manual.start,
                 end: manual.end,
-                skillCode: manual.skillCode || null,
+                skillCode,
               },
             ]);
             setManual((prev) => ({ ...prev, start: "", end: "" }));

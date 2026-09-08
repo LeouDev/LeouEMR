@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
 import { caseLogCsv, eodBody, summaryCsv } from "@/lib/case-tracker/report";
@@ -92,19 +92,33 @@ function createStore(key: string) {
 }
 
 /**
- * Today, in the browser's own timezone.
+ * Today, in the browser's own timezone — resolved once, not re-read live.
  *
  * The server renders its own date and the browser corrects it on hydration,
  * which is what useSyncExternalStore is for. Reading it directly during
  * render would hydrate a different day than the server sent: a Manila shift
  * starting at 00:30 is still the previous day in UTC, so the tracker would
  * open on yesterday for the first eight hours of every night shift.
+ *
+ * `now()` caches its answer after the first call rather than reading the
+ * clock fresh every time React asks for a snapshot. `subscribe` never
+ * notifies, so nothing about this store is meant to change after hydration —
+ * but React still re-invokes `getSnapshot` on every unrelated re-render to
+ * check for tearing, and a wall clock read there is a real clock: the exact
+ * moment it crosses midnight, a re-render triggered by something else
+ * entirely — logging a case, ticking a checkbox — silently flips the whole
+ * tracker to a new, empty day out from under whatever the agent was doing.
+ * A working date should change because the agent changed it, the same as it
+ * always did in the original tool, which only ever read the date once too.
  */
 const clock = {
   subscribe() {
     return () => {};
   },
-  now: () => localDateString(new Date()),
+  resolved: null as string | null,
+  now(): string {
+    return (clock.resolved ??= localDateString(new Date()));
+  },
 };
 
 const stores = new Map<string, ReturnType<typeof createStore>>();
@@ -162,6 +176,15 @@ export function CaseTracker({
   const setDate = setChosenDate;
   const [logging, setLogging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
+
+  // The controls that raise a notice — Add block, the OCR reader, the EOD
+  // form — live in cards well below this one. Without this, a validation
+  // message for a control at the bottom of the page renders silently at the
+  // top, and nothing on the visible part of the screen changes.
+  useEffect(() => {
+    if (notice) noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [notice]);
 
   const targets = resolveTargets(skills, state.rampStage);
   const day = summarizeDay(date, state.blocks, state.cases, targets);
@@ -210,7 +233,21 @@ export function CaseTracker({
   return (
     <section className="space-y-6">
       {notice && (
-        <p className="border-2 border-warn bg-warn-bg px-4 py-3 text-sm text-warn">{notice}</p>
+        <div
+          ref={noticeRef}
+          role="alert"
+          className="flex items-start justify-between gap-3 border-2 border-warn bg-warn-bg px-4 py-3 text-sm text-warn"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setNotice(null)}
+            className="shrink-0 font-bold text-warn"
+          >
+            ×
+          </button>
+        </div>
       )}
 
       <Card>

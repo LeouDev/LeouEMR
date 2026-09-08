@@ -97,6 +97,26 @@ export function matchActivity(text: string): ActivityMatch | null {
   const exact = NORMALIZED.find((entry) => entry.norm === norm);
   if (exact) return { activity: exact.activity, skillCode: exact.skillCode, exact: true, distance: 0 };
 
+  // A neighbouring column sometimes folds onto the same OCR line — a status
+  // word, "Approved", "AUX" — so the activity code can appear as a PREFIX of
+  // the scanned text without being all of it. Checked before edit distance,
+  // because a few trailing characters from an unrelated column can push a
+  // perfectly-read activity name past any threshold that also has to stay
+  // tight enough to keep Part B out of Part D. A prefix match is never
+  // "exact" — something was appended that the known code does not have —
+  // so it still lands in front of a human before it is trusted.
+  const prefixed = NORMALIZED.filter((entry) => entry.norm.length > 0 && norm.startsWith(entry.norm)).sort(
+    (a, b) => b.norm.length - a.norm.length,
+  )[0];
+  if (prefixed) {
+    return {
+      activity: prefixed.activity,
+      skillCode: prefixed.skillCode,
+      exact: false,
+      distance: norm.length - prefixed.norm.length,
+    };
+  }
+
   let best: (typeof NORMALIZED)[number] | null = null;
   let bestDistance = Infinity;
   for (const entry of NORMALIZED) {

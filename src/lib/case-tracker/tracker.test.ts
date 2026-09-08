@@ -153,12 +153,37 @@ describe("block hours", () => {
 });
 
 describe("schedule line parsing", () => {
-  it("takes the last two times on the line as start and end", () => {
+  it("takes the first two times on the line as start and end", () => {
     const [row] = parseScheduleLines([
       { text: "09/08/2026 CSBO-PA-OGS Fax 9:00 AM 12:00 PM", confidence: 91 },
     ]);
     expect(row).toMatchObject({ start: "09:00", end: "12:00", hours: 3, confidence: 91 });
     expect(row.match?.skillCode).toBe("fax");
+  });
+
+  it("ignores a trailing Duration column instead of reading it as the end time", () => {
+    // Activity, Start, Stop, Duration. Reading the last two would turn a
+    // one-hour block into an eleven-hour one.
+    const [row] = parseScheduleLines([
+      { text: "CSBO-PA-Outreach 10:00 AM 11:00 AM 1:00" },
+    ]);
+    expect(row).toMatchObject({ start: "10:00", end: "11:00", hours: 1 });
+  });
+
+  it("reads a time immediately followed by another column, without eating its first letter", () => {
+    // TIME_TOKEN used to treat a bare A, P or M as a meridiem on its own,
+    // so the word right after a time could vanish into the match.
+    const [row] = parseScheduleLines([
+      { text: "CSBO-PA-Edits Team 13:00 21:00 Approved" },
+    ]);
+    expect(row).toMatchObject({ start: "13:00", end: "21:00", hours: 8, raw: "CSBO PA Edits Team Approved" });
+    expect(row.match?.skillCode).toBe("edits");
+  });
+
+  it("does not read a 24-hour time as 12-hour just because the next word starts with A or P", () => {
+    expect(timesOnLine("16:00 Mon 09/07 CSBO-PA-Outreach")).toEqual(["16:00"]);
+    expect(timesOnLine("17:00 Part D coverage")).toEqual(["17:00"]);
+    expect(activityNameFrom("9:00 10:00 Meeting")).toBe("9:00 10:00 Meeting".replace(/\d{1,2}:\d{2}/g, "").trim());
   });
 
   it("keeps the scanned text beside the match", () => {
@@ -245,6 +270,21 @@ describe("the day", () => {
     expect(day.remaining).toBe(7);
     expect(day.met).toBe(false);
     expect(day.pace).toBe(4);
+  });
+
+  it("does not round a genuine pass up into a phantom miss", () => {
+    // 6h40m at 9.3/hr is exactly 62, but hours * target lands a hair above
+    // 62 in floating point (62.00000000000001) before rounding.
+    const ramping = new Map([["fax", target("fax", "Fax", 9.3, "Week 5")]]);
+    const day = summarizeDay(
+      "2026-09-08",
+      [block({ skillCode: "fax", start: "09:00", end: "15:40" })],
+      Array.from({ length: 62 }, (_, i) => logged({ id: `c${i}`, caseNumber: `PA-${i}` })),
+      ramping,
+    );
+    expect(day.skills[0].required).toBe(62);
+    expect(day.skills[0].met).toBe(true);
+    expect(day.skills[0].remaining).toBe(0);
   });
 
   it("is met once the cases reach the requirement", () => {
