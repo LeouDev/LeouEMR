@@ -638,3 +638,163 @@ export function MultiSeriesTrendChart({
     </div>
   );
 }
+
+/**
+ * A single trend line with an area fill and an optional dashed target —
+ * built for a percentage read (MBO pass rate over trailing periods) rather
+ * than a general-purpose series chart, which is what MultiSeriesTrendChart
+ * already is. Fixed 0–100 scale: a rate has a real, known range, and
+ * scaling to it keeps the target line's position meaningful rather than
+ * shifting with whatever the data happens to span.
+ */
+export function TrendLineChart({
+  buckets,
+  values,
+  selectedIndex,
+  target,
+  unit = "%",
+  decimals = 1,
+  emptyMessage = "Not enough data to plot a trend.",
+}: {
+  /** X-axis labels, oldest first. */
+  buckets: string[];
+  /** One value per bucket, oldest first; null where that bucket has no data. */
+  values: Array<number | null>;
+  /** Which bucket is "the selected period" — gets the orange marker and label. */
+  selectedIndex: number;
+  /** Optional dashed reference line, on the same 0–100 scale as the values. */
+  target?: number;
+  unit?: string;
+  decimals?: number;
+  emptyMessage?: string;
+}) {
+  const known = values.filter((v): v is number => v !== null).length;
+  if (buckets.length < 2 || known < 2) {
+    return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
+  }
+
+  const W = 600;
+  const H = 220;
+  const baseline = 200;
+  const top = 40;
+  const x0 = 22;
+  const step = (W - x0 * 2) / (buckets.length - 1);
+  const x = (i: number) => x0 + i * step;
+  const y = (v: number) => baseline - (Math.max(0, Math.min(100, v)) / 100) * (baseline - top);
+
+  // Broken into segments at a null, the same way MultiSeriesTrendChart
+  // breaks a line rather than drawing a straight edge across a gap — a
+  // bucket with no data said nothing, it did not say zero.
+  const segments: Array<Array<{ i: number; v: number }>> = [];
+  let current: Array<{ i: number; v: number }> = [];
+  values.forEach((v, i) => {
+    if (v === null) {
+      if (current.length) segments.push(current);
+      current = [];
+      return;
+    }
+    current.push({ i, v });
+  });
+  if (current.length) segments.push(current);
+
+  const targetY = target !== undefined ? y(target) : null;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }} role="img" aria-label="Trend">
+      <line x1={0} y1={baseline} x2={W} y2={baseline} stroke="var(--color-ink)" strokeWidth={2} />
+      {targetY !== null && (
+        <line x1={0} y1={targetY} x2={W} y2={targetY} stroke="var(--color-orange-brand)" strokeWidth={2} strokeDasharray="6 5" />
+      )}
+
+      {segments.map((seg, si) => {
+        const path = seg.map((p, i) => `${i ? "L" : "M"}${x(p.i).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
+        const area = seg.length > 1 ? `${path} L${x(seg[seg.length - 1].i).toFixed(1)} ${baseline} L${x(seg[0].i).toFixed(1)} ${baseline} Z` : "";
+        return (
+          <g key={si}>
+            {area && <path d={area} fill="var(--color-orange-brand-100)" />}
+            <path d={path} fill="none" stroke="var(--color-ink)" strokeWidth={2.5} strokeLinejoin="round" />
+          </g>
+        );
+      })}
+
+      {values.map((v, i) => {
+        if (v === null) return null;
+        const selected = i === selectedIndex;
+        const showValue = selected || i % 3 === 0;
+        return (
+          <g key={i}>
+            <rect x={x(i) - 4} y={y(v) - 4} width={8} height={8} fill={selected ? "var(--color-orange-brand)" : "var(--color-ink)"}>
+              <title>{`${buckets[i]}: ${v.toFixed(decimals)}${unit}`}</title>
+            </rect>
+            {showValue && (
+              <text x={x(i)} y={y(v) - 10} textAnchor="middle" className="fill-ink text-[11px] font-bold">
+                {v.toFixed(decimals)}
+              </text>
+            )}
+            <text x={x(i)} y={H - 4} textAnchor="middle" className="fill-muted text-[10px] font-semibold">
+              {buckets[i]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+/**
+ * Org totals per trailing bucket, as bars — for a count rather than a rate
+ * (critical errors), unlike TrendLineChart's fixed percentage scale.
+ */
+export function TrendBarChart({
+  buckets,
+  values,
+  selectedIndex,
+  emptyMessage = "Not enough data to plot a trend.",
+}: {
+  /** X-axis labels, oldest first. */
+  buckets: string[];
+  /** One value per bucket, oldest first. */
+  values: number[];
+  /** Which bucket is "the selected period" — gets the orange bar. */
+  selectedIndex: number;
+  emptyMessage?: string;
+}) {
+  if (buckets.length === 0) {
+    return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
+  }
+
+  const W = 600;
+  const H = 220;
+  const baseline = 200;
+  const top = 20;
+  const x0 = 22;
+  const barW = Math.min(34, (W - x0 * 2) / buckets.length - 6);
+  const step = (W - x0 * 2) / buckets.length;
+  const max = Math.max(...values, 1);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", overflow: "visible" }} role="img" aria-label="Trend">
+      <line x1={0} y1={baseline} x2={W} y2={baseline} stroke="var(--color-ink)" strokeWidth={2} />
+      {values.map((v, i) => {
+        const h = (v / max) * (baseline - top);
+        const cx = x0 + i * step + step / 2;
+        const barX = cx - barW / 2;
+        const barY = baseline - h;
+        const selected = i === selectedIndex;
+        return (
+          <g key={i}>
+            <rect x={barX} y={barY} width={barW} height={h} fill={selected ? "var(--color-orange-brand)" : "var(--color-navy-600)"}>
+              <title>{`${buckets[i]}: ${v}`}</title>
+            </rect>
+            <text x={cx} y={barY - 6} textAnchor="middle" className="fill-ink text-[11px] font-bold">
+              {v}
+            </text>
+            <text x={cx} y={H - 4} textAnchor="middle" className="fill-muted text-[10px] font-semibold">
+              {buckets[i]}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
