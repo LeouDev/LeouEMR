@@ -343,6 +343,7 @@ export function GroupedBarChart({
   unit = "",
   decimals = 2,
   emptyMessage = "No data in this range.",
+  maxValue,
 }: {
   /** One entry per category on the x-axis (a supervisor). */
   groups: Array<{ label: string; values: Record<string, number | null> }>;
@@ -351,6 +352,15 @@ export function GroupedBarChart({
   unit?: string;
   decimals?: number;
   emptyMessage?: string;
+  /**
+   * Fixes the axis scale instead of letting the largest value in the data
+   * set it. A single bad data point (an hours figure near zero inflating a
+   * rate to hundreds) otherwise sets the scale for the whole chart and
+   * crushes every legitimate value against it — the label above a bar past
+   * this cap still shows its real, uncapped value, only the bar's height is
+   * clamped at the top of the chart.
+   */
+  maxValue?: number;
 }) {
   const withData = groups.filter((g) => series.some((s) => g.values[s.key] !== null && g.values[s.key] !== undefined));
   if (withData.length === 0) {
@@ -358,19 +368,34 @@ export function GroupedBarChart({
   }
 
   const allValues = withData.flatMap((g) => series.map((s) => g.values[s.key]).filter((v): v is number => v !== null && v !== undefined));
-  const max = Math.max(...allValues, 0.01);
+  const max = maxValue ?? Math.max(...allValues, 0.01);
 
-  const W = 720;
+  // A fixed, always-readable width per bar rather than dividing a fixed
+  // total width by however many groups and series happen to be in play —
+  // with a few dozen supervisors each carrying a dozen-plus skills, that
+  // division drove bars down to a 6px hairline no value label could sit on.
+  // The chart already scrolls horizontally, so width is what should give
+  // rather than the bars.
   const groupGap = 22;
   const barGap = 3;
-  const barW = Math.max(6, Math.min(28, (W - groupGap * withData.length) / withData.length / series.length - barGap));
+  const barW = 11;
   const groupW = barW * series.length + barGap * (series.length - 1);
-  const PAD = { top: 12, right: 12, bottom: 46, left: 40 };
-  const plotW = Math.max(W, groupW * withData.length + groupGap * (withData.length + 1)) - PAD.left - PAD.right;
-  const H = 260;
+  // top leaves room for a capped bar's rotated label sitting right at the
+  // ceiling — its own value can still run to several digits even though the
+  // bar itself is clamped there.
+  const PAD = { top: 56, right: 12, bottom: 46, left: 40 };
+  const plotW = groupW * withData.length + groupGap * (withData.length + 1);
+  const H = 310;
   const plotH = H - PAD.top - PAD.bottom;
 
-  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  // Square-root scale: on a linear axis, one outlier skill/supervisor pair
+  // sets the max and crushes every ordinary value down to a sliver against
+  // it — exactly what made this chart unreadable. Square-root gives small
+  // values real, visible height while the largest value still reaches the
+  // top; gridlines are placed at even pixel intervals and labelled with the
+  // value that maps there, rather than the other way around.
+  const frac = (v: number) => Math.min(1, Math.sqrt(Math.max(0, v) / max));
+  const y = (v: number) => PAD.top + plotH - frac(v) * plotH;
   const colorFor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
 
   return (
@@ -382,21 +407,18 @@ export function GroupedBarChart({
         role="img"
         aria-label="Grouped bar chart"
       >
-        {[0, 0.25, 0.5, 0.75, 1].map((f) => (
-          <g key={f}>
-            <line
-              x1={PAD.left}
-              x2={PAD.left + plotW}
-              y1={y(max * f)}
-              y2={y(max * f)}
-              stroke="var(--color-line)"
-              strokeWidth={1}
-            />
-            <text x={PAD.left - 6} y={y(max * f) + 3} textAnchor="end" className="fill-muted text-[9px]">
-              {(max * f).toFixed(max * f < 10 ? 1 : 0)}
-            </text>
-          </g>
-        ))}
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+          const gy = PAD.top + plotH * (1 - f);
+          const value = max * f * f;
+          return (
+            <g key={f}>
+              <line x1={PAD.left} x2={PAD.left + plotW} y1={gy} y2={gy} stroke="var(--color-line)" strokeWidth={1} />
+              <text x={PAD.left - 6} y={gy + 3} textAnchor="end" className="fill-muted text-[9px]">
+                {value.toFixed(value < 10 ? 1 : 0)}
+              </text>
+            </g>
+          );
+        })}
 
         {withData.map((group, gi) => {
           const groupX = PAD.left + groupGap + gi * (groupW + groupGap);
@@ -407,17 +429,45 @@ export function GroupedBarChart({
                 if (value === null || value === undefined) return null;
                 const x = groupX + si * (barW + barGap);
                 const barY = y(value);
+                const cx = x + barW / 2;
+                const capped = value > max;
                 return (
-                  <rect
-                    key={s.key}
-                    x={x}
-                    y={barY}
-                    width={barW}
-                    height={Math.max(0, PAD.top + plotH - barY)}
-                    fill={colorFor(si)}
-                  >
-                    <title>{`${group.label} — ${s.label}: ${value.toFixed(decimals)}${unit}`}</title>
-                  </rect>
+                  <g key={s.key}>
+                    <rect
+                      x={x}
+                      y={barY}
+                      width={barW}
+                      height={Math.max(0, PAD.top + plotH - barY)}
+                      fill={colorFor(si)}
+                    >
+                      <title>{`${group.label} — ${s.label}: ${value.toFixed(decimals)}${unit}${capped ? " (off the chart's scale)" : ""}`}</title>
+                    </rect>
+                    {/* A bar past the axis cap is clamped at the ceiling,
+                        same height as a bar genuinely at the max — this
+                        small triangle is what tells them apart without
+                        reading the label. */}
+                    {capped && (
+                      <path
+                        d={`M${x},${barY} L${cx},${barY - 5} L${x + barW},${barY} Z`}
+                        fill="var(--color-fail)"
+                      />
+                    )}
+                    {/* Rotated so a bar only a few pixels wide still has
+                        room for its own label — the reason this chart needs
+                        one at all is that the bar height alone cannot be
+                        read once an outlier sets the scale. Starts a little
+                        higher when capped, to clear the triangle above it. */}
+                    <text
+                      x={cx}
+                      y={capped ? barY - 8 : barY - 3}
+                      textAnchor="start"
+                      transform={`rotate(-90, ${cx}, ${capped ? barY - 8 : barY - 3})`}
+                      className={`text-[7px] ${capped ? "fill-fail font-bold" : "fill-ink"}`}
+                    >
+                      {value.toFixed(decimals)}
+                      {capped ? "+" : ""}
+                    </text>
+                  </g>
                 );
               })}
               <text

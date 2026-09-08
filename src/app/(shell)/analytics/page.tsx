@@ -203,12 +203,13 @@ export default async function AnalyticsPage({
         <div className="mt-4 grid gap-4">
           <ChartFrame
             title="Cases per hour, every skill, by supervisor"
-            subtitle={`${period.label} · includes skills scored on case rate; excludes those scored on average handle time`}
+            subtitle={`${period.label} · includes skills scored on case rate; excludes those scored on average handle time · scale capped at 30/hr, an outlier bar's own label still shows its real figure`}
           >
             <GroupedBarChart
               groups={groupsFor(cphRows, "cph")}
               series={cphSkillKeys.map(([code, name]) => ({ key: code, label: name }))}
               unit="/hr"
+              maxValue={30}
               emptyMessage="No production data this period."
             />
           </ChartFrame>
