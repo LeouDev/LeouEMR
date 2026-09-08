@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caseLogCsv, eodBody, summaryCsv } from "./report";
+import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "./report";
 import { summarizeDay, type ActivityBlock, type LoggedCase, type SkillTarget } from "./tracker";
 
 const TARGETS = new Map<string, SkillTarget>([
@@ -61,7 +61,19 @@ describe("summary csv", () => {
       TARGETS,
     );
     // 2 cases, 2 hours -> 1.00/hr, against 2h x 11 = 22 cases.
-    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","1","0","1","2.00","1.00","22"');
+    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","1","0","1","0","2.00","1.00","22"');
+  });
+
+  it("breaks out Cancel as its own column, not folded into Pend", () => {
+    const csv = summaryCsv(
+      ["2026-09-08"],
+      [block()],
+      [logged({ id: "c1", decision: "Cancel" }), logged({ id: "c2", decision: "Pend" })],
+      TARGETS,
+    );
+    expect(csv.split("\r\n")[0]).toContain('"Pend","Deny","Approved","Cancel"');
+    // date, cases, pend=1, deny=0, approved=0, cancel=1
+    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","1","0","0","1","2.00","1.00","22"');
   });
 
   it("orders oldest first regardless of the order it is given", () => {
@@ -102,5 +114,44 @@ describe("end of day message", () => {
     const body = eodBody(empty, "Leou", "Jean", "September 8, 2026");
     expect(body).toContain("Cases per hour: —");
     expect(body).toContain("Target for the day: —");
+  });
+});
+
+describe("end of day html", () => {
+  const day = summarizeDay(
+    "2026-09-08",
+    [block(), block({ id: "b2", skillCode: "outreach", start: "13:00", end: "14:00" })],
+    [logged()],
+    TARGETS,
+  );
+
+  it("carries the same figures as the plain-text version", () => {
+    const html = eodHtml(day, "Leou", "Jean", "September 8, 2026");
+    expect(html).toContain("Hi Jean,");
+    expect(html).toContain(">1<");
+    expect(html).toContain("3.00");
+    expect(html).toContain("Leou");
+  });
+
+  it("shows each skill's own status rather than one blended figure", () => {
+    const html = eodHtml(day, "Leou", "Jean", "September 8, 2026");
+    expect(html).toContain("Fax");
+    expect(html).toContain("Outreach");
+    expect(html).toContain("RAMP · Week 2");
+    expect(html).toContain("short");
+  });
+
+  it("escapes a name instead of letting it break the markup", () => {
+    const html = eodHtml(day, "Leou <script>alert(1)</script>", "Jean & Co.", "September 8, 2026");
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("Jean &amp; Co.");
+  });
+
+  it("is a full, self-contained document a mail client can render on its own", () => {
+    const html = eodHtml(day, "Leou", "Jean", "September 8, 2026");
+    expect(html).toMatch(/^<!doctype html>/i);
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
   });
 });

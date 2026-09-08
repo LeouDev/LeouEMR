@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { LoggedCase } from "@/lib/case-tracker/tracker";
+import { HalfDonutGauge, type GaugeTone } from "./case-tracker-ui";
 
 const LABEL = "block text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase";
 const FIELD =
@@ -78,10 +79,20 @@ export interface CaseDraftResult {
  * runs — closing after each one turns a fifteen-case hour into fifteen round
  * trips through the button that opens this.
  */
+export interface CaseFormProgress {
+  /** 0–100, already clamped by the caller. */
+  percent: number;
+  totalCases: number;
+  /** Whole cases the day requires; null when there is nothing to aim at yet. */
+  target: number | null;
+  tone: GaugeTone;
+}
+
 export function CaseForm({
   date,
   skills,
   existingNumbers,
+  progress,
   onSave,
   onClose,
 }: {
@@ -89,6 +100,8 @@ export function CaseForm({
   skills: Array<{ code: string; name: string }>;
   /** Case numbers already logged, to catch the same one being entered twice. */
   existingNumbers: Set<string>;
+  /** The day's own progress ring, so it stays visible without closing this dialog. */
+  progress: CaseFormProgress;
   onSave: (entry: Omit<LoggedCase, "id" | "loggedAt">) => void;
   onClose: () => void;
 }) {
@@ -263,7 +276,20 @@ export function CaseForm({
                 <option value="Pend">Pend</option>
                 <option value="Deny">Deny</option>
                 <option value="Approved">Approved</option>
+                <option value="Cancel">Cancel</option>
               </select>
+            </div>
+
+            <div>
+              <span className={LABEL}>Today&rsquo;s pace</span>
+              <div className="mt-2 flex justify-center border-2 border-line bg-cream py-3">
+                <HalfDonutGauge
+                  percent={progress.percent}
+                  tone={progress.tone}
+                  value={progress.target === null ? "—" : `${progress.totalCases}/${progress.target}`}
+                  caption={progress.target === null ? "no target set yet" : `${Math.round(progress.percent)}% of today's goal`}
+                />
+              </div>
             </div>
           </div>
 

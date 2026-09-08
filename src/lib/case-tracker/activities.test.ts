@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { matchActivity } from "./activities";
 
+describe("a second Fax queue under its own activity code", () => {
+  it("resolves CSBO-PA-Fax Only to the same fax target as CSBO-PA-OGS Fax", () => {
+    expect(matchActivity("CSBO-PA-Fax Only")).toMatchObject({
+      activity: "CSBO-PA-Fax Only",
+      skillCode: "fax",
+      exact: true,
+    });
+  });
+});
+
 describe("a neighbouring column folded onto the same line", () => {
   it("still matches on the activity prefix, but never as exact", () => {
     const match = matchActivity("CSBO PA Edits Team Approved");

@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
-import { caseLogCsv, eodBody, summaryCsv } from "@/lib/case-tracker/report";
+import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "@/lib/case-tracker/report";
+import { sendEodEmail } from "./actions";
 import { resolveTargets, stageFor, STANDARD, type TargetSkill } from "@/lib/case-tracker/targets";
 import {
   localDateString,
@@ -12,7 +13,7 @@ import {
   type ActivityBlock,
   type LoggedCase,
 } from "@/lib/case-tracker/tracker";
-import { CaseForm } from "./case-tracker-case-form";
+import { CaseForm, type CaseFormProgress } from "./case-tracker-case-form";
 import { ScheduleCard } from "./case-tracker-schedule";
 import { CELL, ConfirmDelete, FIELD, HEAD, LABEL, NUM, fmt } from "./case-tracker-ui";
 
@@ -21,10 +22,15 @@ interface TrackerState {
   cases: LoggedCase[];
   /** skillCode -> ramp stage, or STANDARD. Absent means "whatever ramp says today". */
   rampStage: Record<string, number>;
-  eod: { yourName: string; tlName: string };
+  eod: { yourName: string; tlName: string; tlEmail: string };
 }
 
-const EMPTY: TrackerState = { blocks: [], cases: [], rampStage: {}, eod: { yourName: "", tlName: "" } };
+const EMPTY: TrackerState = {
+  blocks: [],
+  cases: [],
+  rampStage: {},
+  eod: { yourName: "", tlName: "", tlEmail: "" },
+};
 
 /**
  * The day's work, held in this browser only.
@@ -54,7 +60,15 @@ function createStore(key: string) {
     if (raw !== cache.raw) {
       let value = EMPTY;
       try {
-        value = raw ? { ...EMPTY, ...(JSON.parse(raw) as Partial<TrackerState>) } : EMPTY;
+        if (raw) {
+          const parsed = JSON.parse(raw) as Partial<TrackerState>;
+          // `eod` is merged one level deeper than the rest: a browser that
+          // saved a day before a field existed on it (tlEmail, here) would
+          // otherwise get `undefined` for that field forever, since a plain
+          // top-level spread replaces the whole `eod` object rather than
+          // filling in what it is missing.
+          value = { ...EMPTY, ...parsed, eod: { ...EMPTY.eod, ...parsed.eod } };
+        }
       } catch {
         value = EMPTY;
       }
@@ -177,6 +191,8 @@ export function CaseTracker({
   const [logging, setLogging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
+  const [sendingEod, setSendingEod] = useState(false);
+  const [eodStatus, setEodStatus] = useState<{ ok: boolean; message: string } | null>(null);
 
   // The controls that raise a notice — Add block, the OCR reader, the EOD
   // form — live in cards well below this one. Without this, a validation
@@ -190,6 +206,8 @@ export function CaseTracker({
   const day = summarizeDay(date, state.blocks, state.cases, targets);
   const dayCases = state.cases.filter((c) => c.date === date);
   const percent = progressPercent(day);
+  const gaugeTone: CaseFormProgress["tone"] =
+    day.totalHours === 0 ? "muted" : day.met ? "pass" : percent >= 60 ? "warn" : "fail";
 
   const apply = (fn: (prev: TrackerState) => TrackerState) => setNotice(store.update(fn));
 
@@ -202,28 +220,33 @@ export function CaseTracker({
   const exportSummary = () =>
     download("case_tracker_summary.csv", summaryCsv(summaryDates, state.blocks, state.cases, targets));
 
-  const sendEod = () => {
+  const sendEod = async () => {
     const yourName = state.eod.yourName.trim();
     const tlName = state.eod.tlName.trim();
-    if (!yourName || !tlName) {
-      setNotice("Add your name and your team lead's name before sending.");
+    const tlEmail = state.eod.tlEmail.trim();
+    if (!yourName || !tlName || !tlEmail) {
+      setEodStatus({ ok: false, message: "Add your name, your team lead's name, and their email before sending." });
       return;
     }
-    if (dayCases.length > 0) {
-      download(`case_log_${date}.csv`, caseLogCsv(dayCases, targets));
-    }
+
     const readable = new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
       month: "long",
       day: "numeric",
       year: "numeric",
     });
-    const mailto = `mailto:?subject=${encodeURIComponent(
-      `EOD Report (${readable}) - ${yourName}`,
-    )}&body=${encodeURIComponent(eodBody(day, yourName, tlName, readable))}`;
-    // The download has to start before navigation, or the browser cancels it.
-    window.setTimeout(() => {
-      window.location.href = mailto;
-    }, 350);
+
+    setSendingEod(true);
+    setEodStatus(null);
+    const result = await sendEodEmail({
+      tlEmail,
+      subject: `EOD Report (${readable}) - ${yourName}`,
+      html: eodHtml(day, yourName, tlName, readable),
+      text: eodBody(day, yourName, tlName, readable),
+      csv: dayCases.length > 0 ? caseLogCsv(dayCases, targets) : undefined,
+      csvFilename: dayCases.length > 0 ? `case_log_${date}.csv` : undefined,
+    });
+    setSendingEod(false);
+    setEodStatus(result.ok ? { ok: true, message: `Sent to ${tlEmail}.` } : { ok: false, message: result.error });
   };
 
   /* ------------------------------------------------------------------ view */
@@ -501,7 +524,9 @@ export function CaseTracker({
                             ? "bg-pass-bg text-pass"
                             : c.decision === "Deny"
                               ? "bg-fail-bg text-fail"
-                              : "bg-warn-bg text-warn"
+                              : c.decision === "Cancel"
+                                ? "bg-cream-dark text-muted"
+                                : "bg-warn-bg text-warn"
                         }`}
                       >
                         {c.decision}
@@ -611,7 +636,7 @@ export function CaseTracker({
       <Card>
         <CardHeader
           title="End of day email"
-          subtitle="Downloads the day's case log, then opens your mail app with the report filled in"
+          subtitle="Sends the formatted report straight to your team lead, with today's case log attached"
         />
         <div className="flex flex-wrap items-end gap-3 px-6 py-5">
           <div>
@@ -639,14 +664,30 @@ export function CaseTracker({
               className={`${FIELD} mt-1.5`}
             />
           </div>
-          <button type="button" onClick={sendEod} className="btn-secondary px-4 py-2 text-sm">
-            Prepare email
+          <div>
+            <label className={LABEL} htmlFor="ct-tl-email">
+              Team lead email
+            </label>
+            <input
+              id="ct-tl-email"
+              type="email"
+              value={state.eod.tlEmail}
+              placeholder="name@optum.com"
+              onChange={(e) => apply((prev) => ({ ...prev, eod: { ...prev.eod, tlEmail: e.target.value } }))}
+              className={`${FIELD} mt-1.5`}
+            />
+          </div>
+          <button type="button" onClick={sendEod} disabled={sendingEod} className="btn-secondary px-4 py-2 text-sm">
+            {sendingEod ? "Sending…" : "Send EOD email"}
           </button>
         </div>
-        <p className="border-t-2 border-ink px-6 py-3 text-xs text-muted">
-          Your mail app cannot attach a file on its own, so the CSV downloads first — attach it before
-          sending.
-        </p>
+        {eodStatus && (
+          <p
+            className={`border-t-2 border-ink px-6 py-3 text-sm ${eodStatus.ok ? "bg-pass-bg text-pass" : "bg-fail-bg text-fail"}`}
+          >
+            {eodStatus.message}
+          </p>
+        )}
       </Card>
 
       {logging && (
@@ -654,6 +695,12 @@ export function CaseTracker({
           date={date}
           skills={skills.map((s) => ({ code: s.code, name: s.name }))}
           existingNumbers={new Set(dayCases.map((c) => c.caseNumber.toLowerCase()))}
+          progress={{
+            percent,
+            totalCases: day.totalCases,
+            target: day.totalRequired === 0 ? null : Math.ceil(day.totalRequired),
+            tone: gaugeTone,
+          }}
           onClose={() => setLogging(false)}
           onSave={(entry) =>
             apply((prev) => ({
