@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
+import { EodSendingOverlay } from "@/components/eod-sending-overlay";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
 import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "@/lib/case-tracker/report";
 import { sendEodEmail } from "./actions";
@@ -191,8 +192,12 @@ export function CaseTracker({
   const [logging, setLogging] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
-  const [sendingEod, setSendingEod] = useState(false);
+  const [eodPhase, setEodPhase] = useState<"idle" | "sending" | "sent">("idle");
   const [eodStatus, setEodStatus] = useState<{ ok: boolean; message: string } | null>(null);
+  // Resolved by the overlay's onDone, so the send waits on whichever takes
+  // longer: the real request, or the minimum time the animation runs for —
+  // never cut short mid-sequence just because the network was fast.
+  const eodAnimationDone = useRef<(() => void) | null>(null);
 
   // The controls that raise a notice — Add block, the OCR reader, the EOD
   // form — live in cards well below this one. Without this, a validation
@@ -235,9 +240,10 @@ export function CaseTracker({
       year: "numeric",
     });
 
-    setSendingEod(true);
+    setEodPhase("sending");
     setEodStatus(null);
-    const result = await sendEodEmail({
+
+    const request = sendEodEmail({
       tlEmail,
       subject: `EOD Report (${readable}) - ${yourName}`,
       html: eodHtml(day, yourName, tlName, readable),
@@ -245,8 +251,22 @@ export function CaseTracker({
       csv: dayCases.length > 0 ? caseLogCsv(dayCases, targets) : undefined,
       csvFilename: dayCases.length > 0 ? `case_log_${date}.csv` : undefined,
     });
-    setSendingEod(false);
-    setEodStatus(result.ok ? { ok: true, message: `Sent to ${tlEmail}.` } : { ok: false, message: result.error });
+    const animationDone = new Promise<void>((resolve) => {
+      eodAnimationDone.current = resolve;
+    });
+    const [result] = await Promise.all([request, animationDone]);
+
+    if (result.ok) {
+      setEodPhase("sent");
+    } else {
+      setEodPhase("idle");
+      setEodStatus({ ok: false, message: result.error });
+    }
+  };
+
+  const resetEod = () => {
+    setEodPhase("idle");
+    setEodStatus(null);
   };
 
   /* ------------------------------------------------------------------ view */
@@ -677,9 +697,30 @@ export function CaseTracker({
               className={`${FIELD} mt-1.5`}
             />
           </div>
-          <button type="button" onClick={sendEod} disabled={sendingEod} className="btn-secondary px-4 py-2 text-sm">
-            {sendingEod ? "Sending…" : "Send EOD email"}
-          </button>
+          {eodPhase === "sent" ? (
+            <div className="fade-up flex h-[46px] items-center gap-4">
+              <div className="flex h-full items-center gap-3 bg-ink px-5 text-sm font-bold text-cream">
+                <span className="h-2.5 w-2.5 bg-orange-brand" />
+                EOD sent
+              </div>
+              <button
+                type="button"
+                onClick={resetEod}
+                className="text-sm font-semibold text-orange-brand-dark hover:text-orange-brand-pressed"
+              >
+                Send another
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={sendEod}
+              disabled={eodPhase === "sending"}
+              className="btn-secondary px-4 py-2 text-sm"
+            >
+              {eodPhase === "sending" ? "Sending…" : "Send EOD email"}
+            </button>
+          )}
         </div>
         {eodStatus && (
           <p
@@ -689,6 +730,17 @@ export function CaseTracker({
           </p>
         )}
       </Card>
+
+      <EodSendingOverlay
+        open={eodPhase === "sending"}
+        steps={[
+          "Formatting today's report",
+          "Attaching today's case log",
+          "Syncing with the command center",
+          "Delivering to your team lead",
+        ]}
+        onDone={() => eodAnimationDone.current?.()}
+      />
 
       {logging && (
         <CaseForm
