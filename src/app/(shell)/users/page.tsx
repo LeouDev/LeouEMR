@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNotNull } from "drizzle-orm";
+import { asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -23,9 +23,15 @@ export default async function UsersPage() {
       managerName: users.managerName,
       // What they told us they are at sign-up. A claim, not a granted role.
       signedUpAs: employeeProfiles.position,
+      // The same claim, but for the one field that has a ground truth to
+      // check it against: null when unlinked (nothing to flag), true when
+      // it resolves to a real roster row, false when it does not — a link
+      // set before this check existed, or a typo that slipped through.
+      eidMatches: sql<boolean | null>`case when ${users.employeeEid} is null then null else ${employees.id} is not null end`,
     })
     .from(users)
     .leftJoin(employeeProfiles, eq(employeeProfiles.userId, users.id))
+    .leftJoin(employees, eq(employees.eid, users.employeeEid))
     .orderBy(desc(users.status), asc(users.name));
 
   // The names a manager's span can be linked to are exactly those present in

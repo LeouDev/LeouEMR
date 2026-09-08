@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PeriodPicker } from "@/components/period-picker";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
-import { getCurrentUser } from "@/lib/auth/session";
+import { getCurrentUser, type UserRole } from "@/lib/auth/session";
 import { getOwnEmployee } from "@/lib/queries/my-stats";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
@@ -24,6 +24,14 @@ export default async function StackRankPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
+  // Every role, spelled out on purpose rather than left as the absence of a
+  // check: unlike the leader-only pages, a stack rank exists specifically so
+  // an agent can see where they stand — narrowing this would defeat the
+  // page. Reviewed and accepted alongside the org-wide ranking itself (see
+  // the module doc comment above); this line exists so that acceptance is
+  // legible in the code, not just in this comment.
+  const ALLOWED_ROLES: UserRole[] = ["admin", "manager", "supervisor", "agent"];
+  if (!ALLOWED_ROLES.includes(user.role)) redirect("/dashboard");
 
   const [params, range, employee, cookieStore] = await Promise.all([
     searchParams,

@@ -13,6 +13,8 @@ export interface UserRow {
   employeeEid: string | null;
   managerName: string | null;
   signedUpAs: string | null;
+  /** Null when unlinked; whether `employeeEid` resolves to a real roster row otherwise. */
+  eidMatches: boolean | null;
 }
 
 const ROLES = ["admin", "manager", "supervisor", "agent"] as const;
@@ -177,6 +179,11 @@ function UserRowEditor({
           onChange={(e) => setEid(e.target.value)}
           className={`${control} w-32 font-mono`}
         />
+        {/* Only shown for the untouched, already-saved value — the save
+            action itself is what validates whatever is typed next. */}
+        {eid === (user.employeeEid ?? "") && eid !== "" && user.eidMatches === false && (
+          <p className="mt-1 text-[10px] font-bold text-fail">No matching employee</p>
+        )}
       </td>
       <td className="px-3 py-2">
         {role === "manager" ? (
