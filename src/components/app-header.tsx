@@ -58,6 +58,7 @@ const LEADER_NAV = [{ href: "/201-file", label: "201 File" }];
  * otherwise unchanged.
  */
 const ADMIN_NAV = [
+  { href: "/analytics", label: "Analytics" },
   { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
 ];
@@ -95,7 +96,15 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
     // An agent's Employees roster is a list of one — themselves — so the tab
     // only ever led back to their own page, which their dashboard and action
     // items already link to directly. The page itself stays reachable.
-    ...NAV.filter((item) => item.href !== "/employees" || user.role !== "agent"),
+    //
+    // An admin's own Employees tab is replaced by Analytics below: an
+    // administrator's day-to-day question is "where is the org struggling,"
+    // which is what the new tab answers directly, while the roster search
+    // and per-employee lookup Employees offers stays reachable by URL and
+    // from every link that already points at a specific employee.
+    ...NAV.filter(
+      (item) => item.href !== "/employees" || (user.role !== "agent" && user.role !== "admin"),
+    ),
     ...(user.role === "agent"
       ? AGENT_NAV
       : [

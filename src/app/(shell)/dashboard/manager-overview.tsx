@@ -1,5 +1,6 @@
 import { Card, CardHeader, STATUS_LABELS } from "@/components/ui";
 import { getAnalytics, getMboOverview, type AnalyticsFilters } from "@/lib/queries/analytics";
+import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
 import type { Period } from "@/lib/queries/period";
 import type { SupervisorRollup } from "@/lib/queries/roster";
 import { getOrgTrend } from "@/lib/queries/team-trend";
@@ -23,6 +24,7 @@ export async function ManagerOverview({
   period,
   weeks,
   rollup,
+  comparison,
   actionItems,
 }: {
   managerName: string;
@@ -31,6 +33,9 @@ export async function ManagerOverview({
   /** Reporting weeks, newest first; the trend takes the most recent twelve. */
   weeks: string[];
   rollup: SupervisorRollup[];
+  /** The same KPI-comparison matrix the page used to render on its own — now
+   * filterable by whichever supervisor is selected below. */
+  comparison: TeamPeriodComparison | null;
   actionItems: ShellActionItems;
 }) {
   // Weeks are keyed by their start date, so a month bounds the weeks whose
@@ -75,6 +80,13 @@ export async function ManagerOverview({
       }
     }
   }
+
+  // Plain object rather than a Map: this crosses into ManagerDashboard, a
+  // client component, and a Map does not survive that boundary serialized —
+  // a Map prop silently arrives as {} on the client, which is exactly the
+  // kind of server/client mismatch that has bitten this app before.
+  const supervisorByEmployee: Record<string, string | null> = {};
+  for (const r of roster) supervisorByEmployee[r.employeeId] = r.supervisorName;
 
   const trend = await getOrgTrend(roster, weeks.slice(0, 12));
 
@@ -151,6 +163,8 @@ export async function ManagerOverview({
         supervisors={supervisors}
         asOfLabel={analytics.asOfLabel}
         trend={trend}
+        comparison={comparison}
+        supervisorByEmployee={supervisorByEmployee}
         kpis={[...analytics.kpis].sort((a, b) => b.failRate - a.failRate)}
         topAgents={mbo.topAgents.slice(0, 6)}
         actionItems={actionItems}

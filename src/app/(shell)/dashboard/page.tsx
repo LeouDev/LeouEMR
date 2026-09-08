@@ -11,7 +11,6 @@ import {
 } from "@/components/ui";
 import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
-import { PeriodComparisonTable } from "./period-comparison-table";
 import { AgentPerformance, type AgentKpi } from "./agent-performance";
 import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
 import { TeamAgentTable } from "./team-agent-table";
@@ -339,6 +338,7 @@ export default async function DashboardPage({
             period={period}
             weeks={weeks}
             rollup={rollup}
+            comparison={comparison}
             actionItems={{
               open: summary.openIssues,
               awaiting: summary.awaitingAcknowledgement,
@@ -433,13 +433,6 @@ export default async function DashboardPage({
             </>
           )
         ) : null}
-
-        {/* Every figure this table held for an agent is now in the KPI cells
-            above, each with its own change line, so for them it was the same
-            numbers a second time. Leaders still get the full matrix. */}
-        {comparison && !isAgent && !isSupervisor && (
-          <PeriodComparisonTable data={comparison} forSelf={false} />
-        )}
 
         <Card className="mt-6">
           <CardHeader
