@@ -9,6 +9,29 @@
  * has to be downloaded at all.
  */
 
+/**
+ * How much to scale a source image before running it through OCR.
+ *
+ * Upscales a small screenshot up to `target` pixels wide, for the same
+ * reason the caller lifts contrast — Tesseract reads larger, higher-contrast
+ * text more reliably. Never scales UP an image already wider than that, and
+ * never lets either output dimension exceed `maxDimension` regardless of
+ * how large or oddly-shaped the source is.
+ *
+ * That second cap is the one that matters: an ordinary 1920x1080 screenshot
+ * fed through the previous `Math.max(2, target / width)` calculation was
+ * unconditionally doubled to 3840x2160 — over 8 million pixels — because
+ * the floor of 2 applied no matter how wide the source already was. The
+ * caller runs a synchronous, per-pixel loop over the result on the main
+ * thread; at that size it was slow enough to freeze the whole tab, not just
+ * this page, for as long as it took to finish. A 4K screenshot produced a
+ * 33-million-pixel canvas the same way.
+ */
+export function preprocessScale(width: number, height: number, target = 1600, maxDimension = 2400): number {
+  const upscaleToTarget = Math.min(2, Math.max(1, target / width));
+  return Math.min(upscaleToTarget, maxDimension / width, maxDimension / height);
+}
+
 const TESSERACT_VERSION = "5.1.1";
 const TESSERACT_SRC = `https://cdn.jsdelivr.net/npm/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.min.js`;
 const TESSERACT_SRI = "sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F";
@@ -75,7 +98,7 @@ function preprocess(file: File): Promise<string> {
       const img = new Image();
       img.onerror = () => reject(new Error("Could not decode that image."));
       img.onload = () => {
-        const scale = Math.max(2, 1600 / img.width);
+        const scale = preprocessScale(img.width, img.height);
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
