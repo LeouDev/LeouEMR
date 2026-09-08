@@ -306,3 +306,267 @@ export function StatusBar({ rows }: { rows: { status: string; count: number; lab
     </div>
   );
 }
+
+
+/**
+ * A palette for series that have no inherent pass/fail meaning — a skill, a
+ * supervisor — so each one needs its own stable colour rather than a
+ * severity-based one. Repeats past its length rather than throwing, since a
+ * caller with more series than colours should still render, just with two
+ * series sharing a hue.
+ */
+const SERIES_COLORS = [
+  ORANGE,
+  NAVY,
+  "var(--color-pass)",
+  "var(--color-fail)",
+  "var(--color-warn)",
+  "var(--color-ink-muted)",
+  "var(--color-orange-brand-dark)",
+  "var(--color-navy-400)",
+];
+
+/**
+ * Clustered bars: one group per category (a supervisor), one bar per series
+ * within the group (a skill). Used for CPH and AHT across skill, where every
+ * supervisor needs to be compared skill-for-skill rather than reduced to one
+ * blended number.
+ *
+ * Scaled off the tallest bar in the WHOLE chart rather than per group, so a
+ * bar's height means the same thing wherever it sits — a per-group scale
+ * would let two equal values look different depending on which supervisor
+ * they belonged to.
+ */
+export function GroupedBarChart({
+  groups,
+  series,
+  unit = "",
+  decimals = 2,
+  emptyMessage = "No data in this range.",
+}: {
+  /** One entry per category on the x-axis (a supervisor). */
+  groups: Array<{ label: string; values: Record<string, number | null> }>;
+  /** The series keys plotted within each group (a skill), in legend order. */
+  series: Array<{ key: string; label: string }>;
+  unit?: string;
+  decimals?: number;
+  emptyMessage?: string;
+}) {
+  const withData = groups.filter((g) => series.some((s) => g.values[s.key] !== null && g.values[s.key] !== undefined));
+  if (withData.length === 0) {
+    return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
+  }
+
+  const allValues = withData.flatMap((g) => series.map((s) => g.values[s.key]).filter((v): v is number => v !== null && v !== undefined));
+  const max = Math.max(...allValues, 0.01);
+
+  const W = 720;
+  const groupGap = 22;
+  const barGap = 3;
+  const barW = Math.max(6, Math.min(28, (W - groupGap * withData.length) / withData.length / series.length - barGap));
+  const groupW = barW * series.length + barGap * (series.length - 1);
+  const PAD = { top: 12, right: 12, bottom: 46, left: 40 };
+  const plotW = Math.max(W, groupW * withData.length + groupGap * (withData.length + 1)) - PAD.left - PAD.right;
+  const H = 260;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  const colorFor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
+
+  return (
+    <div className="overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${plotW + PAD.left + PAD.right} ${H}`}
+        className="block"
+        style={{ minWidth: `${plotW + PAD.left + PAD.right}px` }}
+        role="img"
+        aria-label="Grouped bar chart"
+      >
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+          <g key={f}>
+            <line
+              x1={PAD.left}
+              x2={PAD.left + plotW}
+              y1={y(max * f)}
+              y2={y(max * f)}
+              stroke="var(--color-line)"
+              strokeWidth={1}
+            />
+            <text x={PAD.left - 6} y={y(max * f) + 3} textAnchor="end" className="fill-muted text-[9px]">
+              {(max * f).toFixed(max * f < 10 ? 1 : 0)}
+            </text>
+          </g>
+        ))}
+
+        {withData.map((group, gi) => {
+          const groupX = PAD.left + groupGap + gi * (groupW + groupGap);
+          return (
+            <g key={group.label}>
+              {series.map((s, si) => {
+                const value = group.values[s.key];
+                if (value === null || value === undefined) return null;
+                const x = groupX + si * (barW + barGap);
+                const barY = y(value);
+                return (
+                  <rect
+                    key={s.key}
+                    x={x}
+                    y={barY}
+                    width={barW}
+                    height={Math.max(0, PAD.top + plotH - barY)}
+                    fill={colorFor(si)}
+                  >
+                    <title>{`${group.label} — ${s.label}: ${value.toFixed(decimals)}${unit}`}</title>
+                  </rect>
+                );
+              })}
+              <text
+                x={groupX + groupW / 2}
+                y={H - PAD.bottom + 14}
+                textAnchor="middle"
+                className="fill-muted text-[9px]"
+              >
+                {group.label.length > 14 ? `${group.label.slice(0, 13)}…` : group.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {series.map((s, i) => (
+          <li key={s.key} className="flex items-center gap-1.5 text-xs text-muted">
+            <span aria-hidden className="h-2.5 w-2.5 shrink-0" style={{ backgroundColor: colorFor(i) }} />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Several lines on one chart, one per series (a supervisor) — used for a
+ * trend that needs comparing across groups rather than showing one line
+ * alone. Caps the legend at a sane number and says so rather than silently
+ * rendering an unreadable tangle of lines with no way to tell them apart.
+ */
+export function MultiSeriesTrendChart({
+  buckets,
+  series,
+  unit = "",
+  maxSeries = 8,
+}: {
+  /** X-axis labels, oldest first. */
+  buckets: string[];
+  /** One line per entry; `values` is parallel to `buckets`, null where that bucket had no data for this series. */
+  series: Array<{ key: string; label: string; values: Array<number | null>; total: number }>;
+  unit?: string;
+  maxSeries?: number;
+}) {
+  if (buckets.length < 2 || series.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted">
+        Not enough buckets in this range to plot a trend.
+      </p>
+    );
+  }
+
+  // Busiest series first, so trimming the legend drops the least material
+  // ones rather than an arbitrary alphabetical tail.
+  const sorted = [...series].sort((a, b) => b.total - a.total);
+  const shown = sorted.slice(0, maxSeries);
+  const dropped = sorted.length - shown.length;
+
+  const W = 720;
+  const H = 260;
+  const PAD = { top: 12, right: 12, bottom: 34, left: 36 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+  const allValues = shown.flatMap((s) => s.values.filter((v): v is number => v !== null));
+  const max = Math.max(...allValues, 1);
+
+  const x = (i: number) => PAD.left + (i / (buckets.length - 1)) * plotW;
+  const y = (v: number) => PAD.top + plotH - (v / max) * plotH;
+  const colorFor = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
+  const labelEvery = Math.ceil(buckets.length / 8);
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Trend by supervisor">
+        {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+          <g key={f}>
+            <line
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={y(max * f)}
+              y2={y(max * f)}
+              stroke="var(--color-line)"
+              strokeWidth={1}
+            />
+            <text x={PAD.left - 6} y={y(max * f) + 3} textAnchor="end" className="fill-muted text-[9px]">
+              {Math.round(max * f)}
+            </text>
+          </g>
+        ))}
+
+        {shown.map((s, si) => {
+          // A gap in one series' data breaks the line there rather than
+          // drawing a straight edge across a bucket it has nothing to say
+          // about — an unimported bucket is not a bucket of zero.
+          const segments: string[] = [];
+          let current: string | null = null;
+          s.values.forEach((v, i) => {
+            if (v === null) {
+              if (current) segments.push(current);
+              current = null;
+              return;
+            }
+            current = current ? `${current} L${x(i)},${y(v)}` : `M${x(i)},${y(v)}`;
+          });
+          if (current) segments.push(current);
+
+          return (
+            <g key={s.key}>
+              {segments.map((d, i) => (
+                <path key={i} d={d} fill="none" stroke={colorFor(si)} strokeWidth={2} strokeLinejoin="round" />
+              ))}
+              {s.values.map(
+                (v, i) =>
+                  v !== null && (
+                    <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill={colorFor(si)}>
+                      <title>{`${s.label} — ${buckets[i]}: ${v}${unit}`}</title>
+                    </circle>
+                  ),
+              )}
+            </g>
+          );
+        })}
+
+        {buckets.map(
+          (b, i) =>
+            i % labelEvery === 0 && (
+              <text key={b} x={x(i)} y={H - 8} textAnchor="middle" className="fill-muted text-[9px]">
+                {b}
+              </text>
+            ),
+        )}
+      </svg>
+
+      <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {shown.map((s, i) => (
+          <li key={s.key} className="flex items-center gap-1.5 text-xs text-muted">
+            <span aria-hidden className="h-2.5 w-2.5 shrink-0" style={{ backgroundColor: colorFor(i) }} />
+            {s.label}
+          </li>
+        ))}
+      </ul>
+      {dropped > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Showing the {shown.length} busiest of {sorted.length} supervisors — the rest are omitted so the
+          chart stays readable.
+        </p>
+      )}
+    </div>
+  );
+}

@@ -15,7 +15,7 @@ import {
 } from "./org-history";
 import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
-import { eligibleForPeriod } from "./eligibility";
+import { eligibleForPeriod, hasReportableData } from "./eligibility";
 import { periodContaining } from "./period";
 import type { Period } from "./period";
 
@@ -481,6 +481,18 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
     await eligibleForPeriod(roster.map((r) => r.employeeId), period),
   );
   roster = roster.filter((r) => eligible.has(r.employeeId));
+
+  // Present in the roster is not the same as reporting to anyone. A new
+  // hire still in Nesting, someone approved for leave, or an SME with no
+  // assigned book of work all carry an attendance mark and nothing else —
+  // they have not produced a single measurable result yet, so counting them
+  // toward their nominal supervisor's headcount overstates it with people
+  // who cannot pass or fail an MBO gate. A supervisor whose whole team is
+  // in this state simply has no eligible leaves left, and drops out of the
+  // tree entirely — which is also the correct answer for "does this
+  // supervisor have anyone to show under their manager this month."
+  const reporting = await hasReportableData(roster.map((r) => r.employeeId), period);
+  roster = roster.filter((r) => reporting.has(r.employeeId));
 
   const metrics = await getPeriodMetrics(roster.map((r) => r.employeeId), period);
   const mboByEmployee = new Map(

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { KpiBreakdown, TopAgent } from "@/lib/queries/analytics";
+import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
 import type { OrgTrend } from "@/lib/queries/team-trend";
 import {
   ActionItemsSummary,
@@ -11,6 +12,7 @@ import {
   type ShellContext,
   type ShellSeries,
 } from "./dashboard-shell";
+import { PeriodComparisonTable } from "./period-comparison-table";
 
 export interface SupervisorRow {
   name: string;
@@ -52,6 +54,8 @@ export function ManagerDashboard({
   trend,
   kpis,
   topAgents,
+  comparison,
+  supervisorByEmployee,
   actionItems,
   statuses,
   periodLabel,
@@ -64,6 +68,9 @@ export function ManagerDashboard({
   trend: OrgTrend;
   kpis: KpiBreakdown[];
   topAgents: TopAgent[];
+  /** The KPI-by-employee matrix, narrowed to a supervisor's team when one is selected below. */
+  comparison: TeamPeriodComparison | null;
+  supervisorByEmployee: Record<string, string | null>;
   actionItems: ShellActionItems;
   statuses: Array<{ status: string; count: number; label: string }>;
   periodLabel: string;
@@ -75,6 +82,15 @@ export function ManagerDashboard({
   const [scope, setScope] = useState<string | null>(null);
   const scoped = scope !== null && trend.bySupervisor[scope] ? trend.bySupervisor[scope] : null;
   const source = scoped ?? trend.whole;
+
+  // The same click narrows the KPI-by-employee matrix, not only the chart:
+  // a manager picking a supervisor is asking "show me that team," and the
+  // trend without the table beside it answers only half of that.
+  const scopedComparison: TeamPeriodComparison | null = useMemo(() => {
+    if (!comparison) return null;
+    if (scope === null) return comparison;
+    return { ...comparison, rows: comparison.rows.filter((r) => supervisorByEmployee[r.employeeId] === scope) };
+  }, [comparison, scope, supervisorByEmployee]);
 
   const series: ShellSeries[] = source.map((s) => ({
     key: s.key,
@@ -243,6 +259,18 @@ export function ManagerDashboard({
           </>
         )}
       />
+
+      {scopedComparison && (
+        <div>
+          {scope !== null && (
+            <p className="mt-6 text-xs text-muted">
+              Showing <strong className="text-ink">{scope}&rsquo;s</strong> team only — select their row
+              above again to clear.
+            </p>
+          )}
+          <PeriodComparisonTable data={scopedComparison} forSelf={false} />
+        </div>
+      )}
 
       <div className="mt-7 grid gap-9 border-t-2 border-ink pt-4 lg:grid-cols-2">
         <div>
