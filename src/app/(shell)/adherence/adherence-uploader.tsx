@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import type { AdherenceAgentDay } from "@/lib/adherence/parse-pdf";
 import { parseAdherenceUpload } from "./actions";
@@ -9,7 +9,8 @@ const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink upper
 
 type Result = { fileName: string; agents: AdherenceAgentDay[] };
 
-const STORAGE_KEY = "adherence-coding-result";
+/** The key this used before it was namespaced per user — cleared on load, never read. */
+const LEGACY_GLOBAL_KEY = "adherence-coding-result";
 
 type SegmentFilter = "unscheduled" | "variance" | "all";
 
@@ -23,6 +24,13 @@ const FILTERS: Array<{ value: SegmentFilter; label: string }> = [
  * The saved scan, held in localStorage so a refresh mid-review does not lose
  * it — coding a fifty-agent report is not a one-sitting task.
  *
+ * Keyed per user id rather than one global key: the previous global key
+ * meant Team Lead B, opening this page on a shared machine after Team Lead
+ * A parsed a roster and walked away without clicking "I'm done" (or simply
+ * logged out), saw A's parsed agent names and adherence exceptions render
+ * immediately — no upload of their own required. A parsed roster is exactly
+ * the kind of data a login boundary is supposed to separate.
+ *
  * Read through useSyncExternalStore rather than copied into state by an
  * effect. The server has no localStorage, so it renders nothing and React
  * swaps in the saved scan on hydration; seeding useState from storage would
@@ -30,56 +38,79 @@ const FILTERS: Array<{ value: SegmentFilter; label: string }> = [
  * against the raw string because getSnapshot has to return a stable
  * reference — re-parsing on every render would loop.
  */
-const store = {
-  listeners: new Set<() => void>(),
-  cache: { raw: null as string | null, value: null as Result | null },
+function createStore(userId: string) {
+  const key = `adherence-coding-result:${userId}`;
+  const listeners = new Set<() => void>();
+  let cache: { raw: string | null; value: Result | null } = { raw: null, value: null };
 
-  subscribe(fn: () => void) {
-    store.listeners.add(fn);
-    return () => {
-      store.listeners.delete(fn);
-    };
-  },
+  return {
+    subscribe(fn: () => void) {
+      listeners.add(fn);
+      return () => {
+        listeners.delete(fn);
+      };
+    },
 
-  read(): Result | null {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(STORAGE_KEY);
-    } catch {
-      // Private browsing or storage disabled — the page still works.
-      raw = null;
-    }
-    if (raw !== store.cache.raw) {
-      let value: Result | null = null;
+    read(): Result | null {
+      let raw: string | null = null;
       try {
-        value = raw ? (JSON.parse(raw) as Result) : null;
+        raw = localStorage.getItem(key);
       } catch {
-        value = null;
+        // Private browsing or storage disabled — the page still works.
+        raw = null;
       }
-      store.cache = { raw, value };
-    }
-    return store.cache.value;
-  },
+      if (raw !== cache.raw) {
+        let value: Result | null = null;
+        try {
+          value = raw ? (JSON.parse(raw) as Result) : null;
+        } catch {
+          value = null;
+        }
+        cache = { raw, value };
+      }
+      return cache.value;
+    },
 
-  /** Nothing is saved as far as the server is concerned. */
-  serverRead(): Result | null {
-    return null;
-  },
+    /** Nothing is saved as far as the server is concerned. */
+    serverRead(): Result | null {
+      return null;
+    },
 
-  write(result: Result | null) {
-    try {
-      if (result) localStorage.setItem(STORAGE_KEY, JSON.stringify(result));
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {}
-    for (const listener of store.listeners) listener();
-  },
-};
+    write(result: Result | null) {
+      try {
+        if (result) localStorage.setItem(key, JSON.stringify(result));
+        else localStorage.removeItem(key);
+      } catch {}
+      for (const listener of listeners) listener();
+    },
+  };
+}
 
-export function AdherenceUploader() {
+const stores = new Map<string, ReturnType<typeof createStore>>();
+function storeFor(userId: string) {
+  let store = stores.get(userId);
+  if (!store) {
+    store = createStore(userId);
+    stores.set(userId, store);
+  }
+  return store;
+}
+
+export function AdherenceUploader({ userId }: { userId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const store = storeFor(userId);
   const result = useSyncExternalStore(store.subscribe, store.read, store.serverRead);
   const setResult = store.write;
+
+  // One-time cleanup of the old global key from before this was namespaced —
+  // never read, only removed, so a stale cross-user scan left behind on a
+  // shared machine doesn't sit there indefinitely.
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_GLOBAL_KEY);
+    } catch {}
+  }, []);
   /**
    * Unscheduled segments first, because that is what a team lead codes: time
    * the agent spent on something the schedule never asked for. The variance
@@ -96,13 +127,10 @@ export function AdherenceUploader() {
     const response = await parseAdherenceUpload(new FormData(form));
     setBusy(false);
     if (response.ok) {
-      const next = { fileName: response.fileName, agents: response.agents };
-      setResult(next);
-      setResult(next);
+      setResult({ fileName: response.fileName, agents: response.agents });
       form.reset();
     } else {
       setError(response.error);
-      setResult(null);
       setResult(null);
     }
   }
