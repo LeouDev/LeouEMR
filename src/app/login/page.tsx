@@ -15,7 +15,13 @@ function LoginForm() {
   const [details, setDetails] = useState<SignupDetails>(EMPTY_SIGNUP);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // A failed /auth/confirm exchange lands back here with this param — a
+  // link that's already been used, or one old enough to have expired.
+  const [error, setError] = useState<string | null>(() =>
+    searchParams.get("error") === "confirmation_failed"
+      ? "That confirmation link is invalid or has expired. Sign up again to get a new one."
+      : null,
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
