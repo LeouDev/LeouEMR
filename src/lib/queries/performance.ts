@@ -44,6 +44,15 @@ export const OPEN_STATUSES = [
   "REOPENED",
 ] as const;
 
+/**
+ * Weeks of an unbroken pass, ending at the latest week, before a KPI drops
+ * off the development plan entirely. Unrelated to the 4-week counter that
+ * closes an already-open action item (SUSTAINED_WEEKS in development.ts) —
+ * this one governs whether a KPI's row appears on the plan at all, not
+ * whether an existing issue is done.
+ */
+export const SUSTAINED_PASS_WEEKS = 8;
+
 export async function getLatestWeek(): Promise<string | null> {
   const [row] = await db.select({ week: max(weeklyMetricResults.weekStart) }).from(weeklyMetricResults);
   return row?.week ?? null;
@@ -479,6 +488,29 @@ export interface MatrixCell {
   sampleSize: number | null;
 }
 
+/**
+ * KPI codes to drop from a development plan: an unbroken pass across the
+ * exact most recent `SUSTAINED_PASS_WEEKS` weeks. A development plan exists
+ * to show what still needs work, so a KPI that has cleared its target for
+ * that long just pushes the KPIs that still need attention further down.
+ *
+ * Requires the full window to be present and passing — fewer weeks than
+ * that (too new to judge), a single fail anywhere in it, or a week with no
+ * cell at all, all keep the KPI visible rather than risk hiding something
+ * still shaky.
+ */
+export function sustainedPassingKpis(
+  weeks: string[],
+  kpiCodes: string[],
+  cells: Map<string, MatrixCell>,
+): Set<string> {
+  const recentWeeks = weeks.slice(-SUSTAINED_PASS_WEEKS);
+  if (recentWeeks.length < SUSTAINED_PASS_WEEKS) return new Set();
+  return new Set(
+    kpiCodes.filter((code) => recentWeeks.every((week) => cells.get(`${code}|${week}`)?.status === "pass")),
+  );
+}
+
 export interface EmployeeMatrix {
   employee: typeof employees.$inferSelect;
   weeks: string[];
@@ -532,7 +564,14 @@ export async function getEmployeeMatrix(
       })
       .from(weeklyMetricResults)
       .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-      .where(eq(weeklyMetricResults.employeeId, employeeId))
+      // Same flag OPENS_ACTION_ITEMS reads below, applied here too: MBO is
+      // assessed monthly, so its weekly rows exist in the ledger but never
+      // belonged on a weekly development plan — this is the "everywhere at
+      // once" the flag's own doc comment describes, not a second place that
+      // now has to remember it by name.
+      .where(
+        and(eq(weeklyMetricResults.employeeId, employeeId), eq(kpiDefinitions.generatesActionItems, true)),
+      )
       .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
     db
       .select({
@@ -619,10 +658,12 @@ export async function getEmployeeMatrix(
       ])
     : [[], []];
 
+  const hidden = sustainedPassingKpis(weeks, [...kpiOrder.keys()], cells);
+
   return {
     employee,
     weeks,
-    kpis: [...kpiOrder.values()],
+    kpis: [...kpiOrder.values()].filter((kpi) => !hidden.has(kpi.code)),
     cells,
     ews: new Map(assessments.map((a) => [a.week, { riskLevel: a.riskLevel, score: a.score }])),
     issues: issueRows.map((row) => ({
