@@ -370,22 +370,27 @@ export function GroupedBarChart({
   const allValues = withData.flatMap((g) => series.map((s) => g.values[s.key]).filter((v): v is number => v !== null && v !== undefined));
   const max = maxValue ?? Math.max(...allValues, 0.01);
 
-  // A fixed, always-readable width per bar rather than dividing a fixed
-  // total width by however many groups and series happen to be in play —
-  // with a few dozen supervisors each carrying a dozen-plus skills, that
-  // division drove bars down to a 6px hairline no value label could sit on.
-  // The chart already scrolls horizontally, so width is what should give
-  // rather than the bars.
+  // Bar width still adapts to fit a target size when the data is modest —
+  // a chart with a handful of supervisors and skills should not scroll for
+  // no reason — but the floor is now 10px instead of the original 6px,
+  // which crushed a chart with a few dozen supervisors each carrying a
+  // dozen-plus skills down to hairlines no value label could sit on. Past
+  // that floor, width is what gives: the chart already scrolls
+  // horizontally rather than compressing bars further.
+  const target = 900;
   const groupGap = 22;
   const barGap = 3;
-  const barW = 11;
+  const barW = Math.max(
+    10,
+    Math.min(26, (target - groupGap * withData.length) / withData.length / series.length - barGap),
+  );
   const groupW = barW * series.length + barGap * (series.length - 1);
   // top leaves room for a capped bar's rotated label sitting right at the
   // ceiling — its own value can still run to several digits even though the
   // bar itself is clamped there.
-  const PAD = { top: 56, right: 12, bottom: 46, left: 40 };
-  const plotW = groupW * withData.length + groupGap * (withData.length + 1);
-  const H = 310;
+  const PAD = { top: 50, right: 12, bottom: 46, left: 40 };
+  const plotW = Math.max(target, groupW * withData.length + groupGap * (withData.length + 1)) - PAD.left - PAD.right;
+  const H = 280;
   const plotH = H - PAD.top - PAD.bottom;
 
   // Square-root scale: on a linear axis, one outlier skill/supervisor pair
@@ -403,7 +408,11 @@ export function GroupedBarChart({
       <svg
         viewBox={`0 0 ${plotW + PAD.left + PAD.right} ${H}`}
         className="block"
-        style={{ minWidth: `${plotW + PAD.left + PAD.right}px` }}
+        // width, not just min-width: an SVG with no explicit width is a
+        // plain block box and stretches to fill whatever container it is
+        // given, silently overriding every size computed above the moment
+        // the container is wider than the chart actually needs to be.
+        style={{ width: `${plotW + PAD.left + PAD.right}px` }}
         role="img"
         aria-label="Grouped bar chart"
       >
@@ -543,7 +552,16 @@ export function MultiSeriesTrendChart({
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Trend by supervisor">
+      {/* Capped rather than filling the container: viewBox scaling means
+          stretching to the full width of a wide analytics page stretches
+          the height right along with it, growing the whole chart far past
+          what 12 buckets and 8 lines need. */}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full max-w-[640px]"
+        role="img"
+        aria-label="Trend by supervisor"
+      >
         {[0, 0.25, 0.5, 0.75, 1].map((f) => (
           <g key={f}>
             <line
