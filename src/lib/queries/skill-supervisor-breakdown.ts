@@ -16,9 +16,32 @@ export interface SkillSupervisorRow {
   cph: number | null;
   /** Seconds per case, for every skill. */
   aht: number | null;
+  /** How this skill is actually scored — not which of cph/aht above is meaningful to chart it by. */
+  metric: "cph" | "aht" | "case_rate";
+  /** True for an AHT skill: a lower cph/higher aht number is the good direction, the opposite of every other skill here. */
+  lowerIsBetter: boolean;
 }
 
 const UNASSIGNED = "Unassigned";
+
+/**
+ * Rows meaningful on a cases-per-hour chart: everything except AHT skills,
+ * where a LOWER number is the good direction — plotting one on the same
+ * axis as skills where higher is better reads as a spike, not a skill.
+ */
+export function cphChartRows(rows: SkillSupervisorRow[]): SkillSupervisorRow[] {
+  return rows.filter((r) => !r.lowerIsBetter);
+}
+
+/**
+ * Rows meaningful on an average-handle-time chart: only genuine AHT skills —
+ * a skill actually gauged by cases per hour or case rate has no real "seconds
+ * per case" figure worth charting, only the reciprocal of a rate that isn't
+ * how it's scored.
+ */
+export function ahtChartRows(rows: SkillSupervisorRow[]): SkillSupervisorRow[] {
+  return rows.filter((r) => r.metric === "aht");
+}
 
 /**
  * CPH and AHT, every skill, grouped by supervisor — informational, unlike
@@ -73,6 +96,8 @@ export async function getSkillMetricsBySupervisor(period: Period): Promise<Skill
     skillName: string;
     hours: number;
     cases: number;
+    metric: "cph" | "aht" | "case_rate";
+    lowerIsBetter: boolean;
   }
   const bucket = new Map<string, Bucket>();
   for (const row of facts) {
@@ -82,7 +107,17 @@ export async function getSkillMetricsBySupervisor(period: Period): Promise<Skill
     if (!ref) continue;
 
     const key = `${supervisor}\u0000${ref.code}`;
-    const entry = bucket.get(key) ?? { supervisor, skillCode: ref.code, skillName: ref.name, hours: 0, cases: 0 };
+    const entry =
+      bucket.get(key) ??
+      ({
+        supervisor,
+        skillCode: ref.code,
+        skillName: ref.name,
+        hours: 0,
+        cases: 0,
+        metric: ref.metric,
+        lowerIsBetter: ref.lowerIsBetter,
+      } satisfies Bucket);
     entry.hours += row.hours;
     entry.cases += row.cases;
     bucket.set(key, entry);
@@ -96,5 +131,7 @@ export async function getSkillMetricsBySupervisor(period: Period): Promise<Skill
     cases: entry.cases,
     cph: entry.hours > 0 ? entry.cases / entry.hours : null,
     aht: entry.cases > 0 ? (entry.hours / entry.cases) * 3600 : null,
+    metric: entry.metric,
+    lowerIsBetter: entry.lowerIsBetter,
   }));
 }

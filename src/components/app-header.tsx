@@ -53,12 +53,19 @@ const SUPERVISOR_ONLY_NAV = [{ href: "/adherence", label: "Adherence" }];
 const LEADER_NAV = [{ href: "/201-file", label: "201 File" }];
 
 /**
+ * An administrator's day-to-day question is "where is the org struggling,"
+ * which this answers directly — placed right beside Dashboard rather than
+ * at the tail end with the rest of admin-only nav, since it is read at
+ * least as often as the dashboard itself.
+ */
+const ANALYTICS_NAV = { href: "/analytics", label: "Analytics" };
+
+/**
  * Admin-only destinations. The pages enforce this themselves too — Audit
  * has no nav entry (kept reachable by URL for whoever needs it) but is
  * otherwise unchanged.
  */
 const ADMIN_NAV = [
-  { href: "/analytics", label: "Analytics" },
   { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
 ];
@@ -93,16 +100,21 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   );
 
   const items = [
+    // Dashboard first, then Analytics immediately beside it for an admin —
+    // ahead of the rest of NAV, not appended with the rest of admin-only
+    // nav at the tail end.
+    NAV[0],
+    ...(user.role === "admin" ? [ANALYTICS_NAV] : []),
     // An agent's Employees roster is a list of one — themselves — so the tab
     // only ever led back to their own page, which their dashboard and action
     // items already link to directly. The page itself stays reachable.
     //
-    // An admin's own Employees tab is replaced by Analytics below: an
+    // An admin's own Employees tab is replaced by Analytics above: an
     // administrator's day-to-day question is "where is the org struggling,"
-    // which is what the new tab answers directly, while the roster search
-    // and per-employee lookup Employees offers stays reachable by URL and
-    // from every link that already points at a specific employee.
-    ...NAV.filter(
+    // which is what that tab answers directly, while the roster search and
+    // per-employee lookup Employees offers stays reachable by URL and from
+    // every link that already points at a specific employee.
+    ...NAV.slice(1).filter(
       (item) => item.href !== "/employees" || (user.role !== "agent" && user.role !== "admin"),
     ),
     ...(user.role === "agent"
