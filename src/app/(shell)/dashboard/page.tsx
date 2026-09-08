@@ -203,7 +203,7 @@ export default async function DashboardPage({
   // made up my team in the period being viewed," so a realignment since then
   // must not silently add or drop rows — see org-history.ts. resolveScopedIds
   // (used for the cards above) intentionally stays on "who I manage now."
-  const comparisonIds = period ? await reportingScopeIds(user, period.end) : [];
+  const comparisonIds = period ? await reportingScopeIds(user, period) : [];
 
   // Everyone with a linked employee record gets the comparison matrix. For an
   // agent it is a single row — their own KPIs against the previous period —
