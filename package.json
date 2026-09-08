@@ -30,6 +30,7 @@
     "@supabase/supabase-js": "^2.115.0",
     "drizzle-orm": "^0.45.2",
     "next": "16.3.4",
+    "nodemailer": "^10.0.1",
     "pdfjs-dist": "^4.10.38",
     "postgres": "^3.4.9",
     "react": "19.2.8",
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^22.20.1",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
