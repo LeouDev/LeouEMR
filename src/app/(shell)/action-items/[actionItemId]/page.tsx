@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { canAcknowledge, canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
 import { rootCauseCategories } from "@/lib/db/schema";
 import { getActionItemDetail } from "@/lib/queries/performance";
@@ -31,6 +32,8 @@ export default async function ActionItemPage({
   if (user.status !== "active") redirect("/pending");
 
   const { actionItemId } = await params;
+  // Same reason as the employee page: a bad id is "not found", not a crash.
+  if (!isUuid(actionItemId)) notFound();
   // The category list is a static reference table with no dependency on the
   // item, so it is fetched alongside it rather than after it.
   const [detail, categories] = await Promise.all([

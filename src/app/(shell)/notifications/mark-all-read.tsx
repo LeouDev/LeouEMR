@@ -18,13 +18,20 @@ export function MarkAllReadButton() {
         onClick={async () => {
           setBusy(true);
           setError(null);
+          let result;
           try {
-            await markAllRead();
+            result = await markAllRead();
           } catch (cause) {
             setError(describeActionError(cause));
             return;
           } finally {
             setBusy(false);
+          }
+          // The action refuses (rather than throws) when the session has
+          // lapsed; refreshing on that would just redraw the same unread rows.
+          if (!result.ok) {
+            setError("Your session is no longer active — sign in again to update your inbox.");
+            return;
           }
           router.refresh();
         }}
