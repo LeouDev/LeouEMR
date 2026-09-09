@@ -102,12 +102,18 @@ export interface PreviewResult {
 
 export type PreviewResponse = PreviewResult | { ok: false; error: string };
 
-type DownloadedUpload =
+export type DownloadedUpload =
   | { ok: false; error: string }
   | { ok: true; user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>; buffer: Buffer };
 
-/** Pulls the already-uploaded workbook back down from Storage, server-side — no size limit applies to an outbound fetch the way it does to an inbound request body. */
-async function downloadUpload(storagePath: string): Promise<DownloadedUpload> {
+/**
+ * Pulls the already-uploaded workbook back down from Storage, server-side —
+ * no size limit applies to an outbound fetch the way it does to an inbound
+ * request body. Exported so other upload flows sharing this bucket (e.g. the
+ * monthly masterlist import) can reuse it instead of re-deriving the same
+ * admin-check-then-download steps.
+ */
+export async function downloadUpload(storagePath: string): Promise<DownloadedUpload> {
   const auth = await requireAdmin();
   if (!auth.ok) return auth;
 
