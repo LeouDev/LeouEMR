@@ -112,39 +112,10 @@ export default async function PtoPage({
     decisionNote: ptoRequests.decisionNote,
   };
 
-  // The supervisors over the visible people, then the three lists that
-  // depend only on what is already known: the calendar month (needs those
-  // supervisors), the pending queue, and your own history.
-  const leadersOver = await leaderAccountsOver(calendarIds);
-  // Your own account always counts, so your own request shows on your calendar.
-  const leaderVisibleIds = [...new Set([user.id, ...leadersOver])];
-
-  // Everything overlapping the visible month, for the calendar.
-  const inMonthQuery = calendarIds.length
-    ? db
-        .select(base)
-        .from(ptoRequests)
-        .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
-        .leftJoin(users, eq(users.id, ptoRequests.requestedBy))
-        .where(
-          and(
-            or(
-              inArray(ptoRequests.employeeId, calendarIds),
-              // Leaders appear on the calendar of the people they lead. The
-              // null employee id is what makes this a leader's *own* request
-              // rather than anything else their account touched.
-              leaderVisibleIds.length
-                ? and(isNull(ptoRequests.employeeId), inArray(ptoRequests.requestedBy, leaderVisibleIds))
-                : undefined,
-            ),
-            lte(ptoRequests.startDate, monthEnd),
-            gte(ptoRequests.endDate, monthStart),
-            inArray(ptoRequests.status, ["pending", "approved"]),
-          ),
-        )
-        .orderBy(asc(ptoRequests.startDate))
-    : Promise.resolve([]);
-
+  // Second batch: the pending queue and your own history need nothing
+  // beyond the first batch, so they run alongside the supervisor lookup
+  // rather than behind it. Only the calendar read has to wait, because
+  // which supervisors' own leave it shows depends on that lookup.
   const pendingQuery = canDecide && (decidableIds.length || leaderIds.length)
     ? db
         .select(base)
@@ -181,7 +152,40 @@ export default async function PtoPage({
     .orderBy(desc(ptoRequests.startDate))
     .limit(50);
 
-  const [inMonth, pending, mine] = await Promise.all([inMonthQuery, pendingQuery, mineQuery]);
+  const [leadersOver, pending, mine] = await Promise.all([
+    leaderAccountsOver(calendarIds),
+    pendingQuery,
+    mineQuery,
+  ]);
+  // Your own account always counts, so your own request shows on your calendar.
+  const leaderVisibleIds = [...new Set([user.id, ...leadersOver])];
+
+  // Everything overlapping the visible month, for the calendar.
+  const inMonth = calendarIds.length
+    ? await db
+        .select(base)
+        .from(ptoRequests)
+        .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
+        .leftJoin(users, eq(users.id, ptoRequests.requestedBy))
+        .where(
+          and(
+            or(
+              inArray(ptoRequests.employeeId, calendarIds),
+              // Leaders appear on the calendar of the people they lead. The
+              // null employee id is what makes this a leader's *own* request
+              // rather than anything else their account touched.
+              leaderVisibleIds.length
+                ? and(isNull(ptoRequests.employeeId), inArray(ptoRequests.requestedBy, leaderVisibleIds))
+                : undefined,
+            ),
+            lte(ptoRequests.startDate, monthEnd),
+            gte(ptoRequests.endDate, monthStart),
+            inArray(ptoRequests.status, ["pending", "approved"]),
+          ),
+        )
+        .orderBy(asc(ptoRequests.startDate))
+    : [];
+
 
   // Approved days per person in the visible month, for the calendar cells.
   const byDay = new Map<string, Array<{ name: string; status: string; type: string | null }>>();
