@@ -23,8 +23,10 @@ export interface CurrentUser {
  * Resolves the authenticated caller to their application user record.
  *
  * Identity comes from the `x-user-id` header — set by middleware
- * (src/middleware.ts) after ITS OWN server-side, network-verified
- * `supabase.auth.getUser()` call, never from a client-supplied value: a
+ * (src/middleware.ts) after ITS OWN verification of the session token's
+ * signature against the project's public signing key (`getClaims()`,
+ * falling back to a network `getUser()` only if that key cannot be
+ * fetched), never from a client-supplied value: a
  * regular request header of the same name is overwritten by middleware's
  * own `.set()` before the page ever sees it, so nothing arriving from
  * outside can forge it. Role and status come from the `users` table read

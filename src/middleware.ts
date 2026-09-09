@@ -27,20 +27,30 @@ export async function middleware(request: NextRequest) {
     },
   );
 
-  // Refreshes the auth token and keeps the session cookie current. Supabase
-  // refresh tokens are single-use: Next.js prefetches every <Link> in the
-  // viewport, so a burst of simultaneous requests each racing this same
-  // getUser() call can rotate the token out from under one another. The
-  // real navigation still runs this — the matcher below is what stops
-  // background prefetches from entering this race in the first place.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verifies the session and keeps its cookie current. Supabase refresh
+  // tokens are single-use: Next.js prefetches every <Link> in the viewport,
+  // so a burst of simultaneous requests each racing the same refresh can
+  // rotate the token out from under one another. The real navigation still
+  // runs this — the matcher below is what stops background prefetches from
+  // entering that race in the first place.
+  //
+  // getClaims(), not getUser(): the project signs its tokens with an
+  // asymmetric key (ECC P-256), so the signature is checked here with the
+  // project's public key — fetched once per instance and cached for ten
+  // minutes by the client — instead of a round trip to Supabase Auth on
+  // every single navigation, which was the first thing every tab click
+  // paid before a byte of the page could be sent. A token near expiry
+  // still triggers exactly one refresh, the same as getUser() did. What is
+  // given up: a user disabled or deleted at the Supabase level keeps a
+  // valid token until it expires (an hour at most); an account disabled in
+  // THIS app is still caught on every request, because the shell layout
+  // reads users.status from the database and bounces anything not active.
+  const userId = await verifiedUserId(supabase);
 
   const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
 
-  if (!user && !isPublic) {
+  if (!userId && !isPublic) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.searchParams.set("next", pathname);
@@ -49,7 +59,7 @@ export async function middleware(request: NextRequest) {
     return redirectResponse;
   }
 
-  if (user && pathname === "/login") {
+  if (userId && pathname === "/login") {
     const homeUrl = request.nextUrl.clone();
     homeUrl.pathname = "/dashboard";
     homeUrl.search = "";
@@ -59,21 +69,37 @@ export async function middleware(request: NextRequest) {
   }
 
   // Hands the already-verified identity forward via a request header rather
-  // than letting the page's own getCurrentUser() call supabase.auth.getUser()
-  // a second time. getUser() re-verifies over the network and, if the access
-  // token is near expiry, can trigger its own token refresh — a second
-  // independent call racing this one over the same single-use refresh token,
-  // confirmed live via Supabase's auth logs showing up to 6 concurrent
-  // /token refresh requests within about a second, all but one failing with
-  // "Refresh Token Not Found" and bouncing a genuinely signed-in user back to
-  // /login. Set with .set(), not .append(): this always overwrites whatever
-  // value a client request happened to send for this header, so nothing
-  // arriving from outside can impersonate another user's id.
-  if (user) request.headers.set("x-user-id", user.id);
+  // than letting the page's own getCurrentUser() verify a second time (see
+  // src/lib/auth/session.ts for the refresh race that caused). Set with
+  // .set(), not .append(): this always overwrites whatever value a client
+  // request happened to send for this header, so nothing arriving from
+  // outside can impersonate another user's id.
+  if (userId) request.headers.set("x-user-id", userId);
 
   const response = NextResponse.next({ request });
   for (const { name, value, options } of cookiesToApply) response.cookies.set(name, value, options);
   return response;
+}
+
+/**
+ * The signed-in user's id, or null.
+ *
+ * Local verification first. If that fails for any reason other than the
+ * token itself being bad — the signing-key fetch failing on a cold
+ * instance, say — falls back to the network verification this used to do
+ * unconditionally, so a transient hiccup degrades to "slower", never to
+ * "everyone is signed out".
+ */
+async function verifiedUserId(supabase: ReturnType<typeof createServerClient>): Promise<string | null> {
+  const { data, error } = await supabase.auth.getClaims();
+  if (data?.claims.sub) return data.claims.sub;
+  if (!error || error.name === "AuthInvalidJwtError" || error.name === "AuthSessionMissingError") {
+    return null;
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
 }
 
 export const config = {

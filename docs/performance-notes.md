@@ -115,17 +115,19 @@ This session (static audit — see "What could not be measured" below):
 - `getSkillMetricsBySupervisor` (Analytics) loads skill references after
   the facts rather than alongside them; one extra round trip on an
   admin-only page.
-- Middleware calls `supabase.auth.getUser()` on every non-prefetch
-  navigation: a network round trip to Supabase Auth before any render.
-  `getClaims()` verifies the JWT locally, but only once the project has
-  moved to asymmetric JWT signing keys (Supabase dashboard → JWT keys);
-  with the legacy shared secret it falls back to the same network call.
-  Change this only with the sign-in race history (commit b39f20f) in mind.
-- `vercel.json` pins functions to `bom1` (Mumbai). If Supabase is in
-  another region, every database round trip pays cross-region latency and
-  moving the function region next to the database is the single largest
-  lever left. Confirm the region from the DATABASE_URL host
-  (`aws-0-<region>.pooler.supabase.com`) before changing it.
+- Regions are aligned: Supabase is `ap-south-1` and Vercel functions are
+  pinned to `bom1` (both Mumbai), on the Vercel Hobby plan (one region,
+  Fluid Compute on). Do not move the function region. Users are in the
+  Philippines, so each request still carries ~100 ms of their own RTT.
+- Middleware verifies sessions with `getClaims()` (the project signs with
+  ECC P-256, so verification is local; the JWKS is cached ten minutes per
+  instance), falling back to `getUser()` only if the key fetch fails. The
+  single refresh for a near-expiry token, and the prefetch exclusion that
+  keeps refreshes from racing (commit b39f20f), are unchanged.
+- Measured 2026-09-09 from a browser in the Philippines, before the auth
+  change: RSC responses of 0.1–1.4 kB took 0.7–1.9 s each (Dashboard
+  1.3–1.9 s, MBO/Action Items 0.7–0.9 s, Employees 1.1 s). Almost all of
+  that is server time before first byte, not transfer.
 - `getActionItems` and friends resolve the scope's employee ids with a
   separate query and then `IN (...)` them. At ~450 employees this is fine;
   a join would save one round trip per page.
