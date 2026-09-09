@@ -414,6 +414,13 @@ export const weeklyMetricResults = pgTable(
       table.kpiId,
       table.weekStart,
     ),
+    // Every period-scoped query filters primarily by the date range ("which
+    // weeks overlap this month") and only secondarily by employee — but the
+    // unique index above leads with employee_id, kpi_id, so it cannot be
+    // used for a date-range scan (leftmost-prefix rule). Confirmed via
+    // EXPLAIN ANALYZE: without this, a realistic one-month query fell back
+    // to a full sequential scan of the table.
+    index("weekly_metric_results_week_employee_idx").on(table.weekStart, table.employeeId),
   ],
 );
 
@@ -451,6 +458,11 @@ export const metricFacts = pgTable(
       table.kpiId,
       table.factDate,
     ),
+    // Same reasoning as weekly_metric_results_week_employee_idx above: the
+    // unique index leads with employee_id, kpi_id, so a date-range query
+    // (the common case — every period-scoped fetch) cannot use it and falls
+    // back to a full sequential scan without this.
+    index("metric_facts_date_employee_idx").on(table.factDate, table.employeeId),
   ],
 );
 
@@ -477,6 +489,8 @@ export const skillFacts = pgTable(
       table.skillLabel,
       table.factDate,
     ),
+    // Same reasoning as metric_facts_date_employee_idx above.
+    index("skill_facts_date_employee_idx").on(table.factDate, table.employeeId),
   ],
 );
 
