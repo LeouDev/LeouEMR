@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { importBatches, users } from "@/lib/db/schema";
 import { ImportWizard } from "./import-wizard";
+import { MasterlistWizard } from "./masterlist-wizard";
 
 // A historical backfill can run to hundreds of thousands of rows across
 // several tables — Server Actions inherit this page's route config, and the
@@ -61,6 +62,33 @@ export default async function ImportPage() {
         </Card>
 
         <ImportWizard />
+
+        <div className="my-10 flex items-center gap-4">
+          <div className="h-px flex-1 bg-line" />
+          <p className="text-xs font-semibold tracking-[0.08em] text-muted uppercase">Monthly org masterlist</p>
+          <div className="h-px flex-1 bg-line" />
+        </div>
+
+        <Card className="mb-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-4">
+            <div className="max-w-xl">
+              <p className="text-sm font-medium text-ink">Start from the template</p>
+              <p className="mt-1 text-sm text-muted">
+                A blank workbook for the complete monthly roster — Agent EID, Agent Name, Supervisor
+                Name, Supervisor EID, Manager Name and Site — plus one example row.
+              </p>
+            </div>
+            <a
+              href="/import/masterlist-template"
+              download
+              className="btn-primary shrink-0 px-5 py-3 text-sm"
+            >
+              Download masterlist template
+            </a>
+          </div>
+        </Card>
+
+        <MasterlistWizard />
 
         <Card className="mt-6">
           <CardHeader title="Recent imports" />
