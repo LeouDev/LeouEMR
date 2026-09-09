@@ -22,9 +22,12 @@ import { TrendToggle } from "./trend-toggle";
 export async function AdminAnalytics({
   filters,
   weeks,
+  isDefaultRange,
 }: {
   filters: AnalyticsFilters;
   weeks: string[];
+  /** True when weekFrom/weekTo came from the default trailing-3-months window, not an explicit choice. */
+  isDefaultRange: boolean;
 }) {
   const grain: TrendGrain = filters.grain === "month" ? "month" : "week";
   const bounds = { first: weeks[weeks.length - 1], last: weeks[0] };
@@ -42,9 +45,7 @@ export async function AdminAnalytics({
   const mbo = await getMboOverview(filters);
   const facets = await getAnalyticsFacets();
 
-  const filtered = Boolean(
-    filters.site || filters.manager || filters.weekFrom || filters.weekTo || filters.grain,
-  );
+  const filtered = Boolean(filters.site || filters.manager || filters.grain || !isDefaultRange);
   // What the "by site/manager" boards and "failing latest ___" describe — a
   // single week under the week grain, the whole latest month under the month
   // grain. Deriving this from the trend chart's last bucket used to work only
@@ -59,6 +60,16 @@ export async function AdminAnalytics({
       : "all weeks";
 
   const select = "border-2 border-ink bg-surface px-3 py-2.5 text-sm text-ink outline-none";
+
+  // Preserves site/manager/grain, drops any date range, and explicitly
+  // requests the unbounded view — a deliberate opt-in, not a default,
+  // since it costs a full scan of every fact table to compute.
+  const allTimeParams = new URLSearchParams();
+  if (filters.site) allTimeParams.set("site", filters.site);
+  if (filters.manager) allTimeParams.set("manager", filters.manager);
+  if (filters.grain) allTimeParams.set("grain", filters.grain);
+  allTimeParams.set("span", "all");
+  const allTimeHref = `/dashboard?${allTimeParams.toString()}`;
 
   return (
     <>
@@ -142,6 +153,16 @@ export async function AdminAnalytics({
               className="border-2 border-ink px-5 py-2.5 text-sm font-bold text-ink transition hover:bg-orange-brand-100"
             >
               Reset
+            </Link>
+          )}
+
+          {(filters.weekFrom || filters.weekTo) && (
+            <Link
+              href={allTimeHref}
+              className="px-3 py-2.5 text-sm font-medium text-muted underline-offset-4 transition hover:text-orange-brand hover:underline"
+              title="Scans every imported week — slower than the default 3-month view"
+            >
+              View all-time
             </Link>
           )}
         </div>

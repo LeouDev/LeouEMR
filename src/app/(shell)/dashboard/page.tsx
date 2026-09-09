@@ -29,7 +29,7 @@ import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import { getEmployeeKpiTrend } from "@/lib/queries/trend";
 import { getTeamKpiTrend } from "@/lib/queries/team-trend";
-import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
+import { parseGranularity, periodContaining, periodsBetween, previousPeriod } from "@/lib/queries/period";
 import { PeriodPicker } from "@/components/period-picker";
 
 /** Today's date as YYYY-MM-DD, for overdue comparisons. */
@@ -56,6 +56,8 @@ export default async function DashboardPage({
     weekFrom?: string;
     weekTo?: string;
     grain?: string;
+    /** "all" explicitly opts into the unbounded, slower whole-history view. */
+    span?: string;
   }>;
 }) {
   const user = await getCurrentUser();
@@ -78,6 +80,26 @@ export default async function DashboardPage({
   // operational tables: they oversee the whole operation and do not own the
   // individual action items those tables exist to work through.
   if (user.role === "admin") {
+    const requestedAllTime = params.span === "all";
+    const hasExplicitRange = Boolean(params.weekFrom || params.weekTo);
+    const isDefaultRange = !hasExplicitRange && !requestedAllTime;
+
+    // The admin's default view is bounded to the trailing 3 months rather
+    // than the whole imported history. "All weeks" has to scan every fact
+    // table in full — the date-leading indexes added for period-scoped
+    // queries can't help a query that matches nearly every row — and that
+    // only gets slower as more months are imported. An admin who wants the
+    // full history can still ask for it explicitly (the "All time" link
+    // below), accepting that it costs more to compute.
+    let defaultWeekFrom: string | undefined;
+    let defaultWeekTo: string | undefined;
+    if (isDefaultRange && range) {
+      const latestMonth = periodContaining("month", range.last);
+      const earliestOfThree = previousPeriod(previousPeriod(latestMonth));
+      defaultWeekFrom = earliestOfThree.start;
+      defaultWeekTo = range.last;
+    }
+
     return (
       <>
         <PageBand
@@ -90,10 +112,11 @@ export default async function DashboardPage({
             filters={{
               site: params.site || undefined,
               manager: params.manager || undefined,
-              weekFrom: params.weekFrom || undefined,
-              weekTo: params.weekTo || undefined,
+              weekFrom: params.weekFrom || defaultWeekFrom,
+              weekTo: params.weekTo || defaultWeekTo,
               grain: params.grain === "month" ? "month" : undefined,
             }}
+            isDefaultRange={isDefaultRange}
           />
         </main>
       </>
