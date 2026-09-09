@@ -47,7 +47,13 @@ export async function ManagerOverview({
     weekTo: period?.end,
   };
 
-  const [analytics, mbo] = await Promise.all([getAnalytics(filters), getMboOverview(filters)]);
+  // Sequential, deliberately — not a Promise.all. See the identical fix and
+  // rationale in dashboard/admin-analytics.tsx and analytics/page.tsx:
+  // getAnalytics and getMboOverview each hold several db-pool connections
+  // on their own, and running them concurrently risks wedging a connection
+  // against Supabase's transaction-mode pooler.
+  const analytics = await getAnalytics(filters);
+  const mbo = await getMboOverview(filters);
 
   // The tree is already the manager's span as it stood at the end of the
   // period, resolved through the dated assignments — so flattening it costs

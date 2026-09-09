@@ -28,11 +28,19 @@ export async function AdminAnalytics({
 }) {
   const grain: TrendGrain = filters.grain === "month" ? "month" : "week";
   const bounds = { first: weeks[weeks.length - 1], last: weeks[0] };
-  const [analytics, mbo, facets] = await Promise.all([
-    getAnalytics(filters),
-    getMboOverview(filters),
-    getAnalyticsFacets(),
-  ]);
+  // Sequential, deliberately — not a Promise.all. getAnalytics and
+  // getMboOverview each run their OWN internal Promise.all of several
+  // queries and can briefly hold 4-6 connections apiece on their own;
+  // running them concurrently risks spiking real demand past the db
+  // client's pool size (max: 8 in src/lib/db/client.ts) and wedging a
+  // connection against Supabase's transaction-mode pooler — the exact
+  // failure already diagnosed and fixed the same way in
+  // src/app/(shell)/analytics/page.tsx. This page is worse-exposed than
+  // that fix: it's the admin's default landing page, and defaults to "all
+  // weeks" rather than one period.
+  const analytics = await getAnalytics(filters);
+  const mbo = await getMboOverview(filters);
+  const facets = await getAnalyticsFacets();
 
   const filtered = Boolean(
     filters.site || filters.manager || filters.weekFrom || filters.weekTo || filters.grain,
