@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { Card, CardHeader, PageBand, formatWeek } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
 import { ewsAssessments, ewsIndicators, users } from "@/lib/db/schema";
 import { getEmployeeMatrix } from "@/lib/queries/performance";
@@ -25,6 +26,9 @@ export default async function EmployeePage({
 
   const { employeeId } = await params;
   const query = await searchParams;
+  // A malformed id would reach Postgres as a uuid comparison and throw,
+  // landing on the generic error page instead of a plain "not found".
+  if (!isUuid(employeeId)) notFound();
 
   // The indicator list is a static reference table with no dependency on the
   // matrix, so it is fetched alongside it rather than after it.
@@ -65,6 +69,14 @@ export default async function EmployeePage({
   // coachability — notes written about the agent, not for them. Leaders see
   // them on anyone's page; an agent opening their own page does not.
   const showsEws = user.role !== "agent";
+  // Joined rather than rendered as fixed " · " fragments: with the EID
+  // moved up into the band, a missing supervisor left the line opening on a
+  // bare separator (" · Manager: …") for anyone whose supervisor is blank.
+  const orgLine = [
+    employee.supervisorName && `Supervisor: ${employee.supervisorName}`,
+    employee.managerName && `Manager: ${employee.managerName}`,
+    employee.site,
+  ].filter((part): part is string => Boolean(part));
   const openItems = issues.filter((i) => i.status !== "COMPLETED").length;
   const failingLatest = latestWeek
     ? kpis.filter((k) => cells.get(`${k.code}|${latestWeek}`)?.status === "fail").length
@@ -88,12 +100,9 @@ export default async function EmployeePage({
         <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-sm text-muted">
-              {employee.supervisorName && <>Supervisor: {employee.supervisorName}</>}
-              {employee.managerName && <> · Manager: {employee.managerName}</>}
-              {employee.site && <> · {employee.site}</>}
-              {!employee.supervisorName && !employee.managerName && !employee.site && (
-                <>No supervisor, manager or site recorded in the imported data</>
-              )}
+              {orgLine.length > 0
+                ? orgLine.join(" · ")
+                : "No supervisor, manager or site recorded in the imported data"}
             </p>
           </div>
           <div className="flex gap-3 text-right">

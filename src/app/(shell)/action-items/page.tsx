@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand, StatusBadge, formatWeek } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isUuid } from "@/lib/ids";
 import { getActionItems, getScopedEmployeeName } from "@/lib/queries/performance";
 
 export default async function ActionItemsPage({
@@ -15,6 +16,11 @@ export default async function ActionItemsPage({
 
   const params = await searchParams;
   const openOnly = params.all !== "1";
+  // Only a real id is ever handed to the queries below. Anything else —
+  // a truncated link, a hand-edited URL — used to reach Postgres as a uuid
+  // comparison and throw a cast error, so the whole page fell over onto the
+  // generic error screen; now it simply means "no employee filter".
+  const employeeFilter = isUuid(params.employee) ? params.employee : undefined;
   // The filtered person's name is looked up alongside the list rather than
   // taken off its first row: an employee with no open items — the common
   // case when arriving from a roster link — used to be labelled "this
@@ -22,10 +28,10 @@ export default async function ActionItemsPage({
   // Scoped the same way the list is, so the name of someone outside the
   // caller's span is never revealed by guessing an id.
   const [items, filteredEmployee] = await Promise.all([
-    getActionItems(user, { openOnly, employeeId: params.employee }),
-    params.employee ? getScopedEmployeeName(user, params.employee) : Promise.resolve(null),
+    getActionItems(user, { openOnly, employeeId: employeeFilter }),
+    employeeFilter ? getScopedEmployeeName(user, employeeFilter) : Promise.resolve(null),
   ]);
-  const filteredEmployeeName = params.employee ? (filteredEmployee ?? "this employee") : null;
+  const filteredEmployeeName = employeeFilter ? (filteredEmployee ?? "this employee") : null;
 
   return (
     <>
@@ -52,7 +58,7 @@ export default async function ActionItemsPage({
             subtitle={`${items.length} item${items.length === 1 ? "" : "s"}`}
             action={
               <Link
-                href={`${openOnly ? "/action-items?all=1" : "/action-items"}${params.employee ? `${openOnly ? "&" : "?"}employee=${params.employee}` : ""}`}
+                href={`${openOnly ? "/action-items?all=1" : "/action-items"}${employeeFilter ? `${openOnly ? "&" : "?"}employee=${employeeFilter}` : ""}`}
                 className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
               >
                 {openOnly ? "Show resolved too" : "Show active only"}

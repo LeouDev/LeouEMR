@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   actionItems,
@@ -280,13 +280,74 @@ export interface ActionItemListRow {
   hasActionPlan: boolean;
 }
 
+/** Statuses an item sits in before anyone has written an RCA/action plan — see submitRcaAndPlan in the engine. */
+export const UNSTARTED_STATUSES = ["OPEN", "REOPENED"] as const;
+
+type IssueStatus = (typeof performanceIssues.$inferSelect)["status"];
+
+interface ActionItemFilter {
+  openOnly?: boolean;
+  /** Narrows to exactly these statuses; takes precedence over `openOnly`. */
+  statuses?: readonly IssueStatus[];
+  employeeId?: string;
+}
+
+/** The one WHERE clause behind every action-item list and count, so they can never disagree. */
+function actionItemWhere(ids: string[] | "all", options: ActionItemFilter) {
+  return and(
+    ids === "all" ? undefined : inArray(performanceIssues.employeeId, ids),
+    options.statuses
+      ? inArray(performanceIssues.status, [...options.statuses])
+      : options.openOnly
+        ? inArray(performanceIssues.status, [...OPEN_STATUSES])
+        : undefined,
+    options.employeeId ? eq(performanceIssues.employeeId, options.employeeId) : undefined,
+    OPENS_ACTION_ITEMS,
+  );
+}
+
 export async function getActionItems(
   user: CurrentUser,
-  options: { openOnly?: boolean; employeeId?: string; limit?: number } = {},
+  options: ActionItemFilter & { limit?: number; oldestFirst?: boolean } = {},
 ): Promise<ActionItemListRow[]> {
   const ids = await scopedEmployeeIds(user);
   if (ids === null || (Array.isArray(ids) && ids.length === 0)) return [];
+  return listActionItems(ids, options);
+}
 
+/**
+ * Items nobody has started on yet — no RCA or plan — as a true count plus
+ * the few oldest, for a "needs your attention" panel.
+ *
+ * The count is its own query rather than the length of a capped list: the
+ * Employees page used to fetch up to 1000 fully-joined rows to show five
+ * and a number, and an admin with more open work than the cap was shown
+ * the cap itself as if it were the count.
+ */
+export async function getUnstartedActionItems(
+  user: CurrentUser,
+  limit: number,
+): Promise<{ total: number; items: ActionItemListRow[] }> {
+  const ids = await scopedEmployeeIds(user);
+  if (ids === null || (Array.isArray(ids) && ids.length === 0)) return { total: 0, items: [] };
+
+  const filter = { statuses: UNSTARTED_STATUSES };
+  const [[counted], items] = await Promise.all([
+    db
+      .select({ total: count() })
+      .from(actionItems)
+      .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+      .where(actionItemWhere(ids, filter)),
+    // Oldest first: the one that has been waiting longest for a response.
+    listActionItems(ids, { ...filter, limit, oldestFirst: true }),
+  ]);
+  return { total: counted?.total ?? 0, items };
+}
+
+async function listActionItems(
+  ids: string[] | "all",
+  options: ActionItemFilter & { limit?: number; oldestFirst?: boolean },
+): Promise<ActionItemListRow[]> {
   const rows = await db
     .select({
       actionItemId: actionItems.id,
@@ -308,15 +369,11 @@ export async function getActionItems(
     .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
     .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
     .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
-    .where(
-      and(
-        ids === "all" ? undefined : inArray(performanceIssues.employeeId, ids),
-        options.openOnly ? inArray(performanceIssues.status, [...OPEN_STATUSES]) : undefined,
-        options.employeeId ? eq(performanceIssues.employeeId, options.employeeId) : undefined,
-        OPENS_ACTION_ITEMS,
-      ),
+    .where(actionItemWhere(ids, options))
+    .orderBy(
+      options.oldestFirst ? asc(performanceIssues.openedWeek) : desc(performanceIssues.openedWeek),
+      employees.name,
     )
-    .orderBy(desc(performanceIssues.openedWeek), employees.name)
     .limit(options.limit ?? 200);
 
   return rows.map((row) => ({
