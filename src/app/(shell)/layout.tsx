@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
+import { NavigationProgressBar, NavigationProgressProvider } from "@/components/navigation-progress";
 import { PageTransition } from "@/components/page-transition";
 import { getCurrentUser } from "@/lib/auth/session";
 
@@ -19,9 +20,15 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   if (user.status !== "active") redirect("/pending");
 
   return (
-    <div className="min-h-screen bg-cream">
-      <AppHeader user={user} />
-      <PageTransition>{children}</PageTransition>
-    </div>
+    <NavigationProgressProvider>
+      <div className="min-h-screen bg-cream">
+        <AppHeader user={user} />
+        {/* Directly under the sticky header, so it is visible at any scroll
+            depth the moment a tab or filter is used — before the server has
+            sent anything back. */}
+        <NavigationProgressBar />
+        <PageTransition>{children}</PageTransition>
+      </div>
+    </NavigationProgressProvider>
   );
 }

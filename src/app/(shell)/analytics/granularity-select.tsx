@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useNavigation } from "@/components/navigation-progress";
 import type { Granularity } from "@/lib/queries/period";
 
 const control =
@@ -22,13 +23,15 @@ export function GranularitySelect({
   options: readonly Granularity[];
   labels: Record<Granularity, string>;
 }) {
-  const router = useRouter();
+  const { navigate, pending } = useNavigation();
   const searchParams = useSearchParams();
 
   return (
     <select
       aria-label="View by"
       value={granularity}
+      disabled={pending}
+      aria-busy={pending}
       onChange={(e) => {
         const next = new URLSearchParams(searchParams.toString());
         next.set("granularity", e.target.value);
@@ -37,7 +40,7 @@ export function GranularitySelect({
         // with one in the new list — better to land on the newest period
         // than silently fall through to index 0 with a stale, wrong label.
         next.delete("period");
-        router.push(`?${next.toString()}`);
+        navigate(`?${next.toString()}`);
       }}
       className={control}
     >
