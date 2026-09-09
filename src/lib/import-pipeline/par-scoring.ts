@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   employeeRampAssignments,
@@ -52,12 +53,53 @@ export function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+/**
+ * The skill configuration, read once and shared.
+ *
+ * Three loaders below (references, attributes, metrics) used to each make
+ * their own two or three trips to the same two tables on nearly every page
+ * — and getPeriodMetrics calls two of them per period. The rows change only
+ * when an administrator edits a target (which evicts CACHE_TAG.reference),
+ * so one cached read now serves all of them. Plain rows, not the Maps the
+ * loaders hand out: the cache stores JSON.
+ */
+const readSkillConfiguration = cachedRead(
+  "skill-configuration",
+  [CACHE_TAG.reference],
+  async () => {
+    const [references, aliases] = await Promise.all([
+      db
+        .select({
+          id: skillReferences.id,
+          code: skillReferences.code,
+          name: skillReferences.name,
+          target: skillReferences.target,
+          metric: skillReferences.metric,
+          lowerIsBetter: skillReferences.lowerIsBetter,
+          attributesPerAudit: skillReferences.attributesPerAudit,
+          active: skillReferences.active,
+          r1: skillReferences.r1,
+          r2: skillReferences.r2,
+          r3: skillReferences.r3,
+          r4: skillReferences.r4,
+          r5: skillReferences.r5,
+        })
+        .from(skillReferences),
+      db
+        .select({ sourceLabel: skillAliases.sourceLabel, skillReferenceId: skillAliases.skillReferenceId })
+        .from(skillAliases),
+    ]);
+    return { references, aliases };
+  },
+);
+
 export async function loadSkillReferences(): Promise<Map<string, SkillReference>> {
-  const rows = await db.select().from(skillReferences).where(eq(skillReferences.active, true));
+  const { references, aliases } = await readSkillConfiguration();
 
   const byId = new Map<string, SkillReference>();
   const byKey = new Map<string, SkillReference>();
-  for (const row of rows) {
+  for (const row of references) {
+    if (!row.active) continue;
     const reference: SkillReference = {
       code: row.code,
       name: row.name,
@@ -73,7 +115,6 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
   }
 
   // Source labels that differ from the reference's own naming.
-  const aliases = await db.select().from(skillAliases);
   for (const alias of aliases) {
     const reference = byId.get(alias.skillReferenceId);
     if (reference) byKey.set(normalize(alias.sourceLabel), reference);
@@ -103,16 +144,16 @@ export function measureSkill(
 
 /** Normalized skill key -> attributes per audit, for the DPO denominator. */
 export async function loadAttributesBySkill(): Promise<Map<string, number>> {
-  const rows = await db.select().from(skillReferences).where(eq(skillReferences.active, true));
+  const { references, aliases } = await readSkillConfiguration();
   const map = new Map<string, number>();
   const byId = new Map<string, number>();
-  for (const row of rows) {
+  for (const row of references) {
+    if (!row.active) continue;
     byId.set(row.id, row.attributesPerAudit);
     map.set(normalizeSkill(row.code), row.attributesPerAudit);
     map.set(normalizeSkill(row.name), row.attributesPerAudit);
   }
 
-  const aliases = await db.select().from(skillAliases);
   for (const alias of aliases) {
     const attributes = byId.get(alias.skillReferenceId);
     if (attributes !== undefined) map.set(normalizeSkill(alias.sourceLabel), attributes);
@@ -295,27 +336,21 @@ function weekEndFor(
  * workbook writing "PartD_Phones" or "Part D Phones" resolves either way.
  */
 export async function loadSkillMetrics(): Promise<Map<string, "cph" | "aht" | "case_rate">> {
-  const rows = await db
-    .select({ name: skillReferences.name, code: skillReferences.code, metric: skillReferences.metric })
-    .from(skillReferences)
-    .where(eq(skillReferences.active, true));
+  const { references, aliases } = await readSkillConfiguration();
 
   const map = new Map<string, "cph" | "aht" | "case_rate">();
-  for (const row of rows) {
+  for (const row of references) {
+    if (!row.active) continue;
     map.set(normalize(row.name), row.metric);
     map.set(normalize(row.code), row.metric);
   }
 
-  const aliases = await db
-    .select({ alias: skillAliases.sourceLabel, referenceId: skillAliases.skillReferenceId })
-    .from(skillAliases);
-  const metricById = new Map(
-    (await db.select({ id: skillReferences.id, metric: skillReferences.metric }).from(skillReferences))
-      .map((r) => [r.id, r.metric]),
-  );
+  // As before: an alias resolves through its reference whether or not
+  // that reference is active.
+  const metricById = new Map(references.map((r) => [r.id, r.metric]));
   for (const a of aliases) {
-    const metric = metricById.get(a.referenceId);
-    if (metric) map.set(normalize(a.alias), metric);
+    const metric = metricById.get(a.skillReferenceId);
+    if (metric) map.set(normalize(a.sourceLabel), metric);
   }
 
   return map;
@@ -344,26 +379,48 @@ export interface RampTargetOverride {
 /** `${eid}|${weekStart}|${normalizedSkillLabel}` -> the ramp-adjusted target for that row. */
 export type RampTargets = Map<string, RampTargetOverride>;
 
+/**
+ * Four tables' worth of reads (assignments, schedules, references, aliases)
+ * folded to one cached entry of the finished `${eid}|${week}|${label}`
+ * pairs. Stale only when a ramp is set or cleared, a skill target changes,
+ * or an import renames someone — each of which evicts a tag carried here.
+ */
+const readRampTargetEntries = cachedRead(
+  "ramp-targets",
+  [CACHE_TAG.ramp, CACHE_TAG.reference, CACHE_TAG.imports],
+  async (): Promise<Array<[string, RampTargetOverride]>> => {
+    const [assignments, schedules, { references, aliases }] = await Promise.all([
+      db
+        .select({
+          eid: employees.eid,
+          rampStartWeek: employeeRampAssignments.rampStartWeek,
+          skillReferenceId: employeeRampAssignments.skillReferenceId,
+        })
+        .from(employeeRampAssignments)
+        .innerJoin(employees, eq(employees.id, employeeRampAssignments.employeeId)),
+      db.select().from(skillRampSchedules),
+      readSkillConfiguration(),
+    ]);
+    if (assignments.length === 0) return [];
+    return [...buildRampTargets(assignments, schedules, references, aliases).entries()];
+  },
+);
+
 export async function loadRampTargets(): Promise<RampTargets> {
-  const assignments = await db
-    .select({
-      eid: employees.eid,
-      rampStartWeek: employeeRampAssignments.rampStartWeek,
-      skillReferenceId: employeeRampAssignments.skillReferenceId,
-    })
-    .from(employeeRampAssignments)
-    .innerJoin(employees, eq(employees.id, employeeRampAssignments.employeeId));
+  return new Map(await readRampTargetEntries());
+}
 
-  if (assignments.length === 0) return new Map();
-
-  const schedules = await db.select().from(skillRampSchedules);
+function buildRampTargets(
+  assignments: Array<{ eid: string; rampStartWeek: string; skillReferenceId: string }>,
+  schedules: Array<{ skillReferenceId: string; stage: number; target: number }>,
+  references: Array<{ id: string; code: string; name: string; lowerIsBetter: boolean }>,
+  aliases: Array<{ sourceLabel: string; skillReferenceId: string }>,
+): RampTargets {
   const targetByStage = new Map<string, number>();
   for (const row of schedules) {
     targetByStage.set(`${row.skillReferenceId}|${row.stage}`, row.target);
   }
 
-  const references = await db.select().from(skillReferences);
-  const aliases = await db.select().from(skillAliases);
   const labelsById = new Map<string, string[]>();
   for (const ref of references) {
     labelsById.set(ref.id, [normalize(ref.code), normalize(ref.name)]);

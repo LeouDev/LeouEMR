@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth/session";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { importBatches } from "@/lib/db/schema";
 import { commitImport } from "@/lib/import-pipeline/commit";
@@ -201,6 +202,8 @@ export async function runImport(storagePath: string, fileName: string): Promise<
 
   try {
     const summary = await commitImport(parsed, { importBatchId: batch.id });
+    // Everything aggregated from the facts is now stale, everywhere.
+    invalidateCache(CACHE_TAG.imports);
     revalidatePath("/import");
     revalidatePath("/dashboard");
     return { ok: true, summary };

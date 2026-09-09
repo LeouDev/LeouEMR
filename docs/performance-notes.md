@@ -65,6 +65,46 @@ This session (static audit — see "What could not be measured" below):
   even when they have no items; both import wizards say a large import can
   take minutes and to keep the tab open.
 
+## Caching layer (src/lib/cache.ts)
+
+- `cachedRead(name, tags, fn)` wraps a read in `unstable_cache` with a
+  10-minute safety window; `invalidateCache(...tags)` evicts with
+  `{ expire: 0 }` (no stale-while-revalidate: an admin who just imported
+  expects the next page to show it). Three tags: `imports`, `reference`,
+  `ramp`. Every writing server action evicts its tag (import, masterlist,
+  ramp set/clear, skill target). Command-line scripts under `scripts/`
+  cannot evict, hence the 10-minute window; a redeploy also clears all.
+- Both helpers are pass-throughs when `process.env.NEXT_RUNTIME` is unset
+  (tests, tsx scripts): `unstable_cache` and `revalidateTag` throw outside
+  a Next request.
+- Cached reads must return plain JSON: build Maps/Sets at the call site.
+  Timestamps are excluded from cached rows for the same reason.
+- `getPeriodMetrics(ids, period)` is now computed organisation-wide per
+  period (compact tuple form, roughly 70 bytes per employee-KPI, so a
+  month for ~660 people is well under Vercel's 2 MB per-entry limit) and
+  filtered per caller. Cold computes are serialised per instance so two
+  periods never aggregate concurrently against the pool. Also cached:
+  skill configuration (one read behind loadSkillReferences /
+  loadAttributesBySkill / loadSkillMetrics), ramp targets and schedules,
+  KPI definitions, fact date range, available/latest weeks, and the
+  per-period set of employees with reportable data.
+- Not cached on purpose: anything keyed on the current user or on EWS
+  assessments (separation dates, boards), and the users row behind
+  `getCurrentUser` (roles can be changed by a script; a stale role would be
+  a security problem, not a performance one).
+
+## Navigation feedback (src/components/navigation-progress.tsx)
+
+- The shell layout renders a progress bar under the sticky header, driven
+  by a context that any control can flip: nav tabs via `onNavigate`,
+  `PeriodPicker` / `GranularitySelect` / `RosterFilters` via `navigate()`,
+  link tab strips via `NavLink`. Cleared when the URL changes; a 20 s
+  timeout guards a navigation that never lands.
+- Why it matters here: main-nav prefetch is off (see nav-tabs.tsx and the
+  middleware matcher), so nothing on screen changed between a click and
+  the server's first byte — auth verification, any cold start and the first
+  database round trips all happen inside that gap.
+
 ## Known, deliberately left alone (measure before touching)
 
 - `notifications` has no index on `(recipient_id, read_at)`; the header
@@ -75,6 +115,17 @@ This session (static audit — see "What could not be measured" below):
 - `getSkillMetricsBySupervisor` (Analytics) loads skill references after
   the facts rather than alongside them; one extra round trip on an
   admin-only page.
+- Middleware calls `supabase.auth.getUser()` on every non-prefetch
+  navigation: a network round trip to Supabase Auth before any render.
+  `getClaims()` verifies the JWT locally, but only once the project has
+  moved to asymmetric JWT signing keys (Supabase dashboard → JWT keys);
+  with the legacy shared secret it falls back to the same network call.
+  Change this only with the sign-in race history (commit b39f20f) in mind.
+- `vercel.json` pins functions to `bom1` (Mumbai). If Supabase is in
+  another region, every database round trip pays cross-region latency and
+  moving the function region next to the database is the single largest
+  lever left. Confirm the region from the DATABASE_URL host
+  (`aws-0-<region>.pooler.supabase.com`) before changing it.
 - `getActionItems` and friends resolve the scope's employee ids with a
   separate query and then `IN (...)` them. At ~450 employees this is fine;
   a join would save one round trip per page.

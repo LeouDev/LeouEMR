@@ -1,4 +1,5 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   employees,
@@ -46,20 +47,101 @@ export async function getPeriodMetrics(
 ): Promise<PeriodMetric[]> {
   if (employeeIds.length === 0) return [];
 
+  // Computed once for the whole organisation per period and cached, then
+  // narrowed to the caller's people here. A period's numbers are identical
+  // for every viewer and change only when something is imported, a ramp is
+  // set or a skill target edited — each of which evicts one of the tags
+  // below — yet every dashboard, MBO, stack-rank and My Stats visit was
+  // re-aggregating its own slice from the fact tables, the slowest thing
+  // any page here does. Cache hits are the common case; the first viewer of
+  // a period after a change pays the full organisation-wide cost once, on
+  // everyone else's behalf.
+  const wanted = new Set(employeeIds);
+  const compact = await readOrgPeriodMetrics(period.granularity, period.start, period.end);
+  return expand(compact).filter((m) => wanted.has(m.employeeId));
+}
+
+/**
+ * The cached shape: one small KPI table plus one flat tuple per
+ * employee-KPI, rather than a self-describing object per row. Cached
+ * entries are JSON, and a whole organisation's month is thousands of rows —
+ * this keeps an entry a fraction of the size of the array it stands for.
+ */
+interface CompactPeriodMetrics {
+  kpis: Array<{ code: string; name: string; direction: PeriodMetric["direction"] }>;
+  /** [employeeId, kpi index, actual, target, status index, sample size] */
+  rows: Array<[string, number, number, number | null, number, number]>;
+}
+
+const STATUS_ORDER: KpiStatus[] = ["PASS", "WARNING", "FAIL"];
+
+function compact(metrics: PeriodMetric[]): CompactPeriodMetrics {
+  const kpis: CompactPeriodMetrics["kpis"] = [];
+  const indexByCode = new Map<string, number>();
+  const rows: CompactPeriodMetrics["rows"] = [];
+  for (const m of metrics) {
+    let index = indexByCode.get(m.kpiCode);
+    if (index === undefined) {
+      index = kpis.push({ code: m.kpiCode, name: m.kpiName, direction: m.direction }) - 1;
+      indexByCode.set(m.kpiCode, index);
+    }
+    rows.push([m.employeeId, index, m.actualValue, m.targetValue, STATUS_ORDER.indexOf(m.status), m.sampleSize]);
+  }
+  return { kpis, rows };
+}
+
+function expand(data: CompactPeriodMetrics): PeriodMetric[] {
+  return data.rows.map(([employeeId, kpi, actualValue, targetValue, status, sampleSize]) => ({
+    employeeId,
+    kpiCode: data.kpis[kpi].code,
+    kpiName: data.kpis[kpi].name,
+    direction: data.kpis[kpi].direction,
+    actualValue,
+    targetValue,
+    status: STATUS_ORDER[status],
+    sampleSize,
+  }));
+}
+
+/**
+ * One organisation-wide aggregation at a time per server instance.
+ *
+ * A cold cache for two periods at once (My Stats asks for this month and
+ * last) would otherwise run two of these together, each holding up to
+ * three pooled connections — the fan-out that wedges Supabase's
+ * transaction pooler (see src/lib/db/client.ts). Waiting for the other to
+ * finish costs at most one extra aggregation's time, once, and only ever
+ * on a cold cache.
+ */
+let aggregationQueue: Promise<unknown> = Promise.resolve();
+function serialized<T>(work: () => Promise<T>): Promise<T> {
+  const run = aggregationQueue.then(work, work);
+  aggregationQueue = run.catch(() => undefined);
+  return run;
+}
+
+const readOrgPeriodMetrics = cachedRead(
+  "org-period-metrics",
+  [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ramp],
+  (granularity: Period["granularity"], start: string, end: string) =>
+    serialized(async () => compact(await computeOrgPeriodMetrics({ granularity, start, end, label: "" }))),
+);
+
+async function computeOrgPeriodMetrics(period: Period): Promise<PeriodMetric[]> {
   // A week is a label in the source data, not a date range: 2.6% of
   // production rows carry a Weekly label that disagrees with their own
   // completion date. Week granularity therefore reads the stored weekly
   // ledger, which follows the source's own labelling, rather than
   // re-deriving weeks from dates and quietly disagreeing with the
   // business's existing reports.
-  if (period.granularity === "week") return getWeekMetrics(employeeIds, period.start);
+  if (period.granularity === "week") return getWeekMetrics(period.start);
 
   // These three are mutually independent — definitions is a small static
   // table, and facts/targetRows are unfiltered by it (byCode/byId are only
   // derived from definitions below, after all three are back) — so they run
   // concurrently rather than paying three round trips in a row.
   const [definitions, facts, targetRows] = await Promise.all([
-    db.select().from(kpiDefinitions).where(eq(kpiDefinitions.active, true)),
+    readKpiDefinitions(),
     // Measured KPIs: sum the components, then apply the KPI's own rule.
     db
       .select({
@@ -70,13 +152,7 @@ export async function getPeriodMetrics(
         sampleSize: sql<number>`sum(${metricFacts.sampleSize})::int`,
       })
       .from(metricFacts)
-      .where(
-        and(
-          inArray(metricFacts.employeeId, employeeIds),
-          gte(metricFacts.factDate, period.start),
-          lte(metricFacts.factDate, period.end),
-        ),
-      )
+      .where(and(gte(metricFacts.factDate, period.start), lte(metricFacts.factDate, period.end)))
       .groupBy(metricFacts.employeeId, metricFacts.kpiId),
     /**
      * The target each employee was actually measured against.
@@ -97,7 +173,6 @@ export async function getPeriodMetrics(
       .from(weeklyMetricResults)
       .where(
         and(
-          inArray(weeklyMetricResults.employeeId, employeeIds),
           // Any week OVERLAPPING the period, not only one starting inside it.
           // Weeks run Saturday-Friday against calendar months, so the week that
           // straddles a month boundary starts in the previous month while its
@@ -141,14 +216,55 @@ export async function getPeriodMetrics(
   }
 
   // PAR, DPU, DPO and MBO are derived from the per-skill facts.
-  const derived = await computeDerived(employeeIds, period, byCode);
+  const derived = await computeDerived(period, byCode);
   results.push(...derived);
 
   return results;
 }
 
+/**
+ * The active KPI definitions — seeded by migration and read on every
+ * period aggregation. Timestamps are left out on purpose: the cache stores
+ * JSON, and a Date would come back a string.
+ */
+export type KpiDefinitionRow = Pick<
+  typeof kpiDefinitions.$inferSelect,
+  | "id"
+  | "code"
+  | "name"
+  | "type"
+  | "direction"
+  | "target"
+  | "warningThreshold"
+  | "failureThreshold"
+  | "rangeMin"
+  | "rangeMax"
+  | "expectedBoolean"
+  | "aggregation"
+>;
+
+const readKpiDefinitions = cachedRead("kpi-definitions", [CACHE_TAG.reference], (): Promise<KpiDefinitionRow[]> =>
+  db
+    .select({
+      id: kpiDefinitions.id,
+      code: kpiDefinitions.code,
+      name: kpiDefinitions.name,
+      type: kpiDefinitions.type,
+      direction: kpiDefinitions.direction,
+      target: kpiDefinitions.target,
+      warningThreshold: kpiDefinitions.warningThreshold,
+      failureThreshold: kpiDefinitions.failureThreshold,
+      rangeMin: kpiDefinitions.rangeMin,
+      rangeMax: kpiDefinitions.rangeMax,
+      expectedBoolean: kpiDefinitions.expectedBoolean,
+      aggregation: kpiDefinitions.aggregation,
+    })
+    .from(kpiDefinitions)
+    .where(eq(kpiDefinitions.active, true)),
+);
+
 /** Week granularity reads the labelled weekly ledger rather than the facts. */
-async function getWeekMetrics(employeeIds: string[], weekStart: string): Promise<PeriodMetric[]> {
+async function getWeekMetrics(weekStart: string): Promise<PeriodMetric[]> {
   const rows = await db
     .select({
       employeeId: weeklyMetricResults.employeeId,
@@ -162,12 +278,7 @@ async function getWeekMetrics(employeeIds: string[], weekStart: string): Promise
     })
     .from(weeklyMetricResults)
     .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-    .where(
-      and(
-        inArray(weeklyMetricResults.employeeId, employeeIds),
-        eq(weeklyMetricResults.weekStart, weekStart),
-      ),
-    );
+    .where(eq(weeklyMetricResults.weekStart, weekStart));
 
   return rows.map((row) => ({
     employeeId: row.employeeId,
@@ -203,7 +314,7 @@ export function combine(
 
 function evaluated(
   employeeId: string,
-  definition: typeof kpiDefinitions.$inferSelect,
+  definition: KpiDefinitionRow,
   value: number,
   sampleSize: number,
   /** The employee's own target, where the source supplies one. */
@@ -239,9 +350,8 @@ function evaluated(
 
 /** PAR rating, DPU, DPO and the MBO composite over the period. */
 async function computeDerived(
-  employeeIds: string[],
   period: Period,
-  byCode: Map<string, typeof kpiDefinitions.$inferSelect>,
+  byCode: Map<string, KpiDefinitionRow>,
 ): Promise<PeriodMetric[]> {
   // A ramping employee's CPH/AHT target changes week to week (see
   // loadRampTargets), but PRODUCTION_RATE here is scored from cases/hours
@@ -267,10 +377,7 @@ async function computeDerived(
   const weeksInPeriod = rampTargets.size > 0 ? periodsBetween("week", period.start, period.end) : [];
   const eidById = new Map<string, string>();
   if (weeksInPeriod.length > 0) {
-    const rows = await db
-      .select({ id: employees.id, eid: employees.eid })
-      .from(employees)
-      .where(inArray(employees.id, employeeIds));
+    const rows = await db.select({ id: employees.id, eid: employees.eid }).from(employees);
     for (const row of rows) eidById.set(row.id, row.eid);
   }
 
@@ -307,13 +414,7 @@ async function computeDerived(
         prodWeight: sql<number>`sum(${skillFacts.prodWeight})::double precision`,
       })
       .from(skillFacts)
-      .where(
-        and(
-          inArray(skillFacts.employeeId, employeeIds),
-          gte(skillFacts.factDate, period.start),
-          lte(skillFacts.factDate, period.end),
-        ),
-      )
+      .where(and(gte(skillFacts.factDate, period.start), lte(skillFacts.factDate, period.end)))
       .groupBy(skillFacts.employeeId, skillFacts.skillLabel),
     db
       .select({
@@ -324,13 +425,7 @@ async function computeDerived(
         markdowns: sql<number>`sum(${qualityFacts.markdowns})::int`,
       })
       .from(qualityFacts)
-      .where(
-        and(
-          inArray(qualityFacts.employeeId, employeeIds),
-          gte(qualityFacts.factDate, period.start),
-          lte(qualityFacts.factDate, period.end),
-        ),
-      )
+      .where(and(gte(qualityFacts.factDate, period.start), lte(qualityFacts.factDate, period.end)))
       .groupBy(qualityFacts.employeeId, qualityFacts.skillLabel),
   ]);
 
@@ -421,14 +516,21 @@ async function computeDerived(
   return out;
 }
 
-/** The earliest and latest day with any recorded fact. */
-export async function getFactDateRange(): Promise<{ first: string; last: string } | null> {
-  const [row] = await db
-    .select({
-      first: sql<string | null>`min(${metricFacts.factDate})::text`,
-      last: sql<string | null>`max(${metricFacts.factDate})::text`,
-    })
-    .from(metricFacts);
+/**
+ * The earliest and latest day with any recorded fact. Read on nearly every
+ * period-based page to build the period list; changes only on import.
+ */
+export const getFactDateRange = cachedRead(
+  "fact-date-range",
+  [CACHE_TAG.imports],
+  async (): Promise<{ first: string; last: string } | null> => {
+    const [row] = await db
+      .select({
+        first: sql<string | null>`min(${metricFacts.factDate})::text`,
+        last: sql<string | null>`max(${metricFacts.factDate})::text`,
+      })
+      .from(metricFacts);
 
-  return row?.first && row?.last ? { first: row.first, last: row.last } : null;
-}
+    return row?.first && row?.last ? { first: row.first, last: row.last } : null;
+  },
+);
