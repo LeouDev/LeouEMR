@@ -7,7 +7,11 @@ import { getOwnEmployee } from "@/lib/queries/my-stats";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getStackRanks } from "@/lib/queries/stack-rank";
-import { RankTable, SupervisorRankTable } from "./rank-table";
+import { NavLink } from "@/components/nav-link";
+import { abridge, RankTable, SupervisorRankTable } from "./rank-table";
+
+/** Rows of the organisation board rendered before "Show all" — the scroll box shows this many. */
+const ORG_ROWS_SHOWN = 20;
 
 /**
  * Stack ranks: your team, the whole organization, and every supervisor in it.
@@ -19,7 +23,7 @@ import { RankTable, SupervisorRankTable } from "./rank-table";
 export default async function StackRankPage({
   searchParams,
 }: {
-  searchParams: Promise<{ granularity?: string; period?: string }>;
+  searchParams: Promise<{ granularity?: string; period?: string; all?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -82,6 +86,18 @@ export default async function StackRankPage({
   const thinlyScored = ranks.org.length > 0 && scored <= Math.max(2, ranks.org.length * 0.05);
   const mine = employee ? ranks.org.find((r) => r.employeeId === employee.id) : undefined;
   const myTeamRank = employee ? ranks.team.find((r) => r.employeeId === employee.id) : undefined;
+
+  // The whole-organisation table is ranked over everyone, but only what a
+  // reader will actually look at is rendered by default: the top of the
+  // board and, for an agent, the rows around their own place in it. The
+  // table already scrolls inside a twenty-row box, yet every visit was
+  // rendering and shipping all six-hundred-odd rows through it — the
+  // single largest response in the app (80 kB and 1.5 s from a Philippine
+  // desk, measured) for a box that shows twenty. "Show everyone" is one
+  // click away and keeps the same period.
+  const showAll = params.all === "1";
+  const orgShown = showAll ? ranks.org : abridge(ranks.org, ORG_ROWS_SHOWN, mine?.rank);
+  const showAllHref = `/stack-rank?${new URLSearchParams({ granularity, period: period.start, all: "1" })}`;
 
   return (
     <>
@@ -165,13 +181,28 @@ export default async function StackRankPage({
           <CardHeader
             title="Whole organization"
             subtitle={
-              mine && mine.productionRate !== null
-                ? `${scored} of ${ranks.org.length} scored · you are ${mine.rank}, scroll to find yourself`
-                : `${scored} of ${ranks.org.length} people scored this period`
+              showAll || orgShown.length === ranks.org.length
+                ? mine && mine.productionRate !== null
+                  ? `${scored} of ${ranks.org.length} scored · you are ${mine.rank}, scroll to find yourself`
+                  : `${scored} of ${ranks.org.length} people scored this period`
+                : mine
+                  ? `Top ${ORG_ROWS_SHOWN} of ${ranks.org.length}, and the rows around you at ${mine.rank} · ${scored} scored`
+                  : `Top ${ORG_ROWS_SHOWN} of ${ranks.org.length} · ${scored} scored this period`
+            }
+            action={
+              !showAll && orgShown.length < ranks.org.length ? (
+                <NavLink
+                  href={showAllHref}
+                  prefetch={false}
+                  className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  Show all {ranks.org.length}
+                </NavLink>
+              ) : undefined
             }
           />
           <RankTable
-            rows={ranks.org}
+            rows={orgShown}
             selfId={employee?.id ?? null}
             showSupervisor
             visibleRows={20}

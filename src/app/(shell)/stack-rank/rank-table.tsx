@@ -3,6 +3,25 @@ import { EmptyState } from "@/components/ui";
 import type { RankRow, SupervisorRankRow } from "@/lib/queries/stack-rank";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
+
+/** How many rows either side of the viewer's own to keep when abridging. */
+const NEIGHBOURS = 3;
+
+/**
+ * The rows worth rendering of a long ranking: the top `top`, plus a window
+ * around the viewer's own rank when it falls below that. Ranks are kept as
+ * computed, so the gap between the two blocks is visible as a jump in the
+ * rank column rather than hidden. Pure, so the exact cut can be tested.
+ */
+export function abridge<T extends { rank: number }>(rows: T[], top: number, selfRank?: number): T[] {
+  if (rows.length <= top) return rows;
+  const keep = new Set<number>();
+  for (let rank = 1; rank <= top; rank++) keep.add(rank);
+  if (selfRank !== undefined) {
+    for (let rank = selfRank - NEIGHBOURS; rank <= selfRank + NEIGHBOURS; rank++) keep.add(rank);
+  }
+  return rows.filter((row) => keep.has(row.rank));
+}
 const NUM = "px-3 py-2.5 font-mono tabular-nums";
 
 function rate(value: number | null, digits = 3) {
