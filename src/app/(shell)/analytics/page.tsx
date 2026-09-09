@@ -697,6 +697,7 @@ export default async function AnalyticsPage({
               <Link
                 key={t.key}
                 href={withParams(params, { tab: t.key === "overview" ? undefined : t.key })}
+                prefetch={false}
                 className={`-mb-0.5 border-b-2 px-5 py-3 text-xs font-bold tracking-[0.08em] uppercase transition ${
                   tab === t.key
                     ? "border-ink bg-ink text-cream"
@@ -710,7 +711,7 @@ export default async function AnalyticsPage({
           <div className="flex items-center gap-2 pb-2.5">
             <span className="text-[11px] font-bold tracking-[0.08em] text-muted uppercase">Period</span>
             {priorPeriod ? (
-              <Link href={withParams(params, { period: priorPeriod.start })} className={`${tabControl} hover:bg-orange-brand-100`}>
+              <Link href={withParams(params, { period: priorPeriod.start })} prefetch={false} className={`${tabControl} hover:bg-orange-brand-100`}>
                 ‹
               </Link>
             ) : (
@@ -718,7 +719,7 @@ export default async function AnalyticsPage({
             )}
             <div className={`${tabControl} min-w-[150px]`}>{period.label}</div>
             {nextPeriod ? (
-              <Link href={withParams(params, { period: nextPeriod.start })} className={`${tabControl} hover:bg-orange-brand-100`}>
+              <Link href={withParams(params, { period: nextPeriod.start })} prefetch={false} className={`${tabControl} hover:bg-orange-brand-100`}>
                 ›
               </Link>
             ) : (
@@ -780,7 +781,7 @@ export default async function AnalyticsPage({
                     ))}
                     <p className="pt-3 text-xs text-muted">
                       Full breakdown under{" "}
-                      <Link href={withParams(params, { tab: "teams" })} className="font-bold underline underline-offset-4">
+                      <Link href={withParams(params, { tab: "teams" })} prefetch={false} className="font-bold underline underline-offset-4">
                         Teams
                       </Link>
                       .
@@ -828,6 +829,7 @@ export default async function AnalyticsPage({
                 <Link
                   key={o.key}
                   href={withParams(params, { sort: o.key === "pass" ? undefined : o.key })}
+                  prefetch={false}
                   className={`border-2 border-ink px-3 py-1.5 text-xs font-bold ${
                     sort === o.key ? "bg-ink text-cream" : "bg-surface text-ink hover:bg-orange-brand-100"
                   }`}

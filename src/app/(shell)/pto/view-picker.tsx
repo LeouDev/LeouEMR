@@ -19,6 +19,7 @@ export function ViewPicker({ month, view }: { month: string; view: "team" | "clu
         <Link
           key={tab.key}
           href={`/pto?${new URLSearchParams({ month, view: tab.key })}`}
+          prefetch={false}
           className={`px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase ${
             i > 0 ? "border-l-2 border-ink" : ""
           } ${view === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}

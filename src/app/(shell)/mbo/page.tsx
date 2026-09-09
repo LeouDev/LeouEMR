@@ -150,6 +150,7 @@ export default async function MboPage({
                   <Link
                     key={tab.key}
                     href={query(tab.key)}
+                    prefetch={false}
                     className={`px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase ${
                       i > 0 ? "border-l-2 border-ink" : ""
                     } ${status === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}

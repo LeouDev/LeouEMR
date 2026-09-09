@@ -173,6 +173,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
           <div className="flex shrink-0 items-center gap-2">
             <Link
               href="/notifications"
+              prefetch={false}
               aria-label={`Notifications${unread.n > 0 ? `, ${unread.n} unread` : ""}`}
               className="relative border-2 border-navy-500 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cream uppercase transition hover:border-orange-brand hover:text-orange-brand"
             >
