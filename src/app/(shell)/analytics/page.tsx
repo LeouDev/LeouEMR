@@ -506,38 +506,19 @@ export default async function AnalyticsPage({
   // queries stuck in `ClientRead` for 60s+ after exactly that happened.
   // Running one at a time costs some wall-clock time but never exceeds what
   // a single heavy call already needs on its own.
-  const __t = (label: string, start: number) => console.log(`[perf] ${label}: ${Date.now() - start}ms`);
-  let __s = Date.now();
   const mboCurrent = await getMboOverview({ weekFrom: period.start, weekTo: period.end });
-  __t("mboCurrent", __s);
-  __s = Date.now();
   const mboPrior: MboOverview | null = priorPeriod
     ? await getMboOverview({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
     : null;
-  __t("mboPrior", __s);
-  __s = Date.now();
   const analyticsCurrent = await getAnalytics({ weekFrom: period.start, weekTo: period.end });
-  __t("analyticsCurrent", __s);
-  __s = Date.now();
   const analyticsPrior: AnalyticsSnapshot | null = priorPeriod
     ? await getAnalytics({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
     : null;
-  __t("analyticsPrior", __s);
-  __s = Date.now();
   const skillMetrics = await getSkillMetricsBySupervisor(period);
-  __t("skillMetrics", __s);
-  __s = Date.now();
   const skillMetricsPrior: SkillSupervisorRow[] = priorPeriod ? await getSkillMetricsBySupervisor(priorPeriod) : [];
-  __t("skillMetricsPrior", __s);
-  __s = Date.now();
   const criticalTrend = await getCriticalErrorsTrendBySupervisor(trendBuckets);
-  __t("criticalTrend", __s);
-  __s = Date.now();
   const ewsCurrent = await getEwsRiskCounts(period);
-  __t("ewsCurrent", __s);
-  __s = Date.now();
   const ewsPrior = priorPeriod ? await getEwsRiskCounts(priorPeriod) : null;
-  __t("ewsPrior", __s);
 
   // The trend line (Overview) and the early-warning signals (Risks) are the
   // only things that need MBO history beyond the current and prior period —
