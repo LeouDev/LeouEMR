@@ -44,8 +44,21 @@ import { GranularitySelect } from "./granularity-select";
  */
 const TREND_BUCKETS = 6;
 
-/** Caps how many `getMboOverview` calls run at once for the trend buckets, so this page's own fan-out stays well inside the db client's pool (`src/lib/db/client.ts`), which is sized for the app's other pages. */
-const TREND_FETCH_CONCURRENCY = 3;
+/**
+ * Caps how many `getMboOverview` calls run at once for the trend buckets.
+ *
+ * `getMboOverview` and `getAnalytics` each run their OWN internal
+ * `Promise.all` of several queries (see `eligibleForPeriod` and the
+ * site/manager/supervisor breakdown in analytics.ts) — a single call can
+ * briefly hold 4-6 connections on its own. Running more than one of these
+ * heavy calls at a time multiplies that spike past the db client's pool
+ * size (`max: 8` in src/lib/db/client.ts) and wedges a connection against
+ * Supabase's transaction-mode pooler, which does not tolerate postgres-js
+ * pipelining beyond the pool — confirmed live via `pg_stat_activity` showing
+ * queries stuck in `ClientRead` for 60s+ after that happened. 1 keeps this
+ * page's own fan-out from ever exceeding what one heavy call already costs.
+ */
+const TREND_FETCH_CONCURRENCY = 1;
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const results: R[] = new Array(items.length);
@@ -481,22 +494,31 @@ export default async function AnalyticsPage({
     .slice()
     .reverse();
 
-  const [mboCurrent, mboPrior, analyticsCurrent, analyticsPrior, skillMetrics, skillMetricsPrior, criticalTrend, ewsCurrent, ewsPrior] =
-    await Promise.all([
-      getMboOverview({ weekFrom: period.start, weekTo: period.end }),
-      priorPeriod
-        ? getMboOverview({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
-        : Promise.resolve<MboOverview | null>(null),
-      getAnalytics({ weekFrom: period.start, weekTo: period.end }),
-      priorPeriod
-        ? getAnalytics({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
-        : Promise.resolve<AnalyticsSnapshot | null>(null),
-      getSkillMetricsBySupervisor(period),
-      priorPeriod ? getSkillMetricsBySupervisor(priorPeriod) : Promise.resolve<SkillSupervisorRow[]>([]),
-      getCriticalErrorsTrendBySupervisor(trendBuckets),
-      getEwsRiskCounts(period),
-      priorPeriod ? getEwsRiskCounts(priorPeriod) : Promise.resolve(null),
-    ]);
+  // Sequential, deliberately — not a Promise.all.
+  //
+  // getMboOverview and getAnalytics each run their OWN internal Promise.all
+  // of several queries (eligibleForPeriod, the site/manager/supervisor
+  // breakdown in analytics.ts) and can briefly hold 4-6 connections on
+  // their own. Running several of these at once — as this used to — spikes
+  // real concurrent demand well past the db client's pool size (`max: 8` in
+  // src/lib/db/client.ts), which wedges a connection against Supabase's
+  // transaction-mode pooler: confirmed live via `pg_stat_activity` showing
+  // queries stuck in `ClientRead` for 60s+ after exactly that happened.
+  // Running one at a time costs some wall-clock time but never exceeds what
+  // a single heavy call already needs on its own.
+  const mboCurrent = await getMboOverview({ weekFrom: period.start, weekTo: period.end });
+  const mboPrior: MboOverview | null = priorPeriod
+    ? await getMboOverview({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
+    : null;
+  const analyticsCurrent = await getAnalytics({ weekFrom: period.start, weekTo: period.end });
+  const analyticsPrior: AnalyticsSnapshot | null = priorPeriod
+    ? await getAnalytics({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
+    : null;
+  const skillMetrics = await getSkillMetricsBySupervisor(period);
+  const skillMetricsPrior: SkillSupervisorRow[] = priorPeriod ? await getSkillMetricsBySupervisor(priorPeriod) : [];
+  const criticalTrend = await getCriticalErrorsTrendBySupervisor(trendBuckets);
+  const ewsCurrent = await getEwsRiskCounts(period);
+  const ewsPrior = priorPeriod ? await getEwsRiskCounts(priorPeriod) : null;
 
   // The trend line (Overview) and the early-warning signals (Risks) are the
   // only things that need MBO history beyond the current and prior period —
