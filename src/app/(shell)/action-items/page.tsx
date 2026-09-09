@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand, StatusBadge, formatWeek } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getActionItems } from "@/lib/queries/performance";
+import { getActionItems, getScopedEmployeeName } from "@/lib/queries/performance";
 
 export default async function ActionItemsPage({
   searchParams,
@@ -15,10 +15,17 @@ export default async function ActionItemsPage({
 
   const params = await searchParams;
   const openOnly = params.all !== "1";
-  const items = await getActionItems(user, { openOnly, employeeId: params.employee });
-  // Scope already filtered the query; the employee's name just comes along
-  // for the ride on whichever row matched, rather than a second lookup.
-  const filteredEmployeeName = params.employee ? (items[0]?.employeeName ?? "this employee") : null;
+  // The filtered person's name is looked up alongside the list rather than
+  // taken off its first row: an employee with no open items — the common
+  // case when arriving from a roster link — used to be labelled "this
+  // employee", which told the reader nothing about whose empty list this was.
+  // Scoped the same way the list is, so the name of someone outside the
+  // caller's span is never revealed by guessing an id.
+  const [items, filteredEmployee] = await Promise.all([
+    getActionItems(user, { openOnly, employeeId: params.employee }),
+    params.employee ? getScopedEmployeeName(user, params.employee) : Promise.resolve(null),
+  ]);
+  const filteredEmployeeName = params.employee ? (filteredEmployee ?? "this employee") : null;
 
   return (
     <>

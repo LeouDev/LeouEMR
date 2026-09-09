@@ -89,23 +89,30 @@ export async function getStackRanks(
   // organization-wide — a stack rank that hid your peers could not tell you
   // where you stand — but quality and attendance are personnel matters, not
   // ranking inputs, so they are shown only for the viewer's own scope.
-  const visible = new Set(await resolveScopedIds(viewer));
+  //
   // Ranked against the team that actually ran the period — whoever held
   // each person for the most days of it. Ranking August by today's
   // structure would put people in a team they were not on, and a single
   // end-date snapshot would move a supervisor's whole result to whoever
   // inherited their reports on the period's very last day.
+  //
+  // The viewer's scope and the period roster do not depend on each other,
+  // so they are read together rather than one after the other.
   const owner = periodOwnerSubquery(period);
-  const everyone = await db
-    .select({
-      id: employees.id,
-      eid: employees.eid,
-      name: employees.name,
-      site: siteOfRecord(owner),
-      supervisorName: supervisorOfRecord(owner),
-    })
-    .from(employees)
-    .leftJoin(owner, joinPeriodOwner(owner));
+  const [visibleIds, everyone] = await Promise.all([
+    resolveScopedIds(viewer),
+    db
+      .select({
+        id: employees.id,
+        eid: employees.eid,
+        name: employees.name,
+        site: siteOfRecord(owner),
+        supervisorName: supervisorOfRecord(owner),
+      })
+      .from(employees)
+      .leftJoin(owner, joinPeriodOwner(owner)),
+  ]);
+  const visible = new Set(visibleIds);
 
   // Who counted for THIS period, not who is employed today. Filtering on the
   // live status would drop everyone who has since left out of every past

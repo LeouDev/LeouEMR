@@ -79,19 +79,23 @@ export default async function PtoPage({
   // Two scopes on purpose: `calendarIds` is who you may *see* out, which for
   // an agent is their team; `decidableIds` is who you may act on, which stays
   // exactly the performance scope. A wider view must never widen authority.
-  const [calendarIds, decidableIds, leaderIds, clusterAvailable] = await Promise.all([
+  //
+  // Everything a later query needs is resolved in one batch here, and the
+  // three request lists below are then fetched together as well — this page
+  // used to walk six dependent round trips in a row (scope, then the
+  // supervisors over it, then your own employee row, then the month, then
+  // the pending queue, then your history), most of which never depended on
+  // the one before. Nothing here fans out beyond a handful of small
+  // queries at once, well inside the db client's pool.
+  const [calendarIds, decidableIds, leaderIds, clusterAvailable, [ownEmployee]] = await Promise.all([
     ptoViewIds(user, view),
     canDecide ? resolveScopedIds(user) : Promise.resolve([]),
     canDecide ? decidableLeaderIds(user) : Promise.resolve([]),
     hasCluster(user),
+    user.employeeEid
+      ? db.select({ id: employees.id }).from(employees).where(eq(employees.eid, user.employeeEid)).limit(1)
+      : Promise.resolve([undefined] as [undefined]),
   ]);
-
-  // Your own account always counts, so your own request shows on your calendar.
-  const leaderVisibleIds = [...new Set([user.id, ...(await leaderAccountsOver(calendarIds))])];
-
-  const [ownEmployee] = user.employeeEid
-    ? await db.select({ id: employees.id }).from(employees).where(eq(employees.eid, user.employeeEid)).limit(1)
-    : [undefined];
 
   const base = {
     id: ptoRequests.id,
@@ -108,9 +112,16 @@ export default async function PtoPage({
     decisionNote: ptoRequests.decisionNote,
   };
 
+  // The supervisors over the visible people, then the three lists that
+  // depend only on what is already known: the calendar month (needs those
+  // supervisors), the pending queue, and your own history.
+  const leadersOver = await leaderAccountsOver(calendarIds);
+  // Your own account always counts, so your own request shows on your calendar.
+  const leaderVisibleIds = [...new Set([user.id, ...leadersOver])];
+
   // Everything overlapping the visible month, for the calendar.
-  const inMonth = calendarIds.length
-    ? await db
+  const inMonthQuery = calendarIds.length
+    ? db
         .select(base)
         .from(ptoRequests)
         .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
@@ -132,10 +143,10 @@ export default async function PtoPage({
           ),
         )
         .orderBy(asc(ptoRequests.startDate))
-    : [];
+    : Promise.resolve([]);
 
-  const pending = canDecide && (decidableIds.length || leaderIds.length)
-    ? await db
+  const pendingQuery = canDecide && (decidableIds.length || leaderIds.length)
+    ? db
         .select(base)
         .from(ptoRequests)
         .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
@@ -153,11 +164,11 @@ export default async function PtoPage({
           ),
         )
         .orderBy(asc(ptoRequests.startDate))
-    : [];
+    : Promise.resolve([]);
 
   // Own history is keyed on the employee row for an agent and on the account
   // for a leader, who has none.
-  const mine = await db
+  const mineQuery = db
     .select(base)
     .from(ptoRequests)
     .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
@@ -169,6 +180,8 @@ export default async function PtoPage({
     )
     .orderBy(desc(ptoRequests.startDate))
     .limit(50);
+
+  const [inMonth, pending, mine] = await Promise.all([inMonthQuery, pendingQuery, mineQuery]);
 
   // Approved days per person in the visible month, for the calendar cells.
   const byDay = new Map<string, Array<{ name: string; status: string; type: string | null }>>();

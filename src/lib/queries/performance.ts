@@ -633,7 +633,26 @@ export async function getEmployeeMatrix(
   // the plan showed an empty Cases Per Hour row instead. Scored against the
   // agent's own skill mix: the weight those skills expected of the cases
   // actually worked.
-  const caseRates = await getCaseRateByWeek(employeeId, weeks);
+  //
+  // Read alongside the issue history and notes below: all three depend only
+  // on what the first batch returned (the weeks, the issue ids), not on each
+  // other, so this used to be a whole extra round trip between them for
+  // nothing.
+  const [caseRates, historyRows, noteRows] = await Promise.all([
+    getCaseRateByWeek(employeeId, weeks),
+    issueRows.length
+      ? db
+          .select()
+          .from(weeklyIssueHistory)
+          .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId)))
+      : Promise.resolve([]),
+    issueRows.length
+      ? db
+          .select({ actionItemId: rcaNotes.actionItemId, week: rcaNotes.week })
+          .from(rcaNotes)
+          .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId)))
+      : Promise.resolve([]),
+  ]);
   if (caseRates.size > 0) {
     kpiOrder.set("CASE_RATE", {
       code: "CASE_RATE",
@@ -649,20 +668,6 @@ export async function getEmployeeMatrix(
       });
     }
   }
-
-  // Both of these depend only on issueRows, not on each other.
-  const [historyRows, noteRows] = issueRows.length
-    ? await Promise.all([
-        db
-          .select()
-          .from(weeklyIssueHistory)
-          .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId))),
-        db
-          .select({ actionItemId: rcaNotes.actionItemId, week: rcaNotes.week })
-          .from(rcaNotes)
-          .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId))),
-      ])
-    : [[], []];
 
   return {
     employee,
@@ -693,6 +698,22 @@ export async function getEmployeeMatrix(
   };
 }
 
+
+/**
+ * One employee's display name, or null when they are outside the caller's
+ * scope — the same rule the list and detail queries apply, so a filtered
+ * list can be captioned with a name without a separate way to probe one.
+ */
+export async function getScopedEmployeeName(user: CurrentUser, employeeId: string): Promise<string | null> {
+  const scope = employeeScope(user);
+  if (scope === null) return null;
+  const [row] = await db
+    .select({ name: employees.name })
+    .from(employees)
+    .where(and(eq(employees.id, employeeId), scope === "all" ? undefined : scope))
+    .limit(1);
+  return row?.name ?? null;
+}
 
 /** Employee ids the caller may see — exported for period-based views. */
 export async function getScopedEmployeeIds(user: CurrentUser): Promise<string[] | "all" | null> {

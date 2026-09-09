@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   kpiDefinitions,
@@ -60,6 +60,7 @@ async function applyAndReplay(
     .where(and(eq(weeklyMetricResults.employeeId, employeeId), eq(weeklyMetricResults.kpiId, kpiId)));
 
   const affectedWeeks = new Set<string>();
+  const changes: Array<{ id: string; target: number; status: "pass" | "warning" | "fail" }> = [];
   for (const row of rows) {
     const target = resolveTarget(row.weekStart);
     if (target === undefined || target === row.targetValue) continue;
@@ -70,11 +71,28 @@ async function applyAndReplay(
       | "warning"
       | "fail";
 
-    await db
-      .update(weeklyMetricResults)
-      .set({ targetValue: target, status })
-      .where(eq(weeklyMetricResults.id, row.id));
+    changes.push({ id: row.id, target, status });
     affectedWeeks.add(row.weekStart);
+  }
+
+  // One statement for every changed week rather than one round trip per
+  // row. This runs on the "Start ramp" click, after weeks of data may
+  // already be imported: a new hire eight weeks in used to pay eight
+  // sequential UPDATEs to a remote pooled database before the button
+  // came back, each one a full round trip. Same VALUES-join shape as
+  // applyUpdates in the action-item engine.
+  if (changes.length > 0) {
+    const values = sql.join(
+      changes.map((c) => sql`(${c.id}::uuid, ${c.target}::numeric, ${c.status}::kpi_status)`),
+      sql`, `,
+    );
+    await db.execute(sql`
+      update ${weeklyMetricResults} as w set
+        target_value = v.target_value,
+        status = v.status
+      from (values ${values}) as v(id, target_value, status)
+      where w.id = v.id
+    `);
   }
 
   if (affectedWeeks.size > 0) {

@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
@@ -24,6 +24,7 @@ export default async function TwoOhOneFilePage() {
   if (scope === null) {
     return (
       <>
+        <PageBand title="201 file" subtitle="Personnel details for your direct reports" />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <Card>
             <EmptyState
@@ -38,7 +39,9 @@ export default async function TwoOhOneFilePage() {
 
   // Direct reports come from the imported hierarchy; their personnel
   // details come from the profile captured at sign-up, which only exists
-  // once that person has an account.
+  // once that person has an account — hence the LEFT join: one read that
+  // carries both, instead of the roster first and then a second round trip
+  // for the profiles of whoever was in it.
   const reports = await db
     .select({
       id: employees.id,
@@ -47,39 +50,34 @@ export default async function TwoOhOneFilePage() {
       site: employees.site,
       supervisorName: employees.supervisorName,
       managerName: employees.managerName,
+      profile: {
+        employeeEid: employeeProfiles.employeeEid,
+        msid: employeeProfiles.msid,
+        lastName: employeeProfiles.lastName,
+        firstName: employeeProfiles.firstName,
+        middleName: employeeProfiles.middleName,
+        position: employeeProfiles.position,
+        addressLine1: employeeProfiles.addressLine1,
+        addressLine2: employeeProfiles.addressLine2,
+        cityProvince: employeeProfiles.cityProvince,
+        country: employeeProfiles.country,
+        zipcode: employeeProfiles.zipcode,
+        phoneNumber: employeeProfiles.phoneNumber,
+        emergencyContactName: employeeProfiles.emergencyContactName,
+        emergencyContactNumber: employeeProfiles.emergencyContactNumber,
+        emergencyContactRelationship: employeeProfiles.emergencyContactRelationship,
+        email: users.email,
+      },
     })
     .from(employees)
+    .leftJoin(employeeProfiles, eq(employeeProfiles.employeeEid, employees.eid))
+    .leftJoin(users, eq(users.id, employeeProfiles.userId))
     .where(scope === "all" ? undefined : scope)
     .orderBy(asc(employees.name));
 
-  const eids = reports.map((r) => r.eid);
-  const profiles = eids.length
-    ? await db
-        .select({
-          employeeEid: employeeProfiles.employeeEid,
-          msid: employeeProfiles.msid,
-          lastName: employeeProfiles.lastName,
-          firstName: employeeProfiles.firstName,
-          middleName: employeeProfiles.middleName,
-          position: employeeProfiles.position,
-          addressLine1: employeeProfiles.addressLine1,
-          addressLine2: employeeProfiles.addressLine2,
-          cityProvince: employeeProfiles.cityProvince,
-          country: employeeProfiles.country,
-          zipcode: employeeProfiles.zipcode,
-          phoneNumber: employeeProfiles.phoneNumber,
-          emergencyContactName: employeeProfiles.emergencyContactName,
-          emergencyContactNumber: employeeProfiles.emergencyContactNumber,
-          emergencyContactRelationship: employeeProfiles.emergencyContactRelationship,
-          email: users.email,
-        })
-        .from(employeeProfiles)
-        .innerJoin(users, eq(users.id, employeeProfiles.userId))
-        .where(inArray(employeeProfiles.employeeEid, eids))
-    : [];
-
-  const byEid = new Map(profiles.map((p) => [p.employeeEid, p]));
-  const withProfile = reports.filter((r) => byEid.has(r.eid));
+  // Drizzle nulls the whole nested object when the LEFT join found no
+  // profile row, which is exactly "has not registered yet".
+  const withProfile = reports.filter((r) => r.profile !== null);
   const withoutProfile = reports.length - withProfile.length;
 
   return (
@@ -132,7 +130,7 @@ export default async function TwoOhOneFilePage() {
                 </thead>
                 <tbody>
                   {withProfile.map((report) => {
-                    const p = byEid.get(report.eid)!;
+                    const p = report.profile!;
                     const address = [
                       p.addressLine1,
                       p.addressLine2,
