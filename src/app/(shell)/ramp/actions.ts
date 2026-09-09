@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canManageActionItems, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { auditLog, employeeRampAssignments, employees } from "@/lib/db/schema";
 import { periodContaining } from "@/lib/queries/period";
@@ -85,6 +86,10 @@ export async function setRampAssignment(input: unknown): Promise<RampResult> {
     rampStartWeek,
   );
 
+  // The ramp targets themselves, and every weekly result the reapply above
+  // just rewrote with a new target.
+  invalidateCache(CACHE_TAG.ramp, CACHE_TAG.imports);
+
   await db.insert(auditLog).values({
     actorId: user.id,
     action: "ramp.set",
@@ -130,6 +135,8 @@ export async function clearRampAssignment(input: unknown): Promise<RampResult> {
         eq(employeeRampAssignments.skillReferenceId, parsed.data.skillReferenceId),
       ),
     );
+
+  invalidateCache(CACHE_TAG.ramp, CACHE_TAG.imports);
 
   await db.insert(auditLog).values({
     actorId: user.id,

@@ -460,6 +460,15 @@ img:not([data-keep-color]) {
   animation: page-fade-in 180ms ease-out;
 }
 
+/* The navigation progress bar under the header: an indeterminate sweep. */
+@keyframes nav-progress {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.animate-nav-progress {
+  animation: nav-progress 1.1s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fade-up,
   .page-transition,

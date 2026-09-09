@@ -1,7 +1,8 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { useNavigation } from "@/components/navigation-progress";
 
 const control =
   "border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition";
@@ -15,7 +16,7 @@ export function RosterFilters({
   sites: string[];
   initial: { q: string; supervisor: string; site: string; risk: string; standing: string };
 }) {
-  const router = useRouter();
+  const { navigate, pending } = useNavigation();
   const searchParams = useSearchParams();
   const [values, setValues] = useState(initial);
 
@@ -35,7 +36,7 @@ export function RosterFilters({
       else params.delete(key);
     }
 
-    router.push(`/employees?${params.toString()}`);
+    navigate(`/employees?${params.toString()}`);
   }
 
   const active = Object.values(values).some(Boolean);
@@ -46,7 +47,10 @@ export function RosterFilters({
         e.preventDefault();
         apply(values);
       }}
-      className="flex flex-wrap items-end gap-3 border-2 border-ink bg-surface p-4"
+      aria-busy={pending}
+      className={`flex flex-wrap items-end gap-3 border-2 border-ink bg-surface p-4 transition-opacity ${
+        pending ? "opacity-60" : ""
+      }`}
     >
       <label className="min-w-56 flex-1">
         <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">Search</span>
@@ -120,11 +124,8 @@ export function RosterFilters({
         </select>
       </label>
 
-      <button
-        type="submit"
-        className="btn-primary px-5 py-3 text-sm"
-      >
-        Search
+      <button type="submit" disabled={pending} className="btn-primary px-5 py-3 text-sm">
+        {pending ? "Searching…" : "Search"}
       </button>
 
       {active && (

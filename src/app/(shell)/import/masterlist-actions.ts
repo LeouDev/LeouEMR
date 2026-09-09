@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db/client";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { importBatches } from "@/lib/db/schema";
 import { commitMasterlist, diffMasterlist, resolveMasterlistMonth } from "@/lib/import-pipeline/masterlist-commit";
 import { parseMasterlistBuffer, type MasterlistParseResult } from "@/lib/import-pipeline/masterlist";
@@ -113,6 +114,9 @@ export async function runMasterlistImport(
       .update(importBatches)
       .set({ status: "committed", rowCounts: { agents: summary.agentsWritten, attrited: summary.attritedClosed.length } })
       .where(eq(importBatches.id, batch.id));
+    // Assignments feed the period-owner roll-ups, which read alongside the
+    // cached aggregates; evicting the import tag keeps the two in step.
+    invalidateCache(CACHE_TAG.imports);
     revalidatePath("/import");
     revalidatePath("/dashboard");
     revalidatePath("/analytics");

@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { auditLog, skillReferences } from "@/lib/db/schema";
 
@@ -62,6 +63,8 @@ export async function updateSkillTarget(input: {
     after: { target: after.target },
   });
 
+  // A target is scoring configuration: every cached rating built on it goes.
+  invalidateCache(CACHE_TAG.reference);
   revalidatePath("/skills");
   return { ok: true, target: after.target };
 }

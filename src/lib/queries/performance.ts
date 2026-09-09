@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   actionItems,
@@ -55,10 +56,11 @@ export const OPEN_STATUSES = [
  */
 export const SUSTAINED_PASS_WEEKS = 8;
 
-export async function getLatestWeek(): Promise<string | null> {
+/** The newest reporting week in the ledger. Changes only on import. */
+export const getLatestWeek = cachedRead("latest-week", [CACHE_TAG.imports], async (): Promise<string | null> => {
   const [row] = await db.select({ week: max(weeklyMetricResults.weekStart) }).from(weeklyMetricResults);
   return row?.week ?? null;
-}
+});
 
 /**
  * The newest reporting week this user actually has results for.
@@ -530,14 +532,19 @@ export async function getEmployeeWeek(user: CurrentUser, employeeId: string, wee
   return { employee, metrics, priorByKpi, actionItems: items };
 }
 
-/** Distinct weeks present in the ledger, newest first. */
-export async function getAvailableWeeks(): Promise<string[]> {
+/**
+ * Distinct weeks present in the ledger, newest first.
+ *
+ * A DISTINCT over the whole ledger, read by the Dashboard, Employees and
+ * every employee page; the list changes only when a week is imported.
+ */
+export const getAvailableWeeks = cachedRead("available-weeks", [CACHE_TAG.imports], async (): Promise<string[]> => {
   const rows = await db
     .selectDistinct({ week: weeklyMetricResults.weekStart })
     .from(weeklyMetricResults)
     .orderBy(desc(weeklyMetricResults.weekStart));
   return rows.map((r) => r.week);
-}
+});
 
 export interface MatrixCell {
   actualValue: number;

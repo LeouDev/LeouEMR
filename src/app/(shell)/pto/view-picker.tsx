@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavLink } from "@/components/nav-link";
 
 const TABS = [
   { key: "team", label: "My team" },
@@ -16,7 +16,7 @@ export function ViewPicker({ month, view }: { month: string; view: "team" | "clu
   return (
     <div className="flex border-2 border-ink">
       {TABS.map((tab, i) => (
-        <Link
+        <NavLink
           key={tab.key}
           href={`/pto?${new URLSearchParams({ month, view: tab.key })}`}
           prefetch={false}
@@ -25,7 +25,7 @@ export function ViewPicker({ month, view }: { month: string; view: "team" | "clu
           } ${view === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
         >
           {tab.label}
-        </Link>
+        </NavLink>
       ))}
     </div>
   );

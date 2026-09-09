@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
+import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   employees,
@@ -199,58 +200,50 @@ export async function hasReportableData(
   period: Period,
 ): Promise<Set<string>> {
   if (employeeIds.length === 0) return new Set();
-
-  const [attendanceKpi] = await db
-    .select({ id: kpiDefinitions.id })
-    .from(kpiDefinitions)
-    .where(eq(kpiDefinitions.code, "ATTENDANCE"))
-    .limit(1);
-
-  const [skillRows, qualityRows, npsRows, metricRows] = await Promise.all([
-    db
-      .selectDistinct({ id: skillFacts.employeeId })
-      .from(skillFacts)
-      .where(
-        and(
-          inArray(skillFacts.employeeId, employeeIds),
-          gte(skillFacts.factDate, period.start),
-          lte(skillFacts.factDate, period.end),
-        ),
-      ),
-    db
-      .selectDistinct({ id: qualityFacts.employeeId })
-      .from(qualityFacts)
-      .where(
-        and(
-          inArray(qualityFacts.employeeId, employeeIds),
-          gte(qualityFacts.factDate, period.start),
-          lte(qualityFacts.factDate, period.end),
-        ),
-      ),
-    db
-      .selectDistinct({ id: npsFacts.employeeId })
-      .from(npsFacts)
-      .where(
-        and(
-          inArray(npsFacts.employeeId, employeeIds),
-          gte(npsFacts.factDate, period.start),
-          lte(npsFacts.factDate, period.end),
-        ),
-      ),
-    db
-      .selectDistinct({ id: metricFacts.employeeId })
-      .from(metricFacts)
-      .where(
-        and(
-          inArray(metricFacts.employeeId, employeeIds),
-          gte(metricFacts.factDate, period.start),
-          lte(metricFacts.factDate, period.end),
-          attendanceKpi ? ne(metricFacts.kpiId, attendanceKpi.id) : undefined,
-        ),
-      ),
-  ]);
-
-  const reporting = new Set<string>();
-  for (const row of [...skillRows, ...qualityRows, ...npsRows, ...metricRows]) reporting.add(row.id);
-  return reporting;
+  // Organisation-wide per period and cached (five reads across four fact
+  // tables), then narrowed here: the answer for one person does not depend
+  // on who else is being asked about, and it changes only on import.
+  const reporting = new Set(await readReportingEmployeeIds(period.start, period.end));
+  return new Set(employeeIds.filter((id) => reporting.has(id)));
 }
+
+const readReportingEmployeeIds = cachedRead(
+  "reporting-employees",
+  [CACHE_TAG.imports],
+  async (start: string, end: string): Promise<string[]> => {
+    const [attendanceKpi] = await db
+      .select({ id: kpiDefinitions.id })
+      .from(kpiDefinitions)
+      .where(eq(kpiDefinitions.code, "ATTENDANCE"))
+      .limit(1);
+
+    const [skillRows, qualityRows, npsRows, metricRows] = await Promise.all([
+      db
+        .selectDistinct({ id: skillFacts.employeeId })
+        .from(skillFacts)
+        .where(and(gte(skillFacts.factDate, start), lte(skillFacts.factDate, end))),
+      db
+        .selectDistinct({ id: qualityFacts.employeeId })
+        .from(qualityFacts)
+        .where(and(gte(qualityFacts.factDate, start), lte(qualityFacts.factDate, end))),
+      db
+        .selectDistinct({ id: npsFacts.employeeId })
+        .from(npsFacts)
+        .where(and(gte(npsFacts.factDate, start), lte(npsFacts.factDate, end))),
+      db
+        .selectDistinct({ id: metricFacts.employeeId })
+        .from(metricFacts)
+        .where(
+          and(
+            gte(metricFacts.factDate, start),
+            lte(metricFacts.factDate, end),
+            attendanceKpi ? ne(metricFacts.kpiId, attendanceKpi.id) : undefined,
+          ),
+        ),
+    ]);
+
+    const reporting = new Set<string>();
+    for (const row of [...skillRows, ...qualityRows, ...npsRows, ...metricRows]) reporting.add(row.id);
+    return [...reporting];
+  },
+);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useNavigation } from "@/components/navigation-progress";
 import {
   GRANULARITIES,
   GRANULARITY_LABELS,
@@ -47,7 +47,12 @@ export function PeriodPicker({
   selected: Period;
   extraParams?: Record<string, string | undefined>;
 }) {
-  const router = useRouter();
+  // Shared with the header's progress bar, so picking a period lights the
+  // bar and greys these controls at once — a period change re-aggregates
+  // the whole period on the server, and this was the one control in the
+  // app that gave no sign it had heard the click until the page replaced
+  // itself.
+  const { navigate, pending } = useNavigation();
 
   function urlFor(next: { granularity?: Granularity; start?: string }) {
     const params = new URLSearchParams();
@@ -64,16 +69,17 @@ export function PeriodPicker({
 
   function go(next: { granularity?: Granularity; start?: string }) {
     remember(next.granularity ?? granularity, next.start);
-    router.push(urlFor(next));
+    navigate(urlFor(next));
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className={`flex flex-wrap items-center gap-3 transition-opacity ${pending ? "opacity-60" : ""}`} aria-busy={pending}>
       <div className="flex border-2 border-ink bg-surface p-0.5">
         {GRANULARITIES.map((option) => (
           <button
             key={option}
             type="button"
+            disabled={pending}
             onClick={() => go({ granularity: option })}
             aria-pressed={option === granularity}
             className={`px-2.5 py-1 text-xs font-medium transition ${option === granularity ? "bg-ink text-white" : "text-ink hover:bg-orange-brand-100"
@@ -86,6 +92,7 @@ export function PeriodPicker({
 
       <select
         value={selected.start}
+        disabled={pending}
         onChange={(e) => go({ start: e.target.value })}
         aria-label={`${GRANULARITY_LABELS[granularity]} to show`}
         className="border-2 border-ink bg-surface px-3 py-1.5 text-sm text-ink outline-none transition"
@@ -97,10 +104,12 @@ export function PeriodPicker({
         ))}
       </select>
 
-      <span className="text-xs text-muted">
-        {selected.start === selected.end
-          ? selected.start
-          : `${selected.start} to ${selected.end}`}
+      <span className="text-xs text-muted" role={pending ? "status" : undefined}>
+        {pending
+          ? "Loading…"
+          : selected.start === selected.end
+            ? selected.start
+            : `${selected.start} to ${selected.end}`}
       </span>
     </div>
   );

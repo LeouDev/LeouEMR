@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { NavLink } from "@/components/nav-link";
 import { PeriodPicker } from "@/components/period-picker";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -159,7 +160,7 @@ export default async function MboPage({
             action={
               <div className="flex border-2 border-ink">
                 {TABS.map((tab, i) => (
-                  <Link
+                  <NavLink
                     key={tab.key}
                     href={query(tab.key)}
                     prefetch={false}
@@ -168,7 +169,7 @@ export default async function MboPage({
                     } ${status === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
                   >
                     {tab.label}
-                  </Link>
+                  </NavLink>
                 ))}
               </div>
             }
