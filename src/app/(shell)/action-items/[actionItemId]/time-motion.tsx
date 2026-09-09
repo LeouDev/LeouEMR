@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DEFAULT_SEGMENTS, computeVarianceStatus } from "@/lib/time-motion/engine";
 import type { TimeMotionStatus } from "@/lib/time-motion/engine";
 import { saveTimeMotionStudy } from "../actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface TimeMotionSegmentRecord {
   code: string;
@@ -203,18 +204,25 @@ function LiveTimer({ actionItemId, onSaved }: { actionItemId: string; onSaved: (
   async function save() {
     setSaving(true);
     setError(null);
-    const result = await saveTimeMotionStudy({
-      actionItemId,
-      callReference,
-      remarks,
-      segments: segments.map((s) => ({
-        code: s.code,
-        label: s.label,
-        baselineSeconds: s.baselineSeconds,
-        actualSeconds: Math.round(s.actualSeconds ?? 0),
-      })),
-    });
-    setSaving(false);
+    let result;
+    try {
+      result = await saveTimeMotionStudy({
+        actionItemId,
+        callReference,
+        remarks,
+        segments: segments.map((s) => ({
+          code: s.code,
+          label: s.label,
+          baselineSeconds: s.baselineSeconds,
+          actualSeconds: Math.round(s.actualSeconds ?? 0),
+        })),
+      });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSaving(false);
+    }
     if (result.ok) {
       reset();
       onSaved();

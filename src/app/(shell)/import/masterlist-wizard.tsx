@@ -169,6 +169,13 @@ export function MasterlistWizard() {
             </p>
           )}
 
+          {busy === "importing" && (
+            <p role="status" className="bg-cream px-3 py-2 text-sm text-muted">
+              Importing — a large file can take a few minutes while every week is written and
+              re-evaluated. Keep this tab open; the summary appears here when it finishes.
+            </p>
+          )}
+
           <div className="flex flex-wrap gap-3">
             <button
               type="button"

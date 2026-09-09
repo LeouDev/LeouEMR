@@ -6,6 +6,7 @@ import { EwsRiskBadge } from "@/components/ui";
 import { computeEwsRisk, EWS_RISK_GUIDANCE } from "@/lib/ews/engine";
 import type { EwsAttrition } from "@/lib/ews/engine";
 import { saveEwsAssessment } from "./ews-actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface EwsIndicator {
   code: string;
@@ -66,8 +67,15 @@ export function EwsPanel({
     setError(null);
     setSaved(false);
 
-    const result = await saveEwsAssessment({ employeeId, week, ...values });
-    setSaving(false);
+    let result;
+    try {
+      result = await saveEwsAssessment({ employeeId, week, ...values });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       setSaved(true);

@@ -17,6 +17,18 @@ const TABS: Array<{ key: Filter; label: string }> = [
   { key: "unscored", label: "No score" },
 ];
 
+/**
+ * What an empty tab means, in words that read as a sentence. Derived from
+ * the tab label this used to say "No employee in your scope is everyone" and
+ * "…is no score", which are not sentences anyone would write.
+ */
+const EMPTY_BY_FILTER: Record<Filter, (period: string) => string> = {
+  all: (period) => `Nobody in your scope was measured in ${period}. Pick another period above, or check that this month's data has been imported.`,
+  fail: (period) => `Nobody in your scope failed MBO in ${period}.`,
+  pass: (period) => `Nobody in your scope passed MBO in ${period}.`,
+  unscored: (period) => `Everyone in your scope has an MBO score for ${period}.`,
+};
+
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
 function pct(value: number | null, digits = 1) {
@@ -164,8 +176,8 @@ export default async function MboPage({
 
           {shown.length === 0 ? (
             <EmptyState
-              title="Nobody in this group"
-              description={`No employee in your scope is ${TABS.find((t) => t.key === status)!.label.toLowerCase()} for ${period.label}.`}
+              title={status === "all" ? "No MBO data for this period" : "Nobody in this group"}
+              description={EMPTY_BY_FILTER[status](period.label)}
             />
           ) : (
             <div className="overflow-x-auto">

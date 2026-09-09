@@ -3,24 +3,40 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markAllRead } from "./actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export function MarkAllReadButton() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={async () => {
-        setBusy(true);
-        await markAllRead();
-        setBusy(false);
-        router.refresh();
-      }}
-      className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand disabled:opacity-50"
-    >
-      {busy ? "Marking…" : "Mark all read"}
-    </button>
+    <span className="inline-flex flex-col items-end gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(null);
+          try {
+            await markAllRead();
+          } catch (cause) {
+            setError(describeActionError(cause));
+            return;
+          } finally {
+            setBusy(false);
+          }
+          router.refresh();
+        }}
+        className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand disabled:opacity-50"
+      >
+        {busy ? "Marking…" : "Mark all read"}
+      </button>
+      {error && (
+        <span role="alert" className="text-xs text-fail">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }

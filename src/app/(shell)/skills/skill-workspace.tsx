@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { updateSkillTarget } from "./actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface SkillRow {
   id: string;
@@ -53,8 +54,16 @@ function TargetCell({
 
     setSaving(true);
     setError(null);
-    const result = await updateSkillTarget({ skillId: skill.id, target: parsed });
-    setSaving(false);
+    let result;
+    try {
+      result = await updateSkillTarget({ skillId: skill.id, target: parsed });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      setValue(String(skill.target));
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       onSaved(result.target);

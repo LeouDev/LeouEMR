@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { acknowledge, saveActionPlan, saveRca, sendToAgent } from "../actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 const field =
   "w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition";
@@ -79,8 +80,15 @@ export function RcaForm({
     setError(null);
     setSaved(null);
 
-    const result = await saveRca({ actionItemId, ...values });
-    setSaving(false);
+    let result;
+    try {
+      result = await saveRca({ actionItemId, ...values });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       setSaved("RCA saved");
@@ -208,19 +216,26 @@ export function ActionPlanForm({
     setError(null);
     setSaved(null);
 
-    const result = await saveActionPlan({
-      actionItemId,
-      correctiveAction: values.correctiveAction,
-      expectedBehavior: values.expectedBehavior,
-      targetMetric: values.targetMetric,
-      targetValue: Number(values.targetValue),
-      dueDate: values.dueDate,
-      followUpDate: values.followUpDate,
-      coachingRequired: values.coachingRequired,
-      trainingRequired: values.trainingRequired,
-      supervisorNotes: values.supervisorNotes,
-    });
-    setSaving(false);
+    let result;
+    try {
+      result = await saveActionPlan({
+        actionItemId,
+        correctiveAction: values.correctiveAction,
+        expectedBehavior: values.expectedBehavior,
+        targetMetric: values.targetMetric,
+        targetValue: Number(values.targetValue),
+        dueDate: values.dueDate,
+        followUpDate: values.followUpDate,
+        coachingRequired: values.coachingRequired,
+        trainingRequired: values.trainingRequired,
+        supervisorNotes: values.supervisorNotes,
+      });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       setSaved("Action plan saved");
@@ -357,8 +372,15 @@ export function SendToAgentButton({
   async function send() {
     setSending(true);
     setError(null);
-    const result = await sendToAgent(actionItemId);
-    setSending(false);
+    let result;
+    try {
+      result = await sendToAgent(actionItemId);
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSending(false);
+    }
     if (result.ok) router.refresh();
     else setError(result.error);
   }
@@ -388,8 +410,15 @@ export function AcknowledgeButton({ actionItemId }: { actionItemId: string }) {
   async function confirm() {
     setBusy(true);
     setError(null);
-    const result = await acknowledge(actionItemId);
-    setBusy(false);
+    let result;
+    try {
+      result = await acknowledge(actionItemId);
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.ok) router.refresh();
     else setError(result.error);
   }
