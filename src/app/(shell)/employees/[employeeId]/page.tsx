@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Card, CardHeader, formatWeek } from "@/components/ui";
+import { Card, CardHeader, PageBand, formatWeek } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
@@ -72,6 +72,11 @@ export default async function EmployeePage({
 
   return (
     <>
+      {/* Same band as every other page, for the same reason as the action
+          item page: the shell's loading skeleton draws one, so a page
+          without one visibly jumps when it arrives. */}
+      <PageBand title={employee.name} subtitle={employee.eid} />
+
       <main className="mx-auto max-w-7xl px-6 py-8">
         <Link
           href="/employees"
@@ -82,12 +87,13 @@ export default async function EmployeePage({
 
         <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-ink">{employee.name}</h1>
-            <p className="mt-1 text-sm text-muted">
-              <span className="font-mono">{employee.eid}</span>
-              {employee.supervisorName && <> · Supervisor: {employee.supervisorName}</>}
+            <p className="text-sm text-muted">
+              {employee.supervisorName && <>Supervisor: {employee.supervisorName}</>}
               {employee.managerName && <> · Manager: {employee.managerName}</>}
               {employee.site && <> · {employee.site}</>}
+              {!employee.supervisorName && !employee.managerName && !employee.site && (
+                <>No supervisor, manager or site recorded in the imported data</>
+              )}
             </p>
           </div>
           <div className="flex gap-3 text-right">

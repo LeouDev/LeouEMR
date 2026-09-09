@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Card, CardHeader, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
+import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { canAcknowledge, canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
@@ -63,6 +63,13 @@ export default async function ActionItemPage({
 
   return (
     <>
+      {/* The same navy band every list page opens with. Without it the
+          shell's loading skeleton (which always draws one) flashed a band
+          for the click and then snapped the content up when this page
+          arrived without one — the one place in the app a navigation
+          visibly jumped. */}
+      <PageBand title={kpi.name} subtitle={`${actionItem.code} · ${employee.name}`} />
+
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Link
           href="/action-items"
@@ -74,15 +81,13 @@ export default async function ActionItemPage({
         <div className="mt-4 mb-6 flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold tracking-tight text-ink">{kpi.name}</h1>
               <StatusBadge status={issue.status} />
             </div>
-            <p className="mt-1 text-sm text-muted">
-              <span className="font-mono">{actionItem.code}</span> ·{" "}
+            <p className="mt-2 text-sm text-muted">
               <Link
                 href={`/employees/${employee.id}`}
-                    prefetch={false}
-                className="underline-offset-4 hover:text-ink hover:underline"
+                prefetch={false}
+                className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
               >
                 {employee.name}
               </Link>{" "}

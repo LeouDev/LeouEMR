@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   employeeAssignments,
@@ -335,6 +335,15 @@ async function reconcileFactBackedRows(
   );
   const definitionByKpiId = new Map([...definitions.values()].map((d) => [d.id, d.definition]));
 
+  // Bounded to the span of weeks actually being reconciled. Every row below
+  // only ever looks at facts between its own weekStart and weekEnd, so
+  // anything outside the union of those windows is loaded and then thrown
+  // away — and without this bound that was EVERY fact ever recorded for
+  // these employees and KPIs, a read that grows with the whole history on
+  // every weekly import (roughly employees × KPIs × working days to date)
+  // rather than with the size of the file being imported. The date-leading
+  // index on metric_facts (0040) is what makes the bounded read cheap.
+  const window = factWindow(rows);
   const facts = await db
     .select({
       employeeId: metricFacts.employeeId,
@@ -345,7 +354,14 @@ async function reconcileFactBackedRows(
       sampleSize: metricFacts.sampleSize,
     })
     .from(metricFacts)
-    .where(and(inArray(metricFacts.employeeId, employeeIds), inArray(metricFacts.kpiId, kpiIds)));
+    .where(
+      and(
+        inArray(metricFacts.employeeId, employeeIds),
+        inArray(metricFacts.kpiId, kpiIds),
+        gte(metricFacts.factDate, window.start),
+        lte(metricFacts.factDate, window.end),
+      ),
+    );
 
   const factsByPair = new Map<string, typeof facts>();
   for (const f of facts) {
@@ -378,6 +394,24 @@ async function reconcileFactBackedRows(
     row.sampleSize = sampleSize;
     row.status = evaluation.status.toLowerCase() as "pass" | "warning" | "fail";
   }
+}
+
+/**
+ * The inclusive date span covering every week in `rows` — the only range of
+ * facts `reconcileFactBackedRows` can ever consult. Pure, so the bound can be
+ * pinned down in a test rather than only trusted in production.
+ */
+export function factWindow(rows: Array<{ weekStart: string; weekEnd: string }>): {
+  start: string;
+  end: string;
+} {
+  let start = rows[0].weekStart;
+  let end = rows[0].weekEnd;
+  for (const row of rows) {
+    if (row.weekStart < start) start = row.weekStart;
+    if (row.weekEnd > end) end = row.weekEnd;
+  }
+  return { start, end };
 }
 
 type EmployeeIdMap = Map<string, string> & {

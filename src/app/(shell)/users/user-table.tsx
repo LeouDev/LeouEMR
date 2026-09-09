@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updateUser } from "./actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface UserRow {
   id: string;
@@ -103,14 +104,21 @@ function UserRowEditor({
     setError(null);
     setSaved(false);
 
-    const result = await updateUser({
-      userId: user.id,
-      role,
-      status,
-      employeeEid: eid,
-      managerName,
-    });
-    setSaving(false);
+    let result;
+    try {
+      result = await updateUser({
+        userId: user.id,
+        role,
+        status,
+        employeeEid: eid,
+        managerName,
+      });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       setSaved(true);

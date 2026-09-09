@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatWeek } from "@/components/ui";
 import { addRcaNote } from "../actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface RcaNote {
   id: string;
@@ -43,8 +44,15 @@ export function RcaNotes({
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const result = await addRcaNote({ actionItemId, week, note });
-    setBusy(false);
+    let result;
+    try {
+      result = await addRcaNote({ actionItemId, week, note });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.ok) {
       setNote("");
       router.refresh();

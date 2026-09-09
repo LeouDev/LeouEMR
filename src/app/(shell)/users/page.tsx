@@ -12,7 +12,9 @@ export default async function UsersPage() {
   if (user.status !== "active") redirect("/pending");
   if (user.role !== "admin") redirect("/dashboard");
 
-  const rows = await db
+  // The account list and the manager-name list are independent, so they are
+  // fetched together rather than one after the other.
+  const rowsQuery = db
     .select({
       id: users.id,
       name: users.name,
@@ -37,12 +39,14 @@ export default async function UsersPage() {
   // The names a manager's span can be linked to are exactly those present in
   // the imported data — offering free text would just recreate the typo that
   // made a span silently empty.
-  const managerNames = (
-    await db
+  const [rows, managerRows] = await Promise.all([
+    rowsQuery,
+    db
       .selectDistinct({ name: employees.managerName })
       .from(employees)
-      .where(isNotNull(employees.managerName))
-  )
+      .where(isNotNull(employees.managerName)),
+  ]);
+  const managerNames = managerRows
     .map((r) => r.name)
     .filter((n): n is string => Boolean(n))
     .sort();

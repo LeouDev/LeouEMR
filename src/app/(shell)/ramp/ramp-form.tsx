@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { clearRampAssignment, setRampAssignment } from "./actions";
+import { describeActionError } from "@/lib/ui/action-error";
 
 export interface RampFormEmployee {
   id: string;
@@ -34,8 +35,15 @@ export function RampForm({
     e.preventDefault();
     setBusy(true);
     setMessage(null);
-    const result = await setRampAssignment({ employeeId, skillReferenceId, rampStartDate });
-    setBusy(false);
+    let result;
+    try {
+      result = await setRampAssignment({ employeeId, skillReferenceId, rampStartDate });
+    } catch (cause) {
+      setMessage({ kind: "error", text: describeActionError(cause) });
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.ok) {
       setMessage({
         kind: "ok",
@@ -133,26 +141,44 @@ export function ClearRampButton({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function clear() {
     if (!confirm("End this ramp assignment? The employee will be scored against the standard target from here on.")) {
       return;
     }
     setBusy(true);
-    const result = await clearRampAssignment({ employeeId, skillReferenceId });
-    setBusy(false);
+    setError(null);
+    let result;
+    try {
+      result = await clearRampAssignment({ employeeId, skillReferenceId });
+    } catch (cause) {
+      setError(describeActionError(cause));
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (result.ok) router.refresh();
-    else alert(result.error);
+    // Inline, like every other form here — this used to be a browser
+    // alert(), the one place in the app a refusal popped up as a modal.
+    else setError(result.error);
   }
 
   return (
-    <button
-      type="button"
-      disabled={busy}
-      onClick={clear}
-      className="border-2 border-fail px-3 py-1.5 text-xs font-bold tracking-[0.08em] text-fail uppercase transition hover:bg-fail-bg disabled:opacity-40"
-    >
-      {busy ? "…" : "Clear"}
-    </button>
+    <span className="inline-flex flex-col items-start gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={clear}
+        className="border-2 border-fail px-3 py-1.5 text-xs font-bold tracking-[0.08em] text-fail uppercase transition hover:bg-fail-bg disabled:opacity-40"
+      >
+        {busy ? "Clearing…" : "Clear"}
+      </button>
+      {error && (
+        <span role="alert" className="max-w-56 text-xs text-fail">
+          {error}
+        </span>
+      )}
+    </span>
   );
 }

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, EwsRiskBadge, PageBand, StatusBadge, formatWeek } from "@/components/ui";
 
 import { getCurrentUser } from "@/lib/auth/session";
-import { getActionItems, getAvailableWeeks, getLatestWeek } from "@/lib/queries/performance";
+import { getActionItems, getAvailableWeeks } from "@/lib/queries/performance";
 import { getRoster, getRosterFacets } from "@/lib/queries/roster";
 import { RosterFilters } from "./roster-filters";
 
@@ -28,10 +28,16 @@ export default async function EmployeesPage({
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
 
-  const params = await searchParams;
-  const weeks = await getAvailableWeeks();
-  const latest = await getLatestWeek();
+  const [params, weeks] = await Promise.all([searchParams, getAvailableWeeks()]);
+  // Newest first, so the head of the list IS the latest week — the separate
+  // max() query this used to make after it answered the same question a
+  // second time, one more round trip before anything else could start.
+  const latest = weeks[0] ?? null;
   const week = params.week && weeks.includes(params.week) ? params.week : latest;
+
+  const filtersActive = Boolean(
+    params.q || params.supervisor || params.site || params.risk || params.standing,
+  );
 
   const [{ rows, total }, facets, openItems] = await Promise.all([
     getRoster(user, week, {
@@ -126,10 +132,25 @@ export default async function EmployeesPage({
           />
 
           {rows.length === 0 ? (
-            <EmptyState
-              title="No matches"
-              description="Nothing in your scope matches these filters."
-            />
+            filtersActive ? (
+              <EmptyState
+                title="No matches"
+                description="Nothing in your scope matches these filters. Clear one or more of them to widen the search."
+              />
+            ) : (
+              // No filters and still nobody: the scope itself is empty, which
+              // for a supervisor or manager almost always means the account
+              // is not linked to their EID or manager name yet — "no matches"
+              // would send them hunting through filters they never set.
+              <EmptyState
+                title="Nobody in your scope yet"
+                description={
+                  user.role === "admin"
+                    ? "No employees have been imported yet. They appear here after the first performance import."
+                    : "Employees appear here once an administrator links this account to your employee ID (or manager name) in the imported data."
+                }
+              />
+            )
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[820px] border-collapse text-sm">
