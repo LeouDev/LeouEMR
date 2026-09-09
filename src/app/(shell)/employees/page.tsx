@@ -3,12 +3,9 @@ import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, EwsRiskBadge, PageBand, StatusBadge, formatWeek } from "@/components/ui";
 
 import { getCurrentUser } from "@/lib/auth/session";
-import { getActionItems, getAvailableWeeks } from "@/lib/queries/performance";
+import { getAvailableWeeks, getUnstartedActionItems } from "@/lib/queries/performance";
 import { getRoster, getRosterFacets } from "@/lib/queries/roster";
 import { RosterFilters } from "./roster-filters";
-
-/** Statuses an item sits in before anyone has written an RCA/action plan — see submitRcaAndPlan in the engine. */
-const UNSTARTED_STATUSES = new Set(["OPEN", "REOPENED"]);
 
 const ATTENTION_SHOWN = 5;
 
@@ -39,7 +36,12 @@ export default async function EmployeesPage({
     params.q || params.supervisor || params.site || params.risk || params.standing,
   );
 
-  const [{ rows, total }, facets, openItems] = await Promise.all([
+  // Items nobody has written an RCA/plan for yet — the cases actually
+  // blocked on this manager, not ones already progressing through
+  // acknowledgement or monitoring — as a real count plus the few that have
+  // waited longest. This used to be a capped list of every open item,
+  // filtered and counted here: the cap read as the count once exceeded.
+  const [{ rows, total }, facets, attention] = await Promise.all([
     getRoster(user, week, {
       search: params.q,
       supervisor: params.supervisor,
@@ -48,20 +50,8 @@ export default async function EmployeesPage({
       standing: params.standing,
     }),
     getRosterFacets(user),
-    // Same ceiling the Development Hub uses. The default limit is 200, and
-    // this panel's headline is a count of the unstarted items in the result,
-    // so an admin with more open work than that was shown exactly "200" —
-    // a cap, not a count — with no sign that anything was cut off.
-    getActionItems(user, { openOnly: true, limit: 1000 }),
+    getUnstartedActionItems(user, ATTENTION_SHOWN),
   ]);
-
-  // Items nobody has written an RCA/plan for yet — the cases actually
-  // blocked on this manager, not ones already progressing through
-  // acknowledgement or monitoring. Oldest first, since that's the one
-  // that's been waiting longest for a response.
-  const needsAttention = openItems
-    .filter((item) => UNSTARTED_STATUSES.has(item.status))
-    .sort((a, b) => a.openedWeek.localeCompare(b.openedWeek));
 
   return (
     <>
@@ -74,24 +64,24 @@ export default async function EmployeesPage({
           </p>
         </div>
 
-        {needsAttention.length > 0 && (
+        {attention.total > 0 && (
           <Card className="mb-6 border-fail/40">
             <CardHeader
               title="Needs your attention"
-              subtitle={`${needsAttention.length} open item${needsAttention.length === 1 ? "" : "s"} with no root cause analysis yet`}
+              subtitle={`${attention.total} open item${attention.total === 1 ? "" : "s"} with no root cause analysis yet`}
               action={
-                needsAttention.length > ATTENTION_SHOWN ? (
+                attention.total > ATTENTION_SHOWN ? (
                   <Link
                     href="/action-items"
                     className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
                   >
-                    View all {needsAttention.length}
+                    View all {attention.total}
                   </Link>
                 ) : undefined
               }
             />
             <ul className="divide-y-2 divide-line">
-              {needsAttention.slice(0, ATTENTION_SHOWN).map((item) => (
+              {attention.items.map((item) => (
                 <li key={item.actionItemId}>
                   <Link
                     href={`/action-items/${item.actionItemId}`}
