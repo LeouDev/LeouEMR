@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_PRODUCTION_HOURS, eligibilityFor } from "./eligibility";
+import { MIN_PRODUCTION_HOURS, eligibilityFor, hoursBeforeCutoff } from "./eligibility";
 import type { Period } from "./period";
 
 const month = (start: string, end: string): Period => ({
@@ -61,5 +61,50 @@ describe("eligibilityFor", () => {
     expect(eligibilityFor(before, SEPARATED_ON, 0)).toBe(true);
     expect(eligibilityFor(after, SEPARATED_ON, 0)).toBe(false);
     expect(eligibilityFor(week, SEPARATED_ON, 31)).toBe(true);
+  });
+});
+
+describe("hoursBeforeCutoff", () => {
+  it("sums only the rows before that employee's own cutoff date", () => {
+    const result = hoursBeforeCutoff(
+      [
+        { employeeId: "a", factDate: "2026-07-10", hours: 8 },
+        { employeeId: "a", factDate: "2026-07-21", hours: 8 },
+        // On or after the cutoff — must not count.
+        { employeeId: "a", factDate: "2026-07-22", hours: 100 },
+        { employeeId: "a", factDate: "2026-07-25", hours: 100 },
+      ],
+      new Map([["a", "2026-07-22"]]),
+    );
+    expect(result.get("a")).toBe(16);
+  });
+
+  it("keeps each employee's total separate, even with different cutoffs", () => {
+    const result = hoursBeforeCutoff(
+      [
+        { employeeId: "a", factDate: "2026-07-10", hours: 8 },
+        { employeeId: "b", factDate: "2026-07-10", hours: 5 },
+        { employeeId: "b", factDate: "2026-07-15", hours: 5 },
+      ],
+      new Map([
+        ["a", "2026-07-22"],
+        ["b", "2026-07-12"],
+      ]),
+    );
+    expect(result.get("a")).toBe(8);
+    expect(result.get("b")).toBe(5);
+  });
+
+  it("ignores rows for an employee with no cutoff at all", () => {
+    const result = hoursBeforeCutoff(
+      [{ employeeId: "unrelated", factDate: "2026-07-10", hours: 8 }],
+      new Map([["a", "2026-07-22"]]),
+    );
+    expect(result.has("unrelated")).toBe(false);
+  });
+
+  it("returns an empty map for no rows", () => {
+    const result = hoursBeforeCutoff([], new Map([["a", "2026-07-22"]]));
+    expect(result.size).toBe(0);
   });
 });

@@ -92,6 +92,28 @@ export function eligibilityFor(
  * test is not a general eligibility gate, and applying it to active people
  * would drop every new hire still ramping and everyone who took a week off.
  */
+/**
+ * Sums each employee's production hours from raw fact rows, but only the
+ * rows before that employee's own cutoff date.
+ *
+ * Pulled out of `eligibleForPeriod` as a pure function so the per-employee
+ * cutoff logic — the exact thing that used to be a separate SQL query per
+ * person — can be pinned down in a test with plain fixture rows, rather than
+ * only exercised through a live database.
+ */
+export function hoursBeforeCutoff(
+  rows: Array<{ employeeId: string; factDate: string; hours: number }>,
+  cutoffById: Map<string, string>,
+): Map<string, number> {
+  const hours = new Map<string, number>();
+  for (const row of rows) {
+    const cutoff = cutoffById.get(row.employeeId);
+    if (cutoff === undefined || row.factDate >= cutoff) continue;
+    hours.set(row.employeeId, (hours.get(row.employeeId) ?? 0) + row.hours);
+  }
+  return hours;
+}
+
 export async function eligibleForPeriod(
   employeeIds: string[],
   period: Period,
@@ -107,23 +129,34 @@ export async function eligibleForPeriod(
     ([, on]) => on >= period.start && on <= period.end,
   );
 
-  // Each person needs their own upper bound — the day they left — so this
-  // cannot be one grouped query. It is at most a handful of people: only
-  // those whose separation lands inside this exact period.
-  const hours = new Map<string, number>();
-  for (const [id, on] of needHours) {
-    const [row] = await db
-      .select({ hours: sql<number>`coalesce(sum(${skillFacts.hours}), 0)::double precision` })
-      .from(skillFacts)
-      .where(
-        and(
-          eq(skillFacts.employeeId, id),
-          gte(skillFacts.factDate, period.start),
-          lt(skillFacts.factDate, on),
-        ),
-      );
-    hours.set(id, row?.hours ?? 0);
-  }
+  // Each person needs their own upper bound — the day they left — which
+  // rules out one grouped SUM in SQL (a GROUP BY has one shared filter for
+  // every row, not a per-employee one). Fetching the raw rows once — bounded
+  // by the period, the loosest upper bound any of them can have — and
+  // summing per person in JS (hoursBeforeCutoff, above) gets the same
+  // per-employee cutoff without paying a separate round trip for each of
+  // them; it was one query per person before, now it is one query total no
+  // matter how many there are.
+  const hours =
+    needHours.length > 0
+      ? hoursBeforeCutoff(
+          await db
+            .select({
+              employeeId: skillFacts.employeeId,
+              factDate: skillFacts.factDate,
+              hours: skillFacts.hours,
+            })
+            .from(skillFacts)
+            .where(
+              and(
+                inArray(skillFacts.employeeId, needHours.map(([id]) => id)),
+                gte(skillFacts.factDate, period.start),
+                lt(skillFacts.factDate, period.end),
+              ),
+            ),
+          new Map(needHours),
+        )
+      : new Map<string, number>();
 
   return employeeIds.filter((id) => {
     const on = separated.get(id);
