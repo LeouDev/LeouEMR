@@ -48,7 +48,11 @@ export default async function EmployeesPage({
       standing: params.standing,
     }),
     getRosterFacets(user),
-    getActionItems(user, { openOnly: true }),
+    // Same ceiling the Development Hub uses. The default limit is 200, and
+    // this panel's headline is a count of the unstarted items in the result,
+    // so an admin with more open work than that was shown exactly "200" —
+    // a cap, not a count — with no sign that anything was cut off.
+    getActionItems(user, { openOnly: true, limit: 1000 }),
   ]);
 
   // Items nobody has written an RCA/plan for yet — the cases actually
