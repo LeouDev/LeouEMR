@@ -66,8 +66,8 @@ export default async function TwoOhOneFilePage() {
         emergencyContactName: employeeProfiles.emergencyContactName,
         emergencyContactNumber: employeeProfiles.emergencyContactNumber,
         emergencyContactRelationship: employeeProfiles.emergencyContactRelationship,
-        email: users.email,
       },
+      email: users.email,
     })
     .from(employees)
     .leftJoin(employeeProfiles, eq(employeeProfiles.employeeEid, employees.eid))
@@ -75,9 +75,17 @@ export default async function TwoOhOneFilePage() {
     .where(scope === "all" ? undefined : scope)
     .orderBy(asc(employees.name));
 
-  // Drizzle nulls the whole nested object when the LEFT join found no
-  // profile row, which is exactly "has not registered yet".
-  const withProfile = reports.filter((r) => r.profile !== null);
+  // "Has registered" is decided on a NOT NULL profile column, never on the
+  // nested object being null. Drizzle only nulls a nested LEFT-joined object
+  // when every column in it comes from the same table (see nullifyMap in
+  // drizzle-orm/utils.js) — the first version of this join put users.email
+  // inside `profile`, so the object was never nulled and all 600-odd
+  // unregistered employees rendered as blank rows in production. The type
+  // still says `profile` may be null, so the filter below narrows it too.
+  const withProfile = reports.filter(
+    (r): r is typeof r & { profile: NonNullable<typeof r.profile> } =>
+      r.profile !== null && r.profile.lastName !== null,
+  );
   const withoutProfile = reports.length - withProfile.length;
 
   return (
@@ -130,7 +138,7 @@ export default async function TwoOhOneFilePage() {
                 </thead>
                 <tbody>
                   {withProfile.map((report) => {
-                    const p = report.profile!;
+                    const p = report.profile;
                     const address = [
                       p.addressLine1,
                       p.addressLine2,
@@ -157,7 +165,7 @@ export default async function TwoOhOneFilePage() {
                         <td className="px-3 py-2 font-mono text-xs text-ink">{p.employeeEid}</td>
                         <td className="px-3 py-2 font-mono text-xs text-muted">{p.msid ?? "—"}</td>
                         <td className="px-3 py-2 text-ink">{p.position}</td>
-                        <td className="px-3 py-2 text-xs text-muted">{p.email}</td>
+                        <td className="px-3 py-2 text-xs text-muted">{report.email}</td>
                         <td className="px-3 py-2 font-mono text-xs text-muted">
                           {p.phoneNumber ?? "—"}
                         </td>
