@@ -12,13 +12,7 @@ import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
-import {
-  loadAttributesBySkill,
-  loadRampTargets,
-  loadSkillReferences,
-  MBO_GATES,
-  type RampTargets,
-} from "@/lib/import-pipeline/par-scoring";
+import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { periodsBetween } from "./period";
 import type { Period } from "./period";
 
@@ -60,64 +54,67 @@ export async function getPeriodMetrics(
   // business's existing reports.
   if (period.granularity === "week") return getWeekMetrics(employeeIds, period.start);
 
-  const definitions = await db.select().from(kpiDefinitions).where(eq(kpiDefinitions.active, true));
+  // These three are mutually independent — definitions is a small static
+  // table, and facts/targetRows are unfiltered by it (byCode/byId are only
+  // derived from definitions below, after all three are back) — so they run
+  // concurrently rather than paying three round trips in a row.
+  const [definitions, facts, targetRows] = await Promise.all([
+    db.select().from(kpiDefinitions).where(eq(kpiDefinitions.active, true)),
+    // Measured KPIs: sum the components, then apply the KPI's own rule.
+    db
+      .select({
+        employeeId: metricFacts.employeeId,
+        kpiId: metricFacts.kpiId,
+        numerator: sql<number>`sum(${metricFacts.numerator})::double precision`,
+        denominator: sql<number>`sum(${metricFacts.denominator})::double precision`,
+        sampleSize: sql<number>`sum(${metricFacts.sampleSize})::int`,
+      })
+      .from(metricFacts)
+      .where(
+        and(
+          inArray(metricFacts.employeeId, employeeIds),
+          gte(metricFacts.factDate, period.start),
+          lte(metricFacts.factDate, period.end),
+        ),
+      )
+      .groupBy(metricFacts.employeeId, metricFacts.kpiId),
+    /**
+     * The target each employee was actually measured against.
+     *
+     * CPH and AHT targets come per employee from the source workbook — a
+     * ramping agent and an Edits agent do not share the KPI's default. The
+     * weekly ledger snapshots that target, so the period's target is the mean
+     * of the weeks it covers. Without this, re-aggregating a month scored
+     * everyone against the KPI default (11 cases per hour) and marked agents
+     * on an 8 target as failing while they were comfortably above it.
+     */
+    db
+      .select({
+        employeeId: weeklyMetricResults.employeeId,
+        kpiId: weeklyMetricResults.kpiId,
+        target: sql<number | null>`avg(${weeklyMetricResults.targetValue})`,
+      })
+      .from(weeklyMetricResults)
+      .where(
+        and(
+          inArray(weeklyMetricResults.employeeId, employeeIds),
+          // Any week OVERLAPPING the period, not only one starting inside it.
+          // Weeks run Saturday-Friday against calendar months, so the week that
+          // straddles a month boundary starts in the previous month while its
+          // daily facts land in this one. Matching on the start alone dropped
+          // that week's target, and a month whose only data is the straddling
+          // week fell back to the KPI default — reintroducing the very bug this
+          // per-employee lookup exists to fix.
+          gte(weeklyMetricResults.weekEnd, period.start),
+          lte(weeklyMetricResults.weekStart, period.end),
+        ),
+      )
+      .groupBy(weeklyMetricResults.employeeId, weeklyMetricResults.kpiId),
+  ]);
   const byCode = new Map(definitions.map((d) => [d.code, d]));
-
-  const results: PeriodMetric[] = [];
-
-  // Measured KPIs: sum the components, then apply the KPI's own rule.
-  const facts = await db
-    .select({
-      employeeId: metricFacts.employeeId,
-      kpiId: metricFacts.kpiId,
-      numerator: sql<number>`sum(${metricFacts.numerator})::double precision`,
-      denominator: sql<number>`sum(${metricFacts.denominator})::double precision`,
-      sampleSize: sql<number>`sum(${metricFacts.sampleSize})::int`,
-    })
-    .from(metricFacts)
-    .where(
-      and(
-        inArray(metricFacts.employeeId, employeeIds),
-        gte(metricFacts.factDate, period.start),
-        lte(metricFacts.factDate, period.end),
-      ),
-    )
-    .groupBy(metricFacts.employeeId, metricFacts.kpiId);
-
   const byId = new Map(definitions.map((d) => [d.id, d]));
 
-  /**
-   * The target each employee was actually measured against.
-   *
-   * CPH and AHT targets come per employee from the source workbook — a
-   * ramping agent and an Edits agent do not share the KPI's default. The
-   * weekly ledger snapshots that target, so the period's target is the mean
-   * of the weeks it covers. Without this, re-aggregating a month scored
-   * everyone against the KPI default (11 cases per hour) and marked agents
-   * on an 8 target as failing while they were comfortably above it.
-   */
-  const targetRows = await db
-    .select({
-      employeeId: weeklyMetricResults.employeeId,
-      kpiId: weeklyMetricResults.kpiId,
-      target: sql<number | null>`avg(${weeklyMetricResults.targetValue})`,
-    })
-    .from(weeklyMetricResults)
-    .where(
-      and(
-        inArray(weeklyMetricResults.employeeId, employeeIds),
-        // Any week OVERLAPPING the period, not only one starting inside it.
-        // Weeks run Saturday-Friday against calendar months, so the week that
-        // straddles a month boundary starts in the previous month while its
-        // daily facts land in this one. Matching on the start alone dropped
-        // that week's target, and a month whose only data is the straddling
-        // week fell back to the KPI default — reintroducing the very bug this
-        // per-employee lookup exists to fix.
-        gte(weeklyMetricResults.weekEnd, period.start),
-        lte(weeklyMetricResults.weekStart, period.end),
-      ),
-    )
-    .groupBy(weeklyMetricResults.employeeId, weeklyMetricResults.kpiId);
+  const results: PeriodMetric[] = [];
 
   const targetFor = new Map(
     targetRows
@@ -246,10 +243,6 @@ async function computeDerived(
   period: Period,
   byCode: Map<string, typeof kpiDefinitions.$inferSelect>,
 ): Promise<PeriodMetric[]> {
-  const refs = await loadSkillReferences();
-  const attributes = await loadAttributesBySkill();
-  const out: PeriodMetric[] = [];
-
   // A ramping employee's CPH/AHT target changes week to week (see
   // loadRampTargets), but PRODUCTION_RATE here is scored from cases/hours
   // summed across the whole period against a single ratio. Scoring that
@@ -261,7 +254,16 @@ async function computeDerived(
   // assignment gets the identical steady target back (the average of N
   // copies of the same number), so this changes nothing for anyone not
   // ramping.
-  const rampTargets: RampTargets = await loadRampTargets();
+  //
+  // These three reference/config loads are independent of each other and of
+  // everything below, so they run concurrently rather than paying three
+  // round trips in a row.
+  const [refs, attributes, rampTargets] = await Promise.all([
+    loadSkillReferences(),
+    loadAttributesBySkill(),
+    loadRampTargets(),
+  ]);
+  const out: PeriodMetric[] = [];
   const weeksInPeriod = rampTargets.size > 0 ? periodsBetween("week", period.start, period.end) : [];
   const eidById = new Map<string, string>();
   if (weeksInPeriod.length > 0) {
@@ -291,24 +293,46 @@ async function computeDerived(
     return sum / weeksInPeriod.length;
   }
 
-  const skills = await db
-    .select({
-      employeeId: skillFacts.employeeId,
-      skillLabel: skillFacts.skillLabel,
-      cases: sql<number>`sum(${skillFacts.cases})::double precision`,
-      hours: sql<number>`sum(${skillFacts.hours})::double precision`,
-      weightHours: sql<number>`sum(${skillFacts.weightHours})::double precision`,
-      prodWeight: sql<number>`sum(${skillFacts.prodWeight})::double precision`,
-    })
-    .from(skillFacts)
-    .where(
-      and(
-        inArray(skillFacts.employeeId, employeeIds),
-        gte(skillFacts.factDate, period.start),
-        lte(skillFacts.factDate, period.end),
-      ),
-    )
-    .groupBy(skillFacts.employeeId, skillFacts.skillLabel);
+  // skills and quality are independent queries against different tables —
+  // fetched together rather than one after the other, since neither
+  // processing loop below needs the other table's result.
+  const [skills, quality] = await Promise.all([
+    db
+      .select({
+        employeeId: skillFacts.employeeId,
+        skillLabel: skillFacts.skillLabel,
+        cases: sql<number>`sum(${skillFacts.cases})::double precision`,
+        hours: sql<number>`sum(${skillFacts.hours})::double precision`,
+        weightHours: sql<number>`sum(${skillFacts.weightHours})::double precision`,
+        prodWeight: sql<number>`sum(${skillFacts.prodWeight})::double precision`,
+      })
+      .from(skillFacts)
+      .where(
+        and(
+          inArray(skillFacts.employeeId, employeeIds),
+          gte(skillFacts.factDate, period.start),
+          lte(skillFacts.factDate, period.end),
+        ),
+      )
+      .groupBy(skillFacts.employeeId, skillFacts.skillLabel),
+    db
+      .select({
+        employeeId: qualityFacts.employeeId,
+        skillLabel: qualityFacts.skillLabel,
+        audits: sql<number>`sum(${qualityFacts.audits})::int`,
+        imperfect: sql<number>`sum(${qualityFacts.imperfect})::int`,
+        markdowns: sql<number>`sum(${qualityFacts.markdowns})::int`,
+      })
+      .from(qualityFacts)
+      .where(
+        and(
+          inArray(qualityFacts.employeeId, employeeIds),
+          gte(qualityFacts.factDate, period.start),
+          lte(qualityFacts.factDate, period.end),
+        ),
+      )
+      .groupBy(qualityFacts.employeeId, qualityFacts.skillLabel),
+  ]);
 
   const rateByEmployee = new Map<string, { rate: number; skills: number }>();
   const grouped = new Map<string, typeof skills>();
@@ -352,24 +376,6 @@ async function computeDerived(
     const definition = byCode.get("PRODUCTION_RATE");
     if (definition) out.push(evaluated(employeeId, definition, rate, scored.length));
   }
-
-  const quality = await db
-    .select({
-      employeeId: qualityFacts.employeeId,
-      skillLabel: qualityFacts.skillLabel,
-      audits: sql<number>`sum(${qualityFacts.audits})::int`,
-      imperfect: sql<number>`sum(${qualityFacts.imperfect})::int`,
-      markdowns: sql<number>`sum(${qualityFacts.markdowns})::int`,
-    })
-    .from(qualityFacts)
-    .where(
-      and(
-        inArray(qualityFacts.employeeId, employeeIds),
-        gte(qualityFacts.factDate, period.start),
-        lte(qualityFacts.factDate, period.end),
-      ),
-    )
-    .groupBy(qualityFacts.employeeId, qualityFacts.skillLabel);
 
   const qualityByEmployee = new Map<string, typeof quality>();
   for (const row of quality) {

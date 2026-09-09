@@ -518,11 +518,7 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
   // Who counted for this period, not who is employed today. A separated
   // employee stays in the months they worked and leaves the ones they did
   // not, judged on the date they left rather than on their status now.
-  const eligible = new Set(
-    await eligibleForPeriod(roster.map((r) => r.employeeId), period),
-  );
-  roster = roster.filter((r) => eligible.has(r.employeeId));
-
+  //
   // Present in the roster is not the same as reporting to anyone. A new
   // hire still in Nesting, someone approved for leave, or an SME with no
   // assigned book of work all carry an attendance mark and nothing else —
@@ -532,8 +528,17 @@ export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOver
   // in this state simply has no eligible leaves left, and drops out of the
   // tree entirely — which is also the correct answer for "does this
   // supervisor have anyone to show under their manager this month."
-  const reporting = await hasReportableData(roster.map((r) => r.employeeId), period);
-  roster = roster.filter((r) => reporting.has(r.employeeId));
+  //
+  // Both are independent per-employee lookups over the same starting
+  // roster — neither's result feeds the other — so they run concurrently
+  // against the full roster and get intersected afterward, rather than one
+  // waiting on the other's already-filtered list for no reason.
+  const rosterIds = roster.map((r) => r.employeeId);
+  const [eligible, reporting] = await Promise.all([
+    eligibleForPeriod(rosterIds, period).then((ids) => new Set(ids)),
+    hasReportableData(rosterIds, period),
+  ]);
+  roster = roster.filter((r) => eligible.has(r.employeeId) && reporting.has(r.employeeId));
 
   const metrics = await getPeriodMetrics(roster.map((r) => r.employeeId), period);
   const mboByEmployee = new Map(
