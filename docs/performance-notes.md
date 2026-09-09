@@ -128,6 +128,16 @@ This session (static audit — see "What could not be measured" below):
   change: RSC responses of 0.1–1.4 kB took 0.7–1.9 s each (Dashboard
   1.3–1.9 s, MBO/Action Items 0.7–0.9 s, Employees 1.1 s). Almost all of
   that is server time before first byte, not transfer.
+- Measured again after the caching and auth deploys: a floor of ~650–710 ms
+  on every navigation regardless of page (Skills 712 ms for 1.3 kB, PTO
+  660–710 ms, MBO period changes 660–680 ms); MBO's first uncached load
+  1.43 s then the floor. Stack Rank stayed 1.4–2.0 s at 80–87 kB per
+  response because it rendered the whole 664-row organisation table three
+  ways; it now renders the top 20 plus the viewer's neighbourhood unless
+  `?all=1`. Analytics (admin only) 1.3–2.2 s. The floor is the next thing
+  to explain: Vercel runtime logs show per-request function duration and
+  whether the proxy (middleware) runs as its own invocation; if the page
+  function itself is fast, the floor is platform overhead, not this code.
 - `getActionItems` and friends resolve the scope's employee ids with a
   separate query and then `IN (...)` them. At ~450 employees this is fine;
   a join would save one round trip per page.
