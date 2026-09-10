@@ -80,6 +80,15 @@ from every environment this project gets worked on in.
   Rate, Quality, NPS, Critical Errors, MBO, Attendance, in that order.
   `npm run backfill:skill-results -- --weeks=N` writes skill rows for
   weeks imported before 0042 (`--apply --open-items` to open items).
+  Applied to production 2026-09-10 ~23:10 UTC through the SQL editor.
+  Lesson from that rollout: the tracker row was inserted before the
+  migration SQL had run, and the deployed code already selected the new
+  column, so pages errored until the SQL went in — apply the migration
+  before (or with) a deploy that reads a new column, and record the
+  tracker row after. The backfill then ran with `--weeks=2` (the weeks
+  of 29 August and 5 September 2026): 772 skill-week rows, 254 items
+  opened, 12 updated, 75 old items closed on age by the engine's usual
+  end-of-run sweep. Earlier weeks have no skill rows.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
