@@ -1,10 +1,14 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { withQueryGate } from "./query-gate";
 import * as schema from "./schema";
 
 type Database = ReturnType<typeof drizzle<typeof schema>>;
 
 let instance: Database | null = null;
+
+/** Pooled connections per server instance, and the most queries in flight at once. */
+const POOL_SIZE = 8;
 
 /**
  * Creates the connection on first query rather than at import.
@@ -32,25 +36,31 @@ function connect(): Database {
    * (port 6543), which production uses — session mode holds a connection per
    * client and runs out under serverless concurrency.
    *
-   * The pool must be larger than the most queries any one page issues at
-   * once. postgres-js pipelines concurrent queries down a single connection,
-   * and the transaction pooler does not tolerate that: with `max: 1` the
-   * first query succeeds and every later one hangs forever behind a wedged
-   * connection. Giving concurrent queries a connection each avoids the
-   * pipelining entirely.
+   * postgres-js does not queue when every connection is busy: it pipelines
+   * the extra query onto a busy connection, and the transaction pooler
+   * does not tolerate that — with `max: 1` the first query succeeds and
+   * every later one hangs forever behind a wedged connection. The pool
+   * size only moves where that cliff sits. `withQueryGate` removes it:
+   * queries beyond the pool size wait for a free connection instead of
+   * being pipelined, so a burst (the manager dashboard issues up to ten
+   * at once; under Fluid Compute several requests share this one pool)
+   * queues briefly rather than hanging the request for good — the failure
+   * that reached users as "Something went wrong loading this page".
    *
-   * Eight covers the widest fan-out in the app (the admin dashboard peaks at
-   * six) with headroom. Transaction pooling reuses server-side connections
-   * per statement, so this costs far less than the same number would in
-   * session mode.
+   * Eight connections keep the database's load where it was measured;
+   * transaction pooling reuses server-side connections per statement, so
+   * this costs far less than the same number would in session mode.
    */
   instance = drizzle(
-    postgres(url, {
-      max: 8,
-      idle_timeout: 20,
-      connect_timeout: 10,
-      prepare: false,
-    }),
+    withQueryGate(
+      postgres(url, {
+        max: POOL_SIZE,
+        idle_timeout: 20,
+        connect_timeout: 10,
+        prepare: false,
+      }),
+      POOL_SIZE,
+    ),
     { schema },
   );
 

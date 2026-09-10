@@ -20,12 +20,21 @@ export default function ShellError({
     console.error(error);
   }, [error]);
 
+  // React's "Connection closed." (error #412 in production): the server
+  // stopped sending before the page's data had all arrived. The message is
+  // what the boundary is actually told, so it can be named — and it is the
+  // one failure here that a server-side error reference can never explain,
+  // since no server error was thrown.
+  const connectionDropped = /#412\b|Connection closed/.test(error.message);
+
   return (
     <main className="mx-auto max-w-7xl px-6 py-8">
       <div className="border-2 border-fail bg-fail-bg px-6 py-12 text-center">
         <h2 className="text-lg font-bold text-fail">Something went wrong loading this page.</h2>
         <p className="mt-2 text-sm text-fail">
-          This is usually temporary — try again in a moment. If it keeps happening, tell your administrator.
+          {connectionDropped
+            ? "The connection dropped before the page finished loading. Try again; if it keeps happening, tell your administrator that the page's connection is being closed early."
+            : "This is usually temporary — try again in a moment. If it keeps happening, tell your administrator."}
         </p>
         {error.digest && <p className="mt-1 text-xs text-fail opacity-70">Reference: {error.digest}</p>}
         <button type="button" onClick={() => retry()} className="btn-primary mt-6 px-5 py-2.5 text-sm">

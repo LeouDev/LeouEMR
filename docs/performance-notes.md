@@ -13,13 +13,18 @@ from every environment this project gets worked on in.
   many dependent round trips run in sequence), not the cost of any one query.
 - **The db client pool is `max: 8`** (`src/lib/db/client.ts`) against
   Supabase's transaction-mode pooler on port 6543, with `prepare: false`.
-  Exceeding the pool with concurrent queries does not queue cleanly: it
-  wedges a connection (seen live as `ClientRead` for 60s+ in
-  `pg_stat_activity`). So: parallelize *shallow, small* fan-outs only, and
-  never run two "heavy" callers (`getAnalytics`, `getMboOverview`,
-  `getPeriodMetrics` with a big id list) concurrently with each other.
-  `getPeriodMetrics` alone holds up to 3 connections at once; the Dashboard
-  already runs two of them side by side. Do not widen its internal fan-out.
+  postgres-js does not queue a query when every connection is busy — it
+  pipelines it onto a busy connection (`busy.shift()` in its pool
+  handler; only after 100 per connection does it queue), and the
+  transaction pooler hangs a pipelined query forever (seen live as
+  `ClientRead` for 60s+ in `pg_stat_activity`). Since 2026-09-11 the
+  client is wrapped in `withQueryGate` (`src/lib/db/query-gate.ts`): at
+  most 8 queries are ever dispatched at once, a transaction holds one
+  slot for its whole duration, and everything beyond that waits for a
+  free connection. A burst now queues for a few hundred milliseconds
+  instead of hanging the request. Still worth respecting: the gate
+  bounds concurrency, not database load — do not widen the heavy
+  callers' internal fan-outs (`getPeriodMetrics` holds up to 3 slots).
 - **Server actions return refusals as values** (`{ ok: false, error }`).
   A *thrown* action only ever means infrastructure gave out (network,
   timeout, deploy rollover). Every client call site now catches that and
@@ -64,6 +69,11 @@ This session (static audit — see "What could not be measured" below):
   empty states read as sentences; Action Items names the filtered employee
   even when they have no items; both import wizards say a large import can
   take minutes and to keep the tab open.
+- **Query gate on the db client (2026-09-11).** `withQueryGate` in
+  `src/lib/db/query-gate.ts`, wired in `client.ts`; unit-tested against a
+  fake postgres-js query, and checked live against a local Postgres 16
+  (pool of 2, twelve concurrent queries plus a transaction: all correct,
+  peak of 2 active sessions). See the incident below for why.
 
 ## Caching layer (src/lib/cache.ts)
 
@@ -95,8 +105,13 @@ This session (static audit — see "What could not be measured" below):
   acknowledge, the import). Their cold computes run through the
   `serialized("analytics")` queue, which is what allows the Analytics page
   and the admin dashboard to request every snapshot at once: warm reads
-  resolve in parallel, misses still compute one at a time. Never remove
-  that queue and keep the Promise.all — that is the pool-wedge again.
+  resolve in parallel, misses still compute one at a time. The queue's
+  wait for a predecessor is bounded (`QUEUE_STALL_MS`, 30 s, with a
+  console warning when it trips): the queue lives as long as the server
+  instance, so an unbounded wait behind one computation that never
+  finished would hang every later request on that instance. Keep the
+  queue: the query gate stops a burst from wedging the pool, the queue
+  stops two cold aggregations from doubling the database's load.
 - Not cached on purpose: anything keyed on the current user, the EWS
   board itself, and the users row behind `getCurrentUser` (roles can be
   changed by a script; a stale role would be a security problem, not a
@@ -133,6 +148,43 @@ This session (static audit — see "What could not be measured" below):
   load, not pool size. Note for the future: Fluid Compute is on, so one
   instance serves several requests at once and they share that pool —
   the client's own comment still assumes one request per instance.
+
+## Incident: manager dashboard "Something went wrong" (2026-09-11)
+
+- **Symptom.** A manager opening `/dashboard` got the shell error page
+  with no `Reference:` line, or sat on the loading skeleton. Admin pages
+  were fine. The browser console showed `Minified React error #412`,
+  which is the React Flight client's "Connection closed." — the RSC
+  stream ended before the page's data arrived. No server error was
+  thrown, which is why there was no digest. Vercel's request log showed
+  the real `/dashboard` navigations as middleware rows with status `---`
+  (no response ever completed); the small 200s for `/dashboard?_rsc=` in
+  the Network tab were prefetches of the header logo link, not the
+  failing request.
+- **Cause.** The render hung on a query pipelined past the pool (see the
+  pool fact above). The manager dashboard is the widest fan-out in the
+  app — its second batch alone is up to ten queries (summary, attention
+  rows, supervisor rollup, overdue count, scope resolution), on top of
+  the layout's own reads and, under Fluid Compute, whatever other
+  requests share the instance — so it is the page that crosses eight.
+- **Fix.** The query gate, the bounded queue wait, and `error.tsx` now
+  naming a dropped connection instead of the generic message.
+- **How to see a hang, next time.** A page whose request has no status
+  in the Vercel log, a client error with no digest, and nothing in the
+  function's own logs is a hang, not a crash. `pg_stat_activity` on the
+  Supabase side (`state`, `wait_event`, `query_start`) says which
+  statement, if any, is actually running.
+- **Open question for the database owner.** The user ran
+  `ALTER ROLE postgres SET statement_timeout = '60s'` by mistake and
+  then `ALTER ROLE postgres RESET statement_timeout`. If Supabase had set
+  a default for the `postgres` role, the reset removed it. The Sep 9
+  "canceling statement due to statement timeout" errors prove some
+  timeout existed then. Check with
+  `select rolname, rolconfig from pg_roles where rolconfig is not null;`
+  and, if the `postgres` role no longer carries one, decide whether to
+  restore it. (A statement timeout would not have rescued this incident
+  — a pipelined query is not a running statement — but it is the only
+  thing that bounds a genuinely slow query.)
 
 ## Known, deliberately left alone (measure before touching)
 

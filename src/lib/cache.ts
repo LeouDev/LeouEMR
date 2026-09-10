@@ -82,6 +82,35 @@ export function invalidateCache(...tags: string[]): void {
 const queues = new Map<string, Promise<unknown>>();
 
 /**
+ * Longest a queued computation waits for its predecessor before running
+ * anyway. A predecessor that has not finished in this long is stuck — a
+ * query hung on the pooler, say — and letting it hold the queue would turn
+ * one stuck request into every later request on this instance hanging
+ * too. Each of these computations is measured in seconds, not tens of
+ * them, so the wait is only ever hit when something has already gone
+ * wrong; it is logged so that shows up.
+ */
+export const QUEUE_STALL_MS = 30_000;
+
+function afterPredecessor(prior: Promise<unknown>, queue: string): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn(
+        `[cache] the "${queue}" queue's previous computation is still running after ${QUEUE_STALL_MS} ms; running the next one without waiting for it`,
+      );
+      resolve();
+    }, QUEUE_STALL_MS);
+    // Never the thing keeping a command-line script alive at exit.
+    (timer as { unref?: () => void }).unref?.();
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    prior.then(done, done);
+  });
+}
+
+/**
  * Runs `work` after everything previously queued under `queue` has
  * finished — one heavy computation at a time per server instance.
  *
@@ -93,10 +122,14 @@ const queues = new Map<string, Promise<unknown>>();
  * the pool at once — the wedge described in src/lib/db/client.ts. Separate
  * queues for computations that nest (analytics calls period metrics) so a
  * caller is never waiting on itself.
+ *
+ * The wait for a predecessor is bounded (see QUEUE_STALL_MS): the queue
+ * lives as long as the server instance, and an unbounded wait behind one
+ * computation that never finishes would hang every later request.
  */
 export function serialized<T>(queue: string, work: () => Promise<T>): Promise<T> {
   const prior = queues.get(queue) ?? Promise.resolve();
-  const run = prior.then(work, work);
+  const run = afterPredecessor(prior, queue).then(work);
   queues.set(queue, run.catch(() => undefined));
   return run;
 }
