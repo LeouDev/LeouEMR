@@ -41,7 +41,11 @@ from every environment this project gets worked on in.
   `--open-items` to let the engine open items off past failures); after
   that the three gap-fills add nothing and can be deleted. MBO no longer
   opens action items (same migration); its rows stay hidden by the
-  `generates_action_items` flag every list reads.
+  `generates_action_items` flag every list reads. Migration 0041 was
+  applied to production on 2026-09-10 (~21:00 UTC) through the Supabase
+  SQL editor, with the drizzle tracker row inserted by hand afterwards,
+  the same way 0039 was. The backfill has not been run: Case Rate items
+  begin with the first weekly import after that date.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
