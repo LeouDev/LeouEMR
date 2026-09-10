@@ -5,6 +5,8 @@ import { Suspense, useState } from "react";
 import { AuthLayout, LoadingScene, PanelHeading } from "@/components/loading-scene";
 import { SCENE_SECONDS, holdForScene } from "@/lib/ui/scene-timing";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { describeSignupError } from "@/lib/auth/signup-availability";
+import { checkSignupAvailability } from "./actions";
 import { EMPTY_SIGNUP, SignupFields, fieldClass, labelClass, type SignupDetails } from "./signup-fields";
 
 type Mode = "signin" | "signup";
@@ -40,6 +42,25 @@ function LoginForm() {
       return;
     }
 
+    if (mode === "signup") {
+      // Ask our own database first whether this email, employee ID or MSID
+      // is already registered. When it is, the sign-up trigger rolls the
+      // whole thing back and Supabase can only say "Database error saving
+      // new user" — this turns that into which field, and what to do.
+      // A failure of the check itself (a dropped connection) is not a
+      // refusal: the sign-up goes ahead and the database still enforces
+      // every rule.
+      try {
+        const availability = await checkSignupAvailability({ email, employeeEid, msid: details.msid });
+        if (!availability.ok) {
+          setError(availability.error);
+          return;
+        }
+      } catch {
+        // fall through to the sign-up itself
+      }
+    }
+
     setSubmitting(true);
     const startedAt = Date.now();
     const supabase = createSupabaseBrowserClient();
@@ -56,7 +77,7 @@ function LoginForm() {
       if (signUpError) {
         // Fail fast: making someone watch the full scene only to be told
         // their email is taken is the wrong trade.
-        setError(signUpError.message);
+        setError(describeSignupError(signUpError.message));
         setSubmitting(false);
         return;
       }
