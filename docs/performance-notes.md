@@ -69,18 +69,22 @@ This session (static audit — see "What could not be measured" below):
   empty states read as sentences; Action Items names the filtered employee
   even when they have no items; both import wizards say a large import can
   take minutes and to keep the tab open.
-- **Query gate on the db client (2026-09-11).** `withQueryGate` in
+- **Query gate on the db client (2026-09-10 UTC).** `withQueryGate` in
   `src/lib/db/query-gate.ts`, wired in `client.ts`; unit-tested against a
   fake postgres-js query, and checked live against a local Postgres 16
   (pool of 2, twelve concurrent queries plus a transaction: all correct,
   peak of 2 active sessions). See the incident below for why.
-- **Group breakdowns with no reporting week in the range (2026-09-11).**
+- **Group breakdowns with no reporting week in the range (2026-09-10 UTC).**
   `computeAnalytics`'s by-site/manager/supervisor join was unbounded when
   no week started inside the range, so a month with daily facts but no
   weekly ledger yet (weeks are keyed by their Saturday start) showed
   all-time failure counts on every manager-dashboard row beside a summary
   saying nobody had data. Now such a range reports nobody evaluated, and
   the row's Failing header says "no reporting week in this period yet".
+  Verified live on September 2026 (every row "— · nobody evaluated";
+  team, MBO pass and open counts still real). The column fills in by
+  itself once the first week starting inside the month is imported —
+  for September 2026 that is the week of Saturday 5 September.
 
 ## Caching layer (src/lib/cache.ts)
 
@@ -156,7 +160,7 @@ This session (static audit — see "What could not be measured" below):
   instance serves several requests at once and they share that pool —
   the client's own comment still assumes one request per instance.
 
-## Incident: manager dashboard "Something went wrong" (2026-09-11)
+## Incident: manager dashboard "Something went wrong" (2026-09-10 UTC)
 
 - **Symptom.** A manager opening `/dashboard` got the shell error page
   with no `Reference:` line, or sat on the loading skeleton. Admin pages
@@ -181,17 +185,40 @@ This session (static audit — see "What could not be measured" below):
   function's own logs is a hang, not a crash. `pg_stat_activity` on the
   Supabase side (`state`, `wait_event`, `query_start`) says which
   statement, if any, is actually running.
-- **Open question for the database owner.** The user ran
+- **Outcome.** Query gate deployed 2026-09-10 20:16 UTC (`fad27ba`);
+  the manager confirmed the dashboard loads, with every granularity and
+  period switch returning 200 (Year 6.0 s and Quarter 2.1 s on first
+  view — cold aggregations over the whole history — then cached). The
+  group-breakdown fix followed at 20:30 UTC (`3a66793`). Times in the
+  Vercel log are shown in the browser's local time (PHT, UTC+8): the
+  "Sep 11 03:48" entries were 2026-09-10 19:48 UTC.
+- **Reading the evidence, next time.** In the Vercel Logs page, tick
+  "Error" under "Contains Console Level" to see function-side errors; a
+  hang produces none. Middleware rows carry `m`, function rows `f`; a
+  request whose function never answered is an `m`-only row with status
+  `---`. `f`-only rows for `/dashboard` are prefetches of the header
+  logo `<Link href="/dashboard">` (prefetch requests skip the middleware
+  by the matcher's `missing` headers), and their 0.1–1.1 kB `_rsc`
+  responses are the loading skeleton — normal, not a symptom. A React
+  production error number is decoded locally: grep
+  `formatProdErrorMessage(N)` in the production bundle under
+  `node_modules/next/dist/compiled/react-server-dom-turbopack/cjs/` (or
+  `react-dom/cjs/`) and read the same line in the `.development.js`
+  file beside it; `react.dev` is blocked by the egress proxy.
+- **Statement timeouts, resolved.** The user had run
   `ALTER ROLE postgres SET statement_timeout = '60s'` by mistake and
-  then `ALTER ROLE postgres RESET statement_timeout`. If Supabase had set
-  a default for the `postgres` role, the reset removed it. The Sep 9
-  "canceling statement due to statement timeout" errors prove some
-  timeout existed then. Check with
-  `select rolname, rolconfig from pg_roles where rolconfig is not null;`
-  and, if the `postgres` role no longer carries one, decide whether to
-  restore it. (A statement timeout would not have rescued this incident
-  — a pipelined query is not a running statement — but it is the only
-  thing that bounds a genuinely slow query.)
+  then `RESET` it. `select rolname, rolconfig from pg_roles where
+  rolconfig is not null;` afterwards shows Supabase's stock values —
+  `authenticated` 8s, `anon` 3s, `authenticator` 8s — and the
+  `postgres` role with only its search path, which is Supabase's
+  default state for it. The app sets no timeout of its own (nothing in
+  the repo mentions `statement_timeout`), so the Sep 9 "canceling
+  statement due to statement timeout" errors came from a database-wide
+  setting the reset could not touch; nothing was lost. `show
+  statement_timeout;` in the SQL editor shows the effective value. A
+  statement timeout would not have rescued this incident anyway — a
+  pipelined query is not a running statement — but it is the only thing
+  that bounds a genuinely slow one.
 
 ## Known, deliberately left alone (measure before touching)
 
@@ -246,6 +273,22 @@ one statement instead of N). The next session with `execute_sql` should:
 3. Check `pg_stat_activity` during a Stack Rank load for an admin — that
    page runs `getPeriodMetrics` over every employee.
 
+What the remote environment does offer:
+
+- A local PostgreSQL 16 cluster (`pg_ctlcluster 16 main start`, then
+  `su postgres -c psql` to create a role and database). Good for
+  driver-level checks — the query gate was proven against it with a
+  pool of two, twelve concurrent queries and a transaction — never a
+  stand-in for the app's data.
+- The public GitHub API without a token: `actions/runs?head_sha=<sha>`
+  for CI and `deployments?sha=<sha>` plus each deployment's
+  `statuses_url` for Vercel's Production/Preview state. A 20-second
+  poll loop over those two is how every deploy in these notes was
+  confirmed; production has taken 2–4 minutes from push to `success`.
+- Chromium and Playwright are installed, but nothing here can sign in:
+  the person has to log in themselves in a browser pane, and that
+  session does not survive a context reset.
+
 ## Local development gotchas
 
 - `npm ci` fails behind a proxy that blocks `cdn.sheetjs.com` (the `xlsx`
@@ -254,3 +297,14 @@ one statement instead of N). The next session with `execute_sql` should:
   `git checkout package.json package-lock.json`. Never commit that change.
 - `tsc --noEmit` needs `npx next typegen` first (route types), or it fails
   on `LayoutProps`. CI avoids this by running `next build` last.
+- postgres-js internals worth knowing before touching `client.ts`:
+  `max_pipeline: 0` is not a way to disable pipelining — a transaction's
+  `onexecute` callback only fires on the pipelining branch of
+  `execute()`, so with 0 the BEGIN's connection is never reserved and
+  `begin()` breaks. Concurrency has to be capped from outside, which is
+  what `withQueryGate` does (it swaps the query's `handler` on the
+  instance; the query calls it once, asynchronously, on its first
+  `then`/`execute`).
+- Tests that need a fake postgres-js query: subclass `Promise`, set
+  `static get [Symbol.species]() { return Promise }`, and call the
+  handler from an overridden `then` — see `query-gate.test.ts`.
