@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { NavLink } from "@/components/nav-link";
 import { Card, CardHeader, EmptyState, PageBand, StatCard, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { SUSTAINED_WEEKS, getDevelopmentBoard } from "@/lib/queries/development";
@@ -46,14 +47,27 @@ function Progress({ weeks }: { weeks: number }) {
  * into monitoring is already working. In practice almost everything lands in
  * "record root cause" — see the note below the table when that dominates.
  */
-export default async function DevelopmentPage() {
+export default async function DevelopmentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ all?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
 
-  const board = await getDevelopmentBoard(user);
+  const [board, params] = await Promise.all([getDevelopmentBoard(user), searchParams]);
   const { totals } = board;
   const isAgent = user.role === "agent";
+
+  // Only the most blocked people are rendered by default — the same number
+  // the scroll box was already sized to show — with everyone else one
+  // click away. For an admin or manager this board was the second-largest
+  // response in the app (59 kB, measured), every item of every person in
+  // development rendered into a box that shows twenty rows.
+  const showAll = params.all === "1";
+  const rows = showAll ? board.rows : board.rows.slice(0, VISIBLE_ROWS);
+  const abridged = rows.length < board.rows.length;
 
   // When almost every row is stuck on the same step, the ordering that
   // usually surfaces what's most blocked stops differentiating anything —
@@ -61,7 +75,7 @@ export default async function DevelopmentPage() {
   // unexplained.
   const stuckOnRca = board.rows.length > 3 && totals.missingRca / totals.openItems > 0.8;
 
-  const scrolls = !isAgent && board.rows.length > VISIBLE_ROWS;
+  const scrolls = !isAgent && rows.length > VISIBLE_ROWS;
 
   return (
     <>
@@ -112,9 +126,22 @@ export default async function DevelopmentPage() {
             subtitle={
               board.rows.length === 0
                 ? "Nothing in development"
-                : scrolls
-                  ? `Showing ${VISIBLE_ROWS} of ${board.rows.length} — most blocked first, scroll for the rest`
-                  : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
+                : abridged
+                  ? `The ${rows.length} most blocked of ${board.rows.length} people — an item with no root cause cannot move at all`
+                  : scrolls
+                    ? `Showing ${VISIBLE_ROWS} of ${board.rows.length} — most blocked first, scroll for the rest`
+                    : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
+            }
+            action={
+              abridged ? (
+                <NavLink
+                  href="/development?all=1"
+                  prefetch={false}
+                  className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  Show all {board.rows.length}
+                </NavLink>
+              ) : undefined
             }
           />
 
@@ -154,7 +181,7 @@ export default async function DevelopmentPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {board.rows.map((row) => (
+                    {rows.map((row) => (
                       <tr
                         key={row.employeeId}
                         className="border-b-2 border-line bg-surface last:border-0 hover:bg-cream/60"
