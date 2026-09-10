@@ -30,6 +30,18 @@ from every environment this project gets worked on in.
   timeout, deploy rollover). Every client call site now catches that and
   shows `describeActionError()` (`src/lib/ui/action-error.ts`) instead of
   sitting on "Saving…" forever. Keep new forms on that pattern.
+- **Case rate is a KPI (`CASE_RATE`, migration 0041), derived from the
+  per-skill facts** by one formula, `blendCaseRate` in
+  `src/lib/kpi-engine/case-rate.ts`: the import writes it to the weekly
+  ledger (so the action-item engine opens development items off it), and
+  period re-aggregation derives it beside PAR. Weeks imported before 0041
+  have no ledger row; the employee matrix, agent trend and team comparison
+  fill those from the facts, ledger weeks always winning. `npm run
+  backfill:case-rate -- --apply` writes the missing rows (add
+  `--open-items` to let the engine open items off past failures); after
+  that the three gap-fills add nothing and can be deleted. MBO no longer
+  opens action items (same migration); its rows stay hidden by the
+  `generates_action_items` flag every list reads.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages

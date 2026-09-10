@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { formatMetric, formatWeek } from "@/components/ui";
-import { EwsRiskBadge } from "@/components/ui";
+import { EwsRiskBadge, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { isDevelopmentItemStale, type EmployeeMatrix } from "@/lib/queries/performance";
 
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
@@ -45,8 +44,14 @@ export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
   const { weeks, kpis, cells, ews, issues } = matrix;
   // Resolved, or gone stale with nothing tracked against it recently — the
   // KPI grid above stays the full history regardless; only this table's
-  // rows are ever trimmed by it.
-  const visibleIssues = issues.filter((issue) => !isDevelopmentItemStale(weeks, issue.history));
+  // rows are ever trimmed by it. The same KPI can appear more than once:
+  // each row is one episode, and a new one opens when a failure follows a
+  // closed one (closed on four sustained weeks, or on age once the KPI had
+  // recovered). Live episodes come first, closed ones after, each newest
+  // first — and every row says which it is.
+  const visibleIssues = issues
+    .filter((issue) => !isDevelopmentItemStale(weeks, issue.history))
+    .sort((a, b) => Number(a.status === "COMPLETED") - Number(b.status === "COMPLETED"));
 
   if (weeks.length === 0) {
     return (
@@ -164,7 +169,8 @@ export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
                       {issue.kpiName}
                     </Link>
                     <span className="ml-2 font-mono text-xs text-muted">{issue.actionItemCode}</span>
-                    <p className="mt-1 flex items-center gap-1.5">
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <StatusBadge status={issue.status} />
                       <Marker done={issue.hasRca} label="RCA" />
                       <Marker done={issue.hasActionPlan} label="Plan" />
                       <span className="text-xs text-muted">

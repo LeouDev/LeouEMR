@@ -8,6 +8,7 @@ import {
   skillRampSchedules,
   skillReferences,
 } from "@/lib/db/schema";
+import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
 import {
   computeSkillRating,
   computeSkillRatio,
@@ -196,6 +197,23 @@ export async function computeParMetrics(
   }
 
   for (const [, skills] of byEmployeeWeek) {
+    // Case rate is its own KPI as well as an input to the rating below: a
+    // case-rate agent's only output figure, scored against what their own
+    // skill mix expected of the cases they worked. Hours play no part in
+    // it, so it is measured before the hours-based filter the rating needs.
+    const caseRate = blendCaseRate(caseRateTotals(skills, references));
+    if (caseRate) {
+      metrics.push({
+        eid: skills[0].eid,
+        kpiCode: CASE_RATE_KPI_CODE as never,
+        weekStart: skills[0].weekStart,
+        weekEnd: skills[0].weekEnd,
+        actualValue: caseRate.rate,
+        targetValue: caseRate.target,
+        sampleSize: Math.round(caseRate.cases),
+      });
+    }
+
     const scored = skills
       .map((skill) => {
         const reference = references.get(normalize(skill.skillType));
@@ -315,6 +333,18 @@ export async function computeParMetrics(
   }
 
   return { metrics, unmatchedSkills: [...unmatched] };
+}
+
+/** The case-rate skills in one employee-week, with the weight each expected per case. */
+function caseRateTotals(
+  skills: SkillWeek[],
+  references: Map<string, SkillReference>,
+): CaseRateSkillTotals[] {
+  return skills.flatMap((skill) => {
+    const reference = references.get(normalize(skill.skillType));
+    if (reference?.metric !== "case_rate" || !(reference.target > 0)) return [];
+    return [{ cases: skill.cases, prodWeight: skill.prodWeight, targetPerCase: reference.target }];
+  });
 }
 
 function weekEndFor(

@@ -1,6 +1,7 @@
 import { and, inArray, isNull, lte, or, sql, gt } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { kpiDefinitions, performanceIssues, weeklyMetricResults } from "@/lib/db/schema";
+import { OPENS_ACTION_ITEMS } from "./performance";
 
 export interface TeamTrendPoint {
   weekStart: string;
@@ -180,6 +181,9 @@ export async function getOrgTrend(
           inArray(performanceIssues.employeeId, employeeIds),
           lte(performanceIssues.openedWeek, weeks[weeks.length - 1]),
           or(isNull(performanceIssues.resolvedWeek), gt(performanceIssues.resolvedWeek, weeks[0])),
+          // The same flag every other open-work count reads, so the line
+          // and the numbers beside it agree on what counts.
+          OPENS_ACTION_ITEMS,
         ),
       ),
   ]);
