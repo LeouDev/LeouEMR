@@ -18,8 +18,6 @@ import {
 } from "@/lib/db/schema";
 import { employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
-import { CASE_RATE_KPI_CODE } from "@/lib/kpi-engine/case-rate";
-import { getCaseRateByWeek } from "./trend";
 
 /** Statuses still requiring attention (not resolved). */
 /**
@@ -56,6 +54,20 @@ export const OPEN_STATUSES = [
  * regardless.
  */
 export const SUSTAINED_PASS_WEEKS = 8;
+
+/**
+ * The development plan's KPI grid, in the order the business reads it: the
+ * headline scorecard, whether or not a KPI opens items. The per-skill and
+ * per-KPI work items are the development-item table beneath it.
+ */
+export const PLAN_KPI_CODES = [
+  "PRODUCTION_RATE",
+  "QUALITY",
+  "NPS",
+  "CRITICAL_ERRORS",
+  "MBO",
+  "ATTENDANCE",
+] as const;
 
 /** The newest reporting week in the ledger. Changes only on import. */
 export const getLatestWeek = cachedRead("latest-week", [CACHE_TAG.imports], async (): Promise<string | null> => {
@@ -635,13 +647,11 @@ export async function getEmployeeMatrix(
       })
       .from(weeklyMetricResults)
       .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-      // Same flag OPENS_ACTION_ITEMS reads below, applied here too: MBO is
-      // assessed monthly, so its weekly rows exist in the ledger but never
-      // belonged on a weekly development plan — this is the "everywhere at
-      // once" the flag's own doc comment describes, not a second place that
-      // now has to remember it by name.
+      // The grid is the scorecard (PLAN_KPI_CODES), not the list of what
+      // opens items: PAR and MBO belong on it though they open nothing, and
+      // the skills that do open items belong in the table below instead.
       .where(
-        and(eq(weeklyMetricResults.employeeId, employeeId), eq(kpiDefinitions.generatesActionItems, true)),
+        and(eq(weeklyMetricResults.employeeId, employeeId), inArray(kpiDefinitions.code, [...PLAN_KPI_CODES])),
       )
       .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
     db
@@ -692,19 +702,9 @@ export async function getEmployeeMatrix(
     });
   }
 
-  // Case rate has been a KPI in the weekly ledger since migration 0041, so
-  // it arrives with the query above for every week imported since. Weeks
-  // imported before that have no row for it, and for an agent scored on it
-  // that is the output measure their PAR is built from — so those weeks are
-  // filled from the per-skill facts with the same formula, and a ledger week
-  // always wins. Once `npm run backfill:case-rate` has run this adds nothing.
-  //
-  // Read alongside the issue history and notes below: all three depend only
-  // on what the first batch returned (the weeks, the issue ids), not on each
-  // other, so this used to be a whole extra round trip between them for
-  // nothing.
-  const [caseRates, historyRows, noteRows] = await Promise.all([
-    getCaseRateByWeek(employeeId, weeks),
+  // The issue history and the notes depend only on what the first batch
+  // returned (the issue ids), not on each other, so they are read together.
+  const [historyRows, noteRows] = await Promise.all([
     issueRows.length
       ? db
           .select()
@@ -718,30 +718,10 @@ export async function getEmployeeMatrix(
           .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId)))
       : Promise.resolve([]),
   ]);
-  if (caseRates.size > 0) {
-    if (!kpiOrder.has(CASE_RATE_KPI_CODE)) {
-      kpiOrder.set(CASE_RATE_KPI_CODE, {
-        code: CASE_RATE_KPI_CODE,
-        name: "Case Rate",
-        direction: "higher_is_better",
-      });
-    }
-    for (const [week, r] of caseRates) {
-      const key = `${CASE_RATE_KPI_CODE}|${week}`;
-      if (cells.has(key)) continue;
-      cells.set(key, {
-        actualValue: r.rate,
-        targetValue: r.target,
-        status: r.status === "PASS" ? "pass" : "fail",
-        sampleSize: null,
-      });
-    }
-  }
-
   return {
     employee,
     weeks,
-    kpis: [...kpiOrder.values()],
+    kpis: PLAN_KPI_CODES.flatMap((code) => kpiOrder.get(code) ?? []),
     cells,
     ews: new Map(assessments.map((a) => [a.week, { riskLevel: a.riskLevel, score: a.score }])),
     issues: issueRows.map((row) => ({

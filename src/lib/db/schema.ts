@@ -263,6 +263,17 @@ export const kpiDefinitions = pgTable("kpi_definitions", {
    * its totals, a count sums, and AHT inverts.
    */
   aggregation: kpiAggregationEnum("aggregation").notNull().default("ratio"),
+  /**
+   * Set on the KPIs that stand for one skill each (code `SKILL_<skill
+   * code>`), so a skill can be scored, tracked and opened as a development
+   * item through the same weekly ledger and engine as every other KPI.
+   * Null for the KPIs proper. Anything that lists "the KPIs" — a grid, a
+   * comparison table, a trend's chips — excludes rows where this is set;
+   * anything that lists work items includes them.
+   */
+  skillReferenceId: uuid("skill_reference_id")
+    .unique()
+    .references(() => skillReferences.id),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1,4 +1,4 @@
-import { type SQL, and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { type SQL, and, asc, count, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { CACHE_TAG, cachedRead, serialized } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
@@ -200,7 +200,10 @@ async function computeAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSna
     })
     .from(weeklyMetricResults)
     .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-    .where(and(...window))
+    // Skills open items too (see the flag) and so count toward "failing"
+    // below, but they are work items, not KPIs: the by-KPI breakdown does
+    // not become twenty-one skill rows.
+    .where(and(...window, isNull(kpiDefinitions.skillReferenceId)))
     .groupBy(kpiDefinitions.code, kpiDefinitions.name);
 
   // A month bucket is keyed by its first day, so the same "start date"

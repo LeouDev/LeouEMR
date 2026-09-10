@@ -9,6 +9,7 @@ import {
   npsFacts,
   qualityFacts,
   skillFacts,
+  skillReferences,
   weeklyMetricResults,
 } from "@/lib/db/schema";
 import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
@@ -56,6 +57,7 @@ export async function commitImport(
   // weeks this file covers, so the roll-ups can attribute results to the
   // supervisor of record rather than to whoever holds them today.
   await persistAssignments(parsed, employeeIdByEid, options.importBatchId);
+  await ensureSkillKpis();
   const definitions = await loadKpiDefinitions();
 
   const missingKpis = new Set<string>();
@@ -556,6 +558,25 @@ async function persistAssignments(
       await tx.insert(employeeAssignments).values(values.slice(i, i + CHUNK));
     }
   });
+}
+
+/**
+ * One KPI definition per skill reference (code `SKILL_<skill code>`), so a
+ * skill's weekly result is evaluated, tracked and opened as a development
+ * item like any KPI. Migration 0042 seeded them; this keeps them in step for
+ * a skill added or renamed since, before the import looks the codes up.
+ */
+async function ensureSkillKpis(): Promise<void> {
+  await db.execute(sql`
+    insert into ${kpiDefinitions}
+      (code, name, type, direction, target, generates_action_items, aggregation, skill_reference_id)
+    select 'SKILL_' || upper(s.code), s.name, 'number'::kpi_type,
+           (case when s.lower_is_better then 'lower_is_better' else 'higher_is_better' end)::kpi_direction,
+           null, true, 'derived'::kpi_aggregation, s.id
+    from ${skillReferences} s
+    on conflict (skill_reference_id) do update
+      set name = excluded.name, direction = excluded.direction
+  `);
 }
 
 async function loadKpiDefinitions() {

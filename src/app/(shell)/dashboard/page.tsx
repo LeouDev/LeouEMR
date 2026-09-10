@@ -25,7 +25,7 @@ import {
 import { getOpenIssueCounts, getOverdueCount, getSupervisorRollup } from "@/lib/queries/roster";
 import { resolveScopedIds } from "@/lib/queries/performance";
 import { reportingScopeIds } from "@/lib/queries/org-history";
-import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
+import { getFactDateRange, getPeriodMetrics, withoutSkills } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import { getEmployeeKpiTrend } from "@/lib/queries/trend";
 import { getTeamKpiTrend } from "@/lib/queries/team-trend";
@@ -174,7 +174,9 @@ export default async function DashboardPage({
     weekPeriod && weekPeriod.start !== period?.start
       ? getPeriodMetrics(scopedIds, weekPeriod)
       : Promise.resolve(null),
-  ]).then(([p, w]) => [p, w ?? p] as const);
+    // The cards and the agent's own KPI list are about KPIs; a skill's
+    // result is a work item and shows up in the attention table instead.
+  ]).then(([p, w]) => [withoutSkills(p), withoutSkills(w ?? p)] as const);
 
   const periodByEmployee = new Map<string, { fail: number; warn: number }>();
   for (const metric of periodMetrics) {

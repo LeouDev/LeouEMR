@@ -9,6 +9,7 @@ import {
   skillReferences,
 } from "@/lib/db/schema";
 import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
+import { measureSkill, measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 import {
   computeSkillRating,
   computeSkillRatio,
@@ -124,24 +125,8 @@ export async function loadSkillReferences(): Promise<Map<string, SkillReference>
   return byKey;
 }
 
-/**
- * The measured value for one skill-week, per the skill's configured metric.
- * Case rate is weight-based and involves no hours at all.
- */
-export function measureSkill(
-  metric: SkillReference["metric"],
-  skill: { cases: number; hours: number; prodWeight: number },
-): number | null {
-  switch (metric) {
-    case "aht":
-      return skill.cases > 0 ? (skill.hours / skill.cases) * 3600 : null;
-    case "case_rate":
-      return skill.cases > 0 && skill.prodWeight > 0 ? skill.prodWeight / skill.cases : null;
-    case "cph":
-    default:
-      return skill.hours > 0 ? skill.cases / skill.hours : null;
-  }
-}
+/** The per-skill formula, shared with the skill-as-KPI evaluation (src/lib/kpi-engine/skill-result.ts). */
+export { measureSkill };
 
 /** Normalized skill key -> attributes per audit, for the DPO denominator. */
 export async function loadAttributesBySkill(): Promise<Map<string, number>> {
@@ -211,6 +196,30 @@ export async function computeParMetrics(
         actualValue: caseRate.rate,
         targetValue: caseRate.target,
         sampleSize: Math.round(caseRate.cases),
+      });
+    }
+
+    // One result per skill as well, on the skill's own KPI (migration 0042):
+    // the same actual and the same week's target the rating below scores,
+    // so a miss on Gen_Phones opens a development item for Gen_Phones. A
+    // week with too little time on a skill is not judged — see
+    // measureSkillWeek.
+    for (const skill of skills) {
+      const reference = references.get(normalize(skill.skillType));
+      if (!reference) continue;
+      const target = reference.lowerIsBetter
+        ? (skill.ahtTarget ?? reference.target)
+        : (skill.cphTarget ?? reference.target);
+      const result = measureSkillWeek(reference.metric, skill, target);
+      if (!result) continue;
+      metrics.push({
+        eid: skill.eid,
+        kpiCode: skillKpiCode(reference.code) as never,
+        weekStart: skill.weekStart,
+        weekEnd: skill.weekEnd,
+        actualValue: result.actual,
+        targetValue: result.target,
+        sampleSize: Math.round(skill.cases),
       });
     }
 

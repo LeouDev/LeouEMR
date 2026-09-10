@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { kpiDefinitions, skillFacts, weeklyMetricResults } from "@/lib/db/schema";
 import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
@@ -62,6 +62,8 @@ export async function getEmployeeKpiTrend(
       and(
         eq(weeklyMetricResults.employeeId, employeeId),
         inArray(weeklyMetricResults.weekStart, weeks),
+        // Skills are work items, not KPIs: they stay off the chips here.
+        isNull(kpiDefinitions.skillReferenceId),
       ),
     );
 

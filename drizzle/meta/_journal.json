@@ -288,6 +288,13 @@
       "when": 1789077483042,
       "tag": "0041_case_rate_kpi_and_mbo_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789080687528,
+      "tag": "0042_skill_kpis",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   kpiDefinitions,
@@ -11,10 +11,20 @@ import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
 import { rampStageForWeek } from "./engine";
 
-/** The KPI a skill's ramp adjusts — an AHT skill's ramp never touches CPH, and vice versa. */
-async function loadRampKpi(
+interface RampKpi {
+  id: string;
+  definition: KpiDefinition;
+}
+
+/**
+ * The stored rows a skill's ramp adjusts: the standalone CPH or AHT result
+ * (an AHT skill's ramp never touches CPH, and vice versa) and, since
+ * migration 0042, the skill's own KPI row — the one that opens a
+ * development item for that skill.
+ */
+async function loadRampKpis(
   skillReferenceId: string,
-): Promise<{ id: string; definition: KpiDefinition; skillTarget: number } | null> {
+): Promise<{ kpis: RampKpi[]; skillTarget: number } | null> {
   const [skill] = await db
     .select({ target: skillReferences.target, lowerIsBetter: skillReferences.lowerIsBetter })
     .from(skillReferences)
@@ -22,42 +32,52 @@ async function loadRampKpi(
     .limit(1);
   if (!skill) return null;
 
-  const [row] = await db
+  const rows = await db
     .select()
     .from(kpiDefinitions)
-    .where(eq(kpiDefinitions.code, skill.lowerIsBetter ? "AHT" : "CPH"))
-    .limit(1);
-  if (!row) return null;
+    .where(
+      or(
+        eq(kpiDefinitions.code, skill.lowerIsBetter ? "AHT" : "CPH"),
+        eq(kpiDefinitions.skillReferenceId, skillReferenceId),
+      ),
+    );
+  if (rows.length === 0) return null;
 
   return {
-    id: row.id,
     skillTarget: skill.target,
-    definition: {
-      code: row.code,
-      name: row.name,
-      type: row.type,
-      direction: row.direction,
-      target: row.target ?? undefined,
-      warningThreshold: row.warningThreshold ?? undefined,
-      failureThreshold: row.failureThreshold ?? undefined,
-      rangeMin: row.rangeMin ?? undefined,
-      rangeMax: row.rangeMax ?? undefined,
-      expected: row.expectedBoolean ?? undefined,
-    },
+    kpis: rows.map((row) => ({
+      id: row.id,
+      definition: {
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        direction: row.direction,
+        target: row.target ?? undefined,
+        warningThreshold: row.warningThreshold ?? undefined,
+        failureThreshold: row.failureThreshold ?? undefined,
+        rangeMin: row.rangeMin ?? undefined,
+        rangeMax: row.rangeMax ?? undefined,
+        expected: row.expectedBoolean ?? undefined,
+      },
+    })),
   };
 }
 
-/** Applies `resolveTarget` to each stored row, updates what changed, and replays the affected weeks. */
-async function applyAndReplay(
+/**
+ * Applies `resolveTarget` to each stored row of one KPI and updates what
+ * changed. Returns the weeks it touched; the caller replays them once all
+ * the KPIs a ramp adjusts have been brought up to date, so the engine sees
+ * each week whole.
+ */
+async function applyTargets(
   employeeId: string,
-  kpiId: string,
-  definition: KpiDefinition,
+  kpi: RampKpi,
   resolveTarget: (weekStart: string) => number | undefined,
-): Promise<{ weeksCorrected: number }> {
+): Promise<Set<string>> {
   const rows = await db
     .select()
     .from(weeklyMetricResults)
-    .where(and(eq(weeklyMetricResults.employeeId, employeeId), eq(weeklyMetricResults.kpiId, kpiId)));
+    .where(and(eq(weeklyMetricResults.employeeId, employeeId), eq(weeklyMetricResults.kpiId, kpi.id)));
 
   const affectedWeeks = new Set<string>();
   const changes: Array<{ id: string; target: number; status: "pass" | "warning" | "fail" }> = [];
@@ -65,7 +85,7 @@ async function applyAndReplay(
     const target = resolveTarget(row.weekStart);
     if (target === undefined || target === row.targetValue) continue;
 
-    const effective = applySourceTarget(definition, target);
+    const effective = applySourceTarget(kpi.definition, target);
     const status = evaluateKpi(row.actualValue, effective).status.toLowerCase() as
       | "pass"
       | "warning"
@@ -95,6 +115,19 @@ async function applyAndReplay(
     `);
   }
 
+  return affectedWeeks;
+}
+
+/** Brings every row the ramp adjusts up to date, then replays the touched weeks once. */
+async function applyAndReplay(
+  employeeId: string,
+  kpis: RampKpi[],
+  resolveTarget: (weekStart: string) => number | undefined,
+): Promise<{ weeksCorrected: number }> {
+  const affectedWeeks = new Set<string>();
+  for (const kpi of kpis) {
+    for (const week of await applyTargets(employeeId, kpi, resolveTarget)) affectedWeeks.add(week);
+  }
   if (affectedWeeks.size > 0) {
     await runIssueEngineForWeeks([...affectedWeeks]);
   }
@@ -112,22 +145,22 @@ async function applyAndReplay(
  * which would otherwise leave a wrong target sitting there until the next
  * weekly import quietly fixes it. This closes that gap immediately instead.
  *
- * Deliberately narrow: it only touches the standalone weekly CPH/AHT result
- * (weeklyMetricResults) and the action items derived from it. The PAR/MBO
- * production rate is computed fresh from skill_facts at import time and is
- * not stored per-target the way weeklyMetricResults is, so an
- * already-committed week's production rate and MBO result are corrected by
- * the next import, not by this — re-deriving those from daily facts on
- * demand is a larger, separate piece of work than "set a ramp assignment"
- * should silently take on.
+ * Deliberately narrow: it only touches the stored weekly rows that carry a
+ * per-row target (the standalone CPH/AHT result and the skill's own row)
+ * and the action items derived from them. The PAR/MBO production rate is
+ * computed fresh from skill_facts at import time and is not stored
+ * per-target the way weeklyMetricResults is, so an already-committed week's
+ * production rate and MBO result are corrected by the next import, not by
+ * this — re-deriving those from daily facts on demand is a larger, separate
+ * piece of work than "set a ramp assignment" should silently take on.
  */
 export async function reapplyRampToStoredWeeks(
   employeeId: string,
   skillReferenceId: string,
   rampStartWeek: string,
 ): Promise<{ weeksCorrected: number }> {
-  const kpi = await loadRampKpi(skillReferenceId);
-  if (!kpi) return { weeksCorrected: 0 };
+  const ramp = await loadRampKpis(skillReferenceId);
+  if (!ramp) return { weeksCorrected: 0 };
 
   const schedule = await db
     .select({ stage: skillRampSchedules.stage, target: skillRampSchedules.target })
@@ -136,7 +169,7 @@ export async function reapplyRampToStoredWeeks(
   if (schedule.length === 0) return { weeksCorrected: 0 };
   const targetByStage = new Map(schedule.map((s) => [s.stage, s.target]));
 
-  return applyAndReplay(employeeId, kpi.id, kpi.definition, (weekStart) => {
+  return applyAndReplay(employeeId, ramp.kpis, (weekStart) => {
     const stage = rampStageForWeek(rampStartWeek, weekStart);
     return stage === null ? undefined : targetByStage.get(stage);
   });
@@ -160,8 +193,8 @@ export async function revertRampOnStoredWeeks(
   employeeId: string,
   skillReferenceId: string,
 ): Promise<{ weeksCorrected: number }> {
-  const kpi = await loadRampKpi(skillReferenceId);
-  if (!kpi) return { weeksCorrected: 0 };
+  const ramp = await loadRampKpis(skillReferenceId);
+  if (!ramp) return { weeksCorrected: 0 };
 
-  return applyAndReplay(employeeId, kpi.id, kpi.definition, () => kpi.skillTarget);
+  return applyAndReplay(employeeId, ramp.kpis, () => ramp.skillTarget);
 }
