@@ -80,6 +80,12 @@ from every environment this project gets worked on in.
   Rate, Quality, NPS, Critical Errors, MBO, Attendance, in that order.
   `npm run backfill:skill-results -- --weeks=N` writes skill rows for
   weeks imported before 0042 (`--apply --open-items` to open items).
+  Time-and-motion studies attach to handle-time items: the AHT KPI or a
+  handle-time skill's item (`isHandleTimeKpi` in
+  `src/lib/time-motion/engine.ts` — a skill-linked KPI with direction
+  lower_is_better, i.e. OBD Phone, PartD_Phones, Gen_Phones, UHC_west,
+  Clinical Appeals Phone), gated the same way on the page and in the
+  save action.
   Applied to production 2026-09-10 ~23:10 UTC through the SQL editor.
   Lesson from that rollout: the tracker row was inserted before the
   migration SQL had run, and the deployed code already selected the new
