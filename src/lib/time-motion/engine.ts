@@ -59,3 +59,18 @@ export function scoreSegments(
     totalBaselineSeconds: scored.reduce((sum, s) => sum + s.baselineSeconds, 0),
   };
 }
+
+/**
+ * Whether an action item is about handle time, and so carries a time-and-
+ * motion study: the standalone AHT KPI, or a skill's own KPI for a skill
+ * measured in seconds per case (the lower-is-better skills — OBD Phone,
+ * PartD_Phones, Gen_Phones, UHC_west, Clinical Appeals Phone). Critical
+ * Errors is lower-is-better too, which is why the skill link is required.
+ */
+export function isHandleTimeKpi(kpi: {
+  code: string;
+  direction: string;
+  skillReferenceId: string | null;
+}): boolean {
+  return kpi.code === "AHT" || (kpi.skillReferenceId !== null && kpi.direction === "lower_is_better");
+}

@@ -78,7 +78,7 @@ function input(overrides: Partial<Record<string, unknown>> = {}) {
 beforeEach(() => {
   currentUser.value = null;
   stored.item = { actionItem: {}, issue: { kpiId: "kpi-aht" }, employee: {} };
-  stored.kpi = { code: "AHT" };
+  stored.kpi = { code: "AHT", direction: "lower_is_better", skillReferenceId: null };
   stored.inserted = [];
 });
 
@@ -115,12 +115,29 @@ describe("saveTimeMotionStudy", () => {
     expect(stored.inserted).toHaveLength(0);
   });
 
-  it("refuses an item whose KPI is not AHT", async () => {
+  it("refuses an item whose KPI is not about handle time", async () => {
     currentUser.value = user("supervisor");
-    stored.kpi = { code: "ATTENDANCE" };
+    stored.kpi = { code: "ATTENDANCE", direction: "higher_is_better", skillReferenceId: null };
     expect(await saveTimeMotionStudy(input())).toEqual({
       ok: false,
-      error: "Time and motion applies to average handle time items",
+      error: "Time and motion applies to handle-time items",
+    });
+    expect(stored.inserted).toHaveLength(0);
+  });
+
+  it("accepts a handle-time skill's own item, such as Gen_Phones", async () => {
+    currentUser.value = user("supervisor");
+    stored.kpi = { code: "SKILL_GEN_PHONES", direction: "lower_is_better", skillReferenceId: "ref-gen" };
+    expect(await saveTimeMotionStudy(input())).toEqual({ ok: true });
+    expect(stored.inserted.some((i) => (i as { table: string }).table === "time_motion_studies")).toBe(true);
+  });
+
+  it("refuses a cases-per-hour skill's item — timing a call explains nothing there", async () => {
+    currentUser.value = user("supervisor");
+    stored.kpi = { code: "SKILL_OCN", direction: "higher_is_better", skillReferenceId: "ref-ocn" };
+    expect(await saveTimeMotionStudy(input())).toEqual({
+      ok: false,
+      error: "Time and motion applies to handle-time items",
     });
     expect(stored.inserted).toHaveLength(0);
   });

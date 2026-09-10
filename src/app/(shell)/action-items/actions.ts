@@ -25,7 +25,7 @@ import {
   submitRcaAndActionPlan,
 } from "@/lib/action-item-engine/engine";
 import { actionPlanSchema, rcaSchema } from "@/lib/rca-action-plan/validation";
-import { scoreSegments } from "@/lib/time-motion/engine";
+import { isHandleTimeKpi, scoreSegments } from "@/lib/time-motion/engine";
 import { z } from "zod";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -405,11 +405,13 @@ const timeMotionStudySchema = z.object({
 });
 
 /**
- * Records a supervisor's timed observation of one call against an AHT item.
+ * Records a supervisor's timed observation of one call against a handle-time
+ * item.
  *
- * Restricted to AHT specifically, not any action item: a time-and-motion
+ * Restricted to handle-time items, not any action item — the AHT KPI or a
+ * handle-time skill's own item (see isHandleTimeKpi): a time-and-motion
  * study answers "which part of the call is running long", which is only a
- * meaningful question when the KPI being corrected is handle time. Status
+ * meaningful question when the measure being corrected is handle time. Status
  * per segment is computed here from the submitted seconds rather than
  * accepted from the client, for the same reason saveEwsAssessment computes
  * its own risk level — a crafted request should not be able to post a
@@ -431,12 +433,16 @@ export async function saveTimeMotionStudy(input: unknown): Promise<ActionResult>
   if (!scoped) return { ok: false, error: "Action item not found" };
 
   const [kpi] = await db
-    .select({ code: kpiDefinitions.code })
+    .select({
+      code: kpiDefinitions.code,
+      direction: kpiDefinitions.direction,
+      skillReferenceId: kpiDefinitions.skillReferenceId,
+    })
     .from(kpiDefinitions)
     .where(eq(kpiDefinitions.id, scoped.issue.kpiId))
     .limit(1);
-  if (kpi?.code !== "AHT") {
-    return { ok: false, error: "Time and motion applies to average handle time items" };
+  if (!kpi || !isHandleTimeKpi(kpi)) {
+    return { ok: false, error: "Time and motion applies to handle-time items" };
   }
 
   const scored = scoreSegments(parsed.data.segments);

@@ -10,6 +10,7 @@ import { rootCauseCategories } from "@/lib/db/schema";
 import { getActionItemDetail } from "@/lib/queries/performance";
 import { AcknowledgeButton, ActionPlanForm, RcaForm, SendToAgentButton } from "./workflow";
 import { RcaNotes } from "./rca-notes";
+import { isHandleTimeKpi } from "@/lib/time-motion/engine";
 import { TimeMotionSection } from "./time-motion";
 import type { TimeMotionSegmentRecord } from "./time-motion";
 
@@ -48,7 +49,10 @@ export default async function ActionItemPage({
 
   const { actionItem, issue, employee, kpi, rca, plan, history, acknowledgements, metrics, notes, timeMotion } =
     detail;
-  const isAht = kpi.code === "AHT";
+  // Handle-time work: the AHT KPI, or a handle-time skill's own item (OBD
+  // Phone, PartD_Phones, Gen_Phones, UHC_west, Clinical Appeals Phone) —
+  // the ones a timed observation of a call can explain.
+  const isAht = isHandleTimeKpi(kpi);
 
   const canEdit = canManageActionItems(user);
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
