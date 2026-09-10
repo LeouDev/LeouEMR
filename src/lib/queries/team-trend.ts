@@ -58,6 +58,8 @@ export async function getTeamKpiTrend(
       and(
         inArray(weeklyMetricResults.employeeId, employeeIds),
         inArray(weeklyMetricResults.weekStart, weeks),
+        // Skills are work items, not KPIs: they stay off the chips here.
+        isNull(kpiDefinitions.skillReferenceId),
       ),
     )
     .groupBy(
@@ -167,6 +169,8 @@ export async function getOrgTrend(
         and(
           inArray(weeklyMetricResults.employeeId, employeeIds),
           inArray(weeklyMetricResults.weekStart, weeks),
+          // Skills are work items, not KPIs: they stay off the chips here.
+          isNull(kpiDefinitions.skillReferenceId),
         ),
       ),
     db

@@ -5,7 +5,7 @@ import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/l
 import { normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import type { NpsMix } from "@/lib/kpi-engine/nps";
-import { getPeriodMetrics } from "./period-metrics";
+import { getPeriodMetrics, withoutSkills } from "./period-metrics";
 import { periodContaining, previousPeriod, type Period } from "./period";
 import { eligibleForPeriod } from "./eligibility";
 
@@ -65,8 +65,8 @@ export async function getMonthComparison(
   const { current, previous } = monthPair(date);
 
   const [currentMetrics, previousMetrics] = await Promise.all([
-    getPeriodMetrics([employeeId], current),
-    getPeriodMetrics([employeeId], previous),
+    getPeriodMetrics([employeeId], current).then(withoutSkills),
+    getPeriodMetrics([employeeId], previous).then(withoutSkills),
   ]);
 
   const before = new Map(previousMetrics.map((m) => [m.kpiCode, m]));
@@ -317,8 +317,8 @@ export async function getTeamPeriodComparison(
   }
 
   const [currentMetrics, previousMetrics, roster, currentRates, previousRates] = await Promise.all([
-    getPeriodMetrics(eligibleIds, current),
-    getPeriodMetrics(eligibleIds, previous),
+    getPeriodMetrics(eligibleIds, current).then(withoutSkills),
+    getPeriodMetrics(eligibleIds, previous).then(withoutSkills),
     db
       .select({ id: employees.id, eid: employees.eid, name: employees.name })
       .from(employees)

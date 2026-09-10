@@ -13,6 +13,7 @@ import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { CASE_RATE_KPI_CODE, blendCaseRate } from "@/lib/kpi-engine/case-rate";
+import { measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { periodsBetween } from "./period";
@@ -32,6 +33,17 @@ export interface PeriodMetric {
   targetValue: number | null;
   status: KpiStatus;
   sampleSize: number;
+  /**
+   * Set when this KPI stands for one skill (see skill-result.ts). Anything
+   * that lists "the KPIs" filters these out — `withoutSkills` — while the
+   * work-item paths keep them.
+   */
+  skillReferenceId: string | null;
+}
+
+/** The KPIs proper: every metric that is not one skill's own result. */
+export function withoutSkills(metrics: PeriodMetric[]): PeriodMetric[] {
+  return metrics.filter((m) => m.skillReferenceId === null);
 }
 
 /**
@@ -69,7 +81,12 @@ export async function getPeriodMetrics(
  * this keeps an entry a fraction of the size of the array it stands for.
  */
 interface CompactPeriodMetrics {
-  kpis: Array<{ code: string; name: string; direction: PeriodMetric["direction"] }>;
+  kpis: Array<{
+    code: string;
+    name: string;
+    direction: PeriodMetric["direction"];
+    skillReferenceId: string | null;
+  }>;
   /** [employeeId, kpi index, actual, target, status index, sample size] */
   rows: Array<[string, number, number, number | null, number, number]>;
 }
@@ -83,7 +100,13 @@ function compact(metrics: PeriodMetric[]): CompactPeriodMetrics {
   for (const m of metrics) {
     let index = indexByCode.get(m.kpiCode);
     if (index === undefined) {
-      index = kpis.push({ code: m.kpiCode, name: m.kpiName, direction: m.direction }) - 1;
+      index =
+        kpis.push({
+          code: m.kpiCode,
+          name: m.kpiName,
+          direction: m.direction,
+          skillReferenceId: m.skillReferenceId,
+        }) - 1;
       indexByCode.set(m.kpiCode, index);
     }
     rows.push([m.employeeId, index, m.actualValue, m.targetValue, STATUS_ORDER.indexOf(m.status), m.sampleSize]);
@@ -101,6 +124,7 @@ function expand(data: CompactPeriodMetrics): PeriodMetric[] {
     targetValue,
     status: STATUS_ORDER[status],
     sampleSize,
+    skillReferenceId: data.kpis[kpi].skillReferenceId,
   }));
 }
 
@@ -206,7 +230,8 @@ async function computeOrgPeriodMetrics(period: Period): Promise<PeriodMetric[]> 
     );
   }
 
-  // PAR, DPU, DPO, MBO and case rate are derived from the per-skill facts.
+  // PAR, DPU, DPO, MBO, case rate and every skill's own result are derived
+  // from the per-skill facts.
   const derived = await computeDerived(period, byCode);
   results.push(...derived);
 
@@ -232,6 +257,7 @@ export type KpiDefinitionRow = Pick<
   | "rangeMax"
   | "expectedBoolean"
   | "aggregation"
+  | "skillReferenceId"
 >;
 
 const readKpiDefinitions = cachedRead("kpi-definitions", [CACHE_TAG.reference], (): Promise<KpiDefinitionRow[]> =>
@@ -249,6 +275,7 @@ const readKpiDefinitions = cachedRead("kpi-definitions", [CACHE_TAG.reference], 
       rangeMax: kpiDefinitions.rangeMax,
       expectedBoolean: kpiDefinitions.expectedBoolean,
       aggregation: kpiDefinitions.aggregation,
+      skillReferenceId: kpiDefinitions.skillReferenceId,
     })
     .from(kpiDefinitions)
     .where(eq(kpiDefinitions.active, true)),
@@ -262,6 +289,7 @@ async function getWeekMetrics(weekStart: string): Promise<PeriodMetric[]> {
       kpiCode: kpiDefinitions.code,
       kpiName: kpiDefinitions.name,
       direction: kpiDefinitions.direction,
+      skillReferenceId: kpiDefinitions.skillReferenceId,
       actualValue: weeklyMetricResults.actualValue,
       targetValue: weeklyMetricResults.targetValue,
       status: weeklyMetricResults.status,
@@ -280,6 +308,7 @@ async function getWeekMetrics(weekStart: string): Promise<PeriodMetric[]> {
     targetValue: row.targetValue,
     status: row.status.toUpperCase() as KpiStatus,
     sampleSize: row.sampleSize ?? 0,
+    skillReferenceId: row.skillReferenceId,
   }));
 }
 
@@ -336,6 +365,7 @@ function evaluated(
     targetValue: kpi.target ?? null,
     status: evaluateKpi(value, kpi).status,
     sampleSize,
+    skillReferenceId: definition.skillReferenceId,
   };
 }
 
@@ -482,6 +512,23 @@ async function computeDerived(
           evaluated(employeeId, caseRateDef, blended.rate, Math.round(blended.cases), blended.target),
         );
       }
+    }
+  }
+
+  // Each skill on its own KPI (migration 0042), over the period: the skill's
+  // formula on the summed cases, hours and weight, against the average of
+  // the targets the employee was held to across the period's weeks — the
+  // same effectiveTarget the rating above uses, so a ramping agent is
+  // judged on the ramp. Thin weeks are excluded per measureSkillWeek.
+  for (const [employeeId, rows] of grouped) {
+    for (const row of rows) {
+      const ref = refs.get(normalizeSkill(row.skillLabel));
+      if (!ref) continue;
+      const definition = byCode.get(skillKpiCode(ref.code));
+      if (!definition) continue;
+      const result = measureSkillWeek(ref.metric, row, effectiveTarget(employeeId, row.skillLabel, ref));
+      if (!result) continue;
+      out.push(evaluated(employeeId, definition, result.actual, Math.round(row.cases), result.target));
     }
   }
 

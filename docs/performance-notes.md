@@ -60,6 +60,26 @@ from every environment this project gets worked on in.
   episodes recorded; `npm run dedupe:episodes` finds and (with `--apply`)
   removes the duplicates that already exist, never touching one with
   human work on it.
+- **Every skill is also a KPI (migration 0042).** `kpi_definitions` rows
+  with `skill_reference_id` set (code `SKILL_<skill code>`, name = the
+  skill's name) stand for one skill each. The import writes one weekly
+  row per employee-skill from the same per-skill figures PAR is built
+  from (`measureSkillWeek` in `src/lib/kpi-engine/skill-result.ts`: the
+  skill's formula against the week's target, ramp stage included; weeks
+  under one hour on the skill are not judged), so the action-item engine
+  opens one development item per skill missed. `ensureSkillKpis()` in
+  commit.ts keeps a KPI row per skill for skills added or renamed later.
+  AHT, CPH and CASE_RATE no longer open items (same migration); Quality,
+  NPS, Critical Errors and Attendance still do. Rule for readers: anything
+  listing "the KPIs" (plan grid, comparison tables, trend chips, the
+  analytics by-KPI breakdown, dashboard cards) excludes skill rows —
+  `withoutSkills` for period metrics, `isNull(kpiDefinitions
+  .skillReferenceId)` on ledger joins — while work-item paths (lists,
+  counts, "failing" totals) include them. The employee page's plan grid
+  is a fixed allowlist, `PLAN_KPI_CODES` in performance.ts: Production
+  Rate, Quality, NPS, Critical Errors, MBO, Attendance, in that order.
+  `npm run backfill:skill-results -- --weeks=N` writes skill rows for
+  weeks imported before 0042 (`--apply --open-items` to open items).
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages

@@ -58,6 +58,9 @@ const metricsFor = (ids: string[]) =>
 
 vi.mock("./period-metrics", () => ({
   getPeriodMetrics: async (ids: string[]) => metricsFor(ids),
+  // The real filter drops skill results; the fixtures carry none.
+  withoutSkills: (metrics: Array<{ skillReferenceId?: string | null }>) =>
+    metrics.filter((m) => (m.skillReferenceId ?? null) === null),
 }));
 
 /**

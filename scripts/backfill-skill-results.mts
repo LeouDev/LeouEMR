@@ -1,0 +1,189 @@
+/**
+ * Fills the weekly ledger with each skill's own result for weeks imported
+ * before skills became KPIs (migration 0042), from the per-skill daily
+ * facts — the same formula and the same week's target the import now
+ * applies — and, on request, lets the action-item engine open development
+ * items off the misses.
+ *
+ * Idempotent: an employee-skill-week that already has a row (from an import
+ * since 0042, or an earlier run of this) is left exactly as it is.
+ *
+ *   npm run backfill:skill-results                       # report only
+ *   npm run backfill:skill-results -- --weeks=2          # only the 2 most recent reporting weeks
+ *   npm run backfill:skill-results -- --weeks=2 --apply  # write the ledger rows
+ *   npm run backfill:skill-results -- --weeks=2 --apply --open-items
+ *     # also fold the new rows through the action-item engine, which opens
+ *     # one item per agent and skill that missed target in a backfilled
+ *     # week — exactly as an import would have.
+ */
+import { eq, isNotNull, sql } from "drizzle-orm";
+import { db } from "../src/lib/db/client";
+import { employees, kpiDefinitions, skillFacts, weeklyMetricResults } from "../src/lib/db/schema";
+import { runIssueEngineForWeeks } from "../src/lib/action-item-engine/persistence";
+import { loadRampTargets, loadSkillReferences, normalize } from "../src/lib/import-pipeline/par-scoring";
+import { applySourceTarget, evaluateKpi } from "../src/lib/kpi-engine/evaluate";
+import { measureSkillWeek, skillKpiCode } from "../src/lib/kpi-engine/skill-result";
+import type { KpiDefinition } from "../src/lib/kpi-engine/types";
+import { periodContaining } from "../src/lib/queries/period";
+
+const apply = process.argv.includes("--apply");
+const openItems = process.argv.includes("--open-items");
+const weeksArg = process.argv.find((a) => a.startsWith("--weeks="));
+const recentWeeks = weeksArg ? Number(weeksArg.slice("--weeks=".length)) : null;
+if (recentWeeks !== null && !(Number.isInteger(recentWeeks) && recentWeeks > 0)) {
+  console.error("--weeks must be a positive whole number, e.g. --weeks=2");
+  process.exit(1);
+}
+
+// One KPI per skill, keyed by its code (SKILL_<skill code>).
+const skillKpis = await db
+  .select()
+  .from(kpiDefinitions)
+  .where(isNotNull(kpiDefinitions.skillReferenceId));
+if (skillKpis.length === 0) {
+  console.error("No skill KPI definitions: apply migration 0042 first (npm run db:migrate).");
+  process.exit(1);
+}
+const kpiByCode = new Map(
+  skillKpis.map((row) => [
+    row.code,
+    {
+      id: row.id,
+      definition: {
+        code: row.code,
+        name: row.name,
+        type: row.type,
+        direction: row.direction,
+        target: row.target ?? undefined,
+        warningThreshold: row.warningThreshold ?? undefined,
+        failureThreshold: row.failureThreshold ?? undefined,
+      } satisfies KpiDefinition,
+    },
+  ]),
+);
+
+const [references, rampTargets, eids] = await Promise.all([
+  loadSkillReferences(),
+  loadRampTargets(),
+  db.select({ id: employees.id, eid: employees.eid }).from(employees),
+]);
+const eidById = new Map(eids.map((e) => [e.id, e.eid]));
+
+// Per employee, skill and reporting week. Weeks run Saturday to Friday, so a
+// fact belongs to the Saturday on or before it — checked against the app's
+// own periodContaining below rather than trusted.
+const weekStart = sql<string>`(${skillFacts.factDate} - ((extract(dow from ${skillFacts.factDate})::int + 1) % 7))::text`;
+const facts = await db
+  .select({
+    employeeId: skillFacts.employeeId,
+    skillLabel: skillFacts.skillLabel,
+    weekStart,
+    cases: sql<number>`sum(${skillFacts.cases})::double precision`,
+    hours: sql<number>`sum(${skillFacts.hours})::double precision`,
+    prodWeight: sql<number>`sum(${skillFacts.prodWeight})::double precision`,
+    sourceImportId: sql<string>`(array_agg(${skillFacts.sourceImportId} order by ${skillFacts.factDate} desc))[1]`,
+  })
+  .from(skillFacts)
+  .groupBy(skillFacts.employeeId, skillFacts.skillLabel, weekStart);
+
+const allWeeks = [...new Set(facts.map((f) => f.weekStart))].sort();
+const keepWeeks = new Set(recentWeeks === null ? allWeeks : allWeeks.slice(-recentWeeks));
+if (recentWeeks !== null) {
+  console.log(`Limiting to the ${keepWeeks.size} most recent reporting weeks: ${[...keepWeeks].join(", ")}`);
+}
+
+const existing = new Set(
+  (
+    await db
+      .select({
+        employeeId: weeklyMetricResults.employeeId,
+        kpiId: weeklyMetricResults.kpiId,
+        weekStart: weeklyMetricResults.weekStart,
+      })
+      .from(weeklyMetricResults)
+      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+      .where(isNotNull(kpiDefinitions.skillReferenceId))
+  ).map((r) => `${r.employeeId}|${r.kpiId}|${r.weekStart}`),
+);
+
+const rows: Array<typeof weeklyMetricResults.$inferInsert> = [];
+let skipped = 0;
+const unmatched = new Set<string>();
+for (const fact of facts) {
+  if (!keepWeeks.has(fact.weekStart)) continue;
+  if (periodContaining("week", fact.weekStart).start !== fact.weekStart) {
+    throw new Error(`Week bucketing disagrees with periodContaining for ${fact.weekStart}`);
+  }
+  const ref = references.get(normalize(fact.skillLabel));
+  if (!ref) {
+    unmatched.add(fact.skillLabel);
+    continue;
+  }
+  const kpi = kpiByCode.get(skillKpiCode(ref.code));
+  if (!kpi) {
+    unmatched.add(`${fact.skillLabel} (no KPI row)`);
+    continue;
+  }
+  const key = `${fact.employeeId}|${kpi.id}|${fact.weekStart}`;
+  if (existing.has(key)) {
+    skipped += 1;
+    continue;
+  }
+
+  // The week's target: the ramp stage's while ramping, the skill's otherwise —
+  // the same resolution the aggregator applies at import time.
+  const eid = eidById.get(fact.employeeId);
+  const ramp = eid ? rampTargets.get(`${eid}|${fact.weekStart}|${normalize(fact.skillLabel)}`) : undefined;
+  const target = ref.lowerIsBetter ? (ramp?.ahtTarget ?? ref.target) : (ramp?.cphTarget ?? ref.target);
+  const result = measureSkillWeek(ref.metric, fact, target);
+  if (!result) continue;
+
+  const evaluation = evaluateKpi(result.actual, applySourceTarget(kpi.definition, result.target));
+  rows.push({
+    employeeId: fact.employeeId,
+    kpiId: kpi.id,
+    weekStart: fact.weekStart,
+    weekEnd: periodContaining("week", fact.weekStart).end,
+    actualValue: result.actual,
+    targetValue: result.target,
+    status: evaluation.status.toLowerCase() as "pass" | "warning" | "fail",
+    sampleSize: Math.round(fact.cases),
+    sourceImportId: fact.sourceImportId,
+  });
+}
+
+const weeks = [...new Set(rows.map((r) => r.weekStart))].sort();
+const failing = rows.filter((r) => r.status === "fail");
+console.log(`Skill weeks already in the ledger (left alone): ${skipped}`);
+if (unmatched.size > 0) console.log(`Skill labels with no reference (skipped): ${[...unmatched].join(", ")}`);
+console.log(
+  `Rows to write: ${rows.length} across ${weeks.length} weeks (${weeks[0] ?? "-"} to ${weeks.at(-1) ?? "-"}), ${new Set(rows.map((r) => r.employeeId)).size} employees`,
+);
+console.log(
+  `  of which failing: ${failing.length} skill-weeks for ${new Set(failing.map((r) => r.employeeId)).size} employees`,
+);
+if (!apply) {
+  console.log(
+    "\nReport only. Re-run with --apply to write them" +
+      (openItems ? "" : ", and --open-items to open development items off the misses") +
+      ".",
+  );
+  process.exit(0);
+}
+
+const CHUNK = 500;
+for (let i = 0; i < rows.length; i += CHUNK) {
+  await db.insert(weeklyMetricResults).values(rows.slice(i, i + CHUNK)).onConflictDoNothing();
+}
+console.log(`\nWrote ${rows.length} ledger rows.`);
+
+if (openItems && weeks.length > 0) {
+  const result = await runIssueEngineForWeeks(weeks);
+  console.log(
+    `Engine: ${result.opened} opened, ${result.updated} updated, ${result.completed} completed, ${result.agedOut} aged out, ${result.corrected} corrected, ${result.flagged} flagged`,
+  );
+} else if (weeks.length > 0) {
+  console.log("Ledger only; re-run with --apply --open-items to open development items off these weeks.");
+}
+
+process.exit(0);

@@ -197,6 +197,8 @@ export function formatMetric(value: number | null, kpiCode: string): string {
     case "QUALITY":
     case "ATTENDANCE":
       return `${value.toFixed(1)}%`;
+    case "MBO":
+      return `${value.toFixed(0)}%`;
     case "AHT":
       return `${Math.round(value)}s`;
     case "CPH":
