@@ -114,6 +114,26 @@ This session (static audit — see "What could not be measured" below):
   the server's first byte — auth verification, any cold start and the first
   database round trips all happen inside that gap.
 
+## The floor, explained (2026-09-10)
+
+- The team reaches the app over Optum's corporate VPN, which exits in the
+  United States: Vercel logs show requests "Received in Cleveland (cle1)".
+  A click therefore travels Philippines → US → Mumbai (functions and
+  database) and back, roughly 600 ms before any work. That is the whole
+  650–700 ms floor measured on every page, light or heavy. No code change
+  moves it. The only levers are split-tunnelling this one public domain
+  past the VPN (an Optum IT decision) or migrating the database and
+  functions to a US region next to the VPN exit.
+- Statement timeouts ("canceling statement due to statement timeout",
+  Sep 9 21:42 UTC) hit trivial queries during a burst of rapid clicks.
+  They occurred on the pre-cache code (the caching deploy went live at
+  23:08 UTC), when every click re-ran the period aggregates and the
+  database saturated. No errors in the 24 hours after the deploys. The
+  connection pool (`max: 8`) was deliberately not changed: the cause was
+  load, not pool size. Note for the future: Fluid Compute is on, so one
+  instance serves several requests at once and they share that pool —
+  the client's own comment still assumes one request per instance.
+
 ## Known, deliberately left alone (measure before touching)
 
 - `notifications` has no index on `(recipient_id, read_at)`; the header
