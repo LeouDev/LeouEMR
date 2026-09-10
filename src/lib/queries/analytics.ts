@@ -334,12 +334,18 @@ async function computeAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSna
         weeklyMetricResults,
         and(
           eq(weeklyMetricResults.employeeId, employees.id),
+          // No reporting week starts inside the range — a month whose
+          // first Saturday is still ahead, say — means nobody has been
+          // evaluated for it yet, and the join must match nothing. Left
+          // unbounded it matched every week ever imported, so a September
+          // with no data yet showed all-time failure counts on every row
+          // beside a summary saying nobody had data.
           latestPeriod
             ? and(
                 gte(weeklyMetricResults.weekStart, latestPeriod.start),
                 lte(weeklyMetricResults.weekStart, latestPeriod.end),
               )
-            : undefined,
+            : sql`false`,
         ),
       )
       .leftJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
@@ -369,13 +375,21 @@ async function computeAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSna
 
     return rows
       .filter((r) => r.label)
-      .map((r) => ({
-        label: r.label as string,
-        employees: r.employees,
-        failing: r.failing,
-        failRate: r.employees > 0 ? (r.failing / r.employees) * 100 : 0,
-        openIssues: issuesBy.get(r.label) ?? 0,
-      }))
+      .map((r) => {
+        // The headcount is "with reportable data in the range", which is
+        // the denominator the rows label as "evaluated". With no reporting
+        // week in the range that denominator is nobody, whatever the daily
+        // facts say — the same rule the headline counts above follow.
+        const employees = latestPeriod ? r.employees : 0;
+        const failing = latestPeriod ? r.failing : 0;
+        return {
+          label: r.label as string,
+          employees,
+          failing,
+          failRate: employees > 0 ? (failing / employees) * 100 : 0,
+          openIssues: issuesBy.get(r.label) ?? 0,
+        };
+      })
       .sort((a, b) => b.failRate - a.failRate);
   };
 

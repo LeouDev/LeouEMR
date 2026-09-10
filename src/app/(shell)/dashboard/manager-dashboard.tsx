@@ -211,7 +211,10 @@ export function ManagerDashboard({
                 <div className="py-3 lg:pl-6">Supervisor</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">Team</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">
-                  Failing{asOfLabel ? <span className="block font-normal normal-case tracking-normal">wk of {asOfLabel}</span> : null}
+                  Failing
+                  <span className="block font-normal normal-case tracking-normal">
+                    {asOfLabel ? `wk of ${asOfLabel}` : "no reporting week in this period yet"}
+                  </span>
                 </div>
                 <div className="hidden py-3 pr-5 text-right lg:block">MBO pass</div>
                 <div className="hidden py-3 pr-5 text-right lg:block">Open</div>
@@ -238,7 +241,7 @@ export function ManagerDashboard({
                     </span>
                     <Figure value={s.teamSize} label="team" />
                     <Figure
-                      value={s.failing}
+                      value={s.evaluated > 0 ? s.failing : "—"}
                       label={s.evaluated > 0 ? `of ${s.evaluated} evaluated` : "nobody evaluated"}
                       tone={alarming ? "fail" : undefined}
                     />

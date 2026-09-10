@@ -74,6 +74,13 @@ This session (static audit — see "What could not be measured" below):
   fake postgres-js query, and checked live against a local Postgres 16
   (pool of 2, twelve concurrent queries plus a transaction: all correct,
   peak of 2 active sessions). See the incident below for why.
+- **Group breakdowns with no reporting week in the range (2026-09-11).**
+  `computeAnalytics`'s by-site/manager/supervisor join was unbounded when
+  no week started inside the range, so a month with daily facts but no
+  weekly ledger yet (weeks are keyed by their Saturday start) showed
+  all-time failure counts on every manager-dashboard row beside a summary
+  saying nobody had data. Now such a range reports nobody evaluated, and
+  the row's Failing header says "no reporting week in this period yet".
 
 ## Caching layer (src/lib/cache.ts)
 
