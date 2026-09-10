@@ -258,7 +258,11 @@ export default async function DashboardPage({
           improved: myKpiCells[m.kpiCode]?.improved ?? null,
           previous: myKpiCells[m.kpiCode]?.previous ?? null,
         })),
-        ...(myKpiCells.CASE_RATE?.current !== null && myKpiCells.CASE_RATE?.current !== undefined
+        // Since migration 0041 case rate arrives in myKpis like any KPI; a
+        // week from before it was one is filled from the comparison's cell.
+        ...(!myKpis.some((m) => m.kpiCode === "CASE_RATE") &&
+        myKpiCells.CASE_RATE?.current !== null &&
+        myKpiCells.CASE_RATE?.current !== undefined
           ? [
               {
                 code: "CASE_RATE",

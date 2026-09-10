@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employees, kpiDefinitions, metricFacts, npsFacts, skillFacts } from "@/lib/db/schema";
+import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
 import { normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import type { NpsMix } from "@/lib/kpi-engine/nps";
@@ -238,26 +239,18 @@ export interface TeamPeriodComparison {
  * Columns are derived from the data rather than from the KPI catalogue, so a
  * team that never records NPS does not carry an empty NPS column.
  */
-/** The synthetic column below; not a KPI code, so it cannot collide with one. */
-const CASE_RATE_CODE = "CASE_RATE";
+const CASE_RATE_CODE = CASE_RATE_KPI_CODE;
 
 /**
- * Blended case rate — production weight per case — for each employee.
+ * Blended case rate — production weight per case — for each employee, from
+ * the per-skill facts.
  *
- * Case rate is a skill metric, not a KPI: skills measured this way emit no
- * cases-per-hour or handle-time facts at all (see aggregate.ts), which is why
- * a case-rate agent's Cases Per Hour column is empty. Their output is scored
- * through the PAR production rate instead. This reads the same per-skill facts
- * PAR is built from so the underlying number is at least visible.
- *
- * Scored against the agent's own skill mix rather than one blended number.
- * Each case-rate skill carries its own target (8 to 15 across the reference
- * table), so the bar is the weight those skills expected for the cases
- * actually worked: sum(target x cases). Producing at least that much passes.
- *
- * That comparison is the same one a per-skill ratio makes, just summed first —
- * which is what stops a handful of cases on a demanding skill from dragging a
- * verdict that three hundred cases on an easier one had already earned.
+ * Case rate has been a KPI of its own since migration 0041, so a month or
+ * quarter carries it through getPeriodMetrics like every other KPI, and a
+ * week carries it from the ledger. A week imported before that migration has
+ * no ledger row for it, and this fills exactly those gaps from the same
+ * facts, with the same formula (see blendCaseRate). Once the ledger is
+ * backfilled (`npm run backfill:case-rate`) this never adds a cell.
  */
 async function getCaseRates(
   employeeIds: string[],
@@ -283,30 +276,19 @@ async function getCaseRates(
     loadSkillReferences(),
   ]);
 
-  // Summed across the employee's case-rate skills, then divided once — the
-  // same reason period-metrics recomputes ratios from their components rather
-  // than averaging them: a skill with three cases would otherwise weigh as
-  // much as one with three hundred.
-  const totals = new Map<string, { prodWeight: number; cases: number; expected: number }>();
+  const skillsByEmployee = new Map<string, CaseRateSkillTotals[]>();
   for (const row of rows) {
     const ref = refs.get(normalizeSkill(row.skillLabel));
-    if (ref?.metric !== "case_rate") continue;
-    const entry = totals.get(row.employeeId) ?? { prodWeight: 0, cases: 0, expected: 0 };
-    entry.prodWeight += row.prodWeight;
-    entry.cases += row.cases;
-    // What this skill expected of the cases they actually worked on it.
-    entry.expected += ref.target * row.cases;
-    totals.set(row.employeeId, entry);
+    if (ref?.metric !== "case_rate" || !(ref.target > 0)) continue;
+    const list = skillsByEmployee.get(row.employeeId) ?? [];
+    list.push({ cases: row.cases, prodWeight: row.prodWeight, targetPerCase: ref.target });
+    skillsByEmployee.set(row.employeeId, list);
   }
 
   const rates = new Map<string, { rate: number; target: number; status: "PASS" | "FAIL" }>();
-  for (const [employeeId, t] of totals) {
-    if (t.cases <= 0 || t.prodWeight <= 0) continue;
-    rates.set(employeeId, {
-      rate: t.prodWeight / t.cases,
-      target: t.expected / t.cases,
-      status: t.prodWeight >= t.expected ? "PASS" : "FAIL",
-    });
+  for (const [employeeId, skills] of skillsByEmployee) {
+    const blended = blendCaseRate(skills);
+    if (blended) rates.set(employeeId, { rate: blended.rate, target: blended.target, status: blended.status });
   }
   return rates;
 }
@@ -382,16 +364,19 @@ export async function getTeamPeriodComparison(
     }
   }
 
-  // Case rate joins as its own column on the same terms as a real KPI: value,
-  // change, and a pass/fail against the agent's own skill mix. The column only
-  // appears when somebody in view actually has case-rate work.
+  // Case rate on the same terms as every other KPI: value, change, and a
+  // pass/fail against the agent's own skill mix. Where the period metrics
+  // already carried it (any period since migration 0041, any backfilled
+  // week) that cell stands; only a week from before it was a KPI is filled
+  // in here. The column only appears when somebody in view has case-rate work.
   for (const employeeId of new Set([...currentRates.keys(), ...previousRates.keys()])) {
+    const cells = cellsByEmployee.get(employeeId) ?? {};
+    if (cells[CASE_RATE_CODE]) continue;
     const now = currentRates.get(employeeId) ?? null;
     const before = previousRates.get(employeeId) ?? null;
     const rate = now?.rate ?? null;
     const prior = before?.rate ?? null;
     const delta = rate !== null && prior !== null ? rate - prior : null;
-    const cells = cellsByEmployee.get(employeeId) ?? {};
     cells[CASE_RATE_CODE] = {
       current: rate,
       previous: prior,

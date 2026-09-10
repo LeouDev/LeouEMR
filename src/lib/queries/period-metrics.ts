@@ -12,6 +12,7 @@ import {
 import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
+import { CASE_RATE_KPI_CODE, blendCaseRate } from "@/lib/kpi-engine/case-rate";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { periodsBetween } from "./period";
@@ -205,7 +206,7 @@ async function computeOrgPeriodMetrics(period: Period): Promise<PeriodMetric[]> 
     );
   }
 
-  // PAR, DPU, DPO and MBO are derived from the per-skill facts.
+  // PAR, DPU, DPO, MBO and case rate are derived from the per-skill facts.
   const derived = await computeDerived(period, byCode);
   results.push(...derived);
 
@@ -338,7 +339,7 @@ function evaluated(
   };
 }
 
-/** PAR rating, DPU, DPO and the MBO composite over the period. */
+/** PAR rating, DPU, DPO, the MBO composite and case rate over the period. */
 async function computeDerived(
   period: Period,
   byCode: Map<string, KpiDefinitionRow>,
@@ -460,6 +461,28 @@ async function computeDerived(
 
     const definition = byCode.get("PRODUCTION_RATE");
     if (definition) out.push(evaluated(employeeId, definition, rate, scored.length));
+  }
+
+  // Case rate over the period: the same skill rows, summed across the
+  // employee's case-rate skills and divided once — see blendCaseRate. The
+  // target is the period's own (what the mix expected per case worked), so it
+  // travels with the value the way a CPH/AHT source target does.
+  const caseRateDef = byCode.get(CASE_RATE_KPI_CODE);
+  if (caseRateDef) {
+    for (const [employeeId, rows] of grouped) {
+      const blended = blendCaseRate(
+        rows.flatMap((row) => {
+          const ref = refs.get(normalizeSkill(row.skillLabel));
+          if (ref?.metric !== "case_rate" || !(ref.target > 0)) return [];
+          return [{ cases: row.cases, prodWeight: row.prodWeight, targetPerCase: ref.target }];
+        }),
+      );
+      if (blended) {
+        out.push(
+          evaluated(employeeId, caseRateDef, blended.rate, Math.round(blended.cases), blended.target),
+        );
+      }
+    }
   }
 
   const qualityByEmployee = new Map<string, typeof quality>();

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { kpiDefinitions, skillFacts, weeklyMetricResults } from "@/lib/db/schema";
+import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
 import { normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import { periodContaining } from "./period";
@@ -92,20 +93,31 @@ export async function getEmployeeKpiTrend(
     series.target = latestWithTarget?.targetValue ?? null;
   }
 
+  // Case rate has been in the ledger since migration 0041; weeks imported
+  // before that are filled from the per-skill facts. A ledger week always
+  // wins, so this adds nothing once the ledger has been backfilled.
   const caseRate = await getCaseRateSeries(employeeId, weeks);
-  if (caseRate) byCode.set(caseRate.kpiCode, caseRate);
+  if (caseRate) {
+    const ledger = byCode.get(caseRate.kpiCode);
+    if (!ledger) {
+      byCode.set(caseRate.kpiCode, caseRate);
+    } else {
+      const have = new Set(ledger.points.map((p) => p.weekStart));
+      ledger.points.push(...caseRate.points.filter((p) => !have.has(p.weekStart)));
+      ledger.points.sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+      ledger.target ??= caseRate.target;
+    }
+  }
 
   return [...byCode.values()];
 }
 
 /**
- * Case rate week by week, from the per-skill facts.
- *
- * Case rate is a skill metric rather than a KPI, so it has no row in the
- * weekly ledger at all — but it is the only output figure a case-rate agent
- * has, and leaving it off the chart would give them a metric they can see in
- * the grid and not plot. Unscored, for the same reason it is unscored in the
- * comparison table: each skill carries its own target.
+ * Case rate week by week, from the per-skill facts — the same formula the
+ * import writes to the ledger (see blendCaseRate), for the weeks that
+ * predate case rate being a KPI. It is the only output figure a case-rate
+ * agent has, and leaving those weeks off the chart would give them a metric
+ * they can see in the grid and not plot.
  */
 export interface WeeklyCaseRate {
   rate: number;
@@ -146,29 +158,21 @@ export async function getCaseRateByWeek(
   // Bucketed with periodContaining rather than by date arithmetic here, so
   // these weeks are the same Saturday-to-Friday weeks the ledger uses.
   const wanted = new Set(sorted);
-  const totals = new Map<string, { prodWeight: number; cases: number; expected: number }>();
+  const skillsByWeek = new Map<string, CaseRateSkillTotals[]>();
   for (const row of rows) {
     const ref = refs.get(normalizeSkill(row.skillLabel));
-    if (ref?.metric !== "case_rate") continue;
+    if (ref?.metric !== "case_rate" || !(ref.target > 0)) continue;
     const weekStart = periodContaining("week", row.factDate).start;
     if (!wanted.has(weekStart)) continue;
-    const entry = totals.get(weekStart) ?? { prodWeight: 0, cases: 0, expected: 0 };
-    entry.prodWeight += row.prodWeight;
-    entry.cases += row.cases;
-    // Weighted by the cases actually worked on each skill, so a week spent
-    // mostly on a demanding skill is judged against a demanding bar.
-    entry.expected += ref.target * row.cases;
-    totals.set(weekStart, entry);
+    const list = skillsByWeek.get(weekStart) ?? [];
+    list.push({ cases: row.cases, prodWeight: row.prodWeight, targetPerCase: ref.target });
+    skillsByWeek.set(weekStart, list);
   }
 
   const rates = new Map<string, WeeklyCaseRate>();
-  for (const [week, t] of totals) {
-    if (t.cases <= 0 || t.prodWeight <= 0) continue;
-    rates.set(week, {
-      rate: t.prodWeight / t.cases,
-      target: t.expected / t.cases,
-      status: t.prodWeight >= t.expected ? "PASS" : "FAIL",
-    });
+  for (const [week, skills] of skillsByWeek) {
+    const blended = blendCaseRate(skills);
+    if (blended) rates.set(week, { rate: blended.rate, target: blended.target, status: blended.status });
   }
   return rates;
 }
@@ -186,7 +190,7 @@ async function getCaseRateSeries(
   if (points.length === 0) return null;
   const latest = [...rates.entries()].sort((a, b) => b[0].localeCompare(a[0]))[0];
   return {
-    kpiCode: "CASE_RATE",
+    kpiCode: CASE_RATE_KPI_CODE,
     kpiName: "Case Rate",
     direction: "higher_is_better",
     // The blend moves with the skill mix, so the line is drawn at the most
