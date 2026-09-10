@@ -44,8 +44,22 @@ from every environment this project gets worked on in.
   `generates_action_items` flag every list reads. Migration 0041 was
   applied to production on 2026-09-10 (~21:00 UTC) through the Supabase
   SQL editor, with the drizzle tracker row inserted by hand afterwards,
-  the same way 0039 was. The backfill has not been run: Case Rate items
-  begin with the first weekly import after that date.
+  the same way 0039 was. Later that evening (~22:45 UTC) the user ran
+  `dedupe:episodes --apply` and then `backfill:case-rate --weeks=2 --apply
+  --open-items`: the ledger carries Case Rate for the weeks of 22 and 29
+  August 2026 and items were opened off those failures; every earlier
+  week still comes from the facts-derived gap-fills. Run the backfill
+  without `--weeks` (report first) if the earlier weeks should ever join
+  the ledger.
+- **Duplicate development-item episodes (fixed 2026-09-10, `fd3ba0a`).**
+  The engine only checked live episodes for "already folded", so a
+  re-import or backfill of a week whose episode had closed on age opened
+  a second episode for the same failure — one agent carried three AHT
+  items with identical recent weeks. `loadFoldedResults` in
+  `src/lib/action-item-engine/persistence.ts` now also reads what closed
+  episodes recorded; `npm run dedupe:episodes` finds and (with `--apply`)
+  removes the duplicates that already exist, never touching one with
+  human work on it.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
