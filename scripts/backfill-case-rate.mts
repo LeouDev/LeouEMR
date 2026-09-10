@@ -8,6 +8,7 @@
  * 0041, or an earlier run of this) is left exactly as it is.
  *
  *   npm run backfill:case-rate                        # report only
+ *   npm run backfill:case-rate -- --weeks=6           # only the 6 most recent reporting weeks
  *   npm run backfill:case-rate -- --apply             # write the ledger rows
  *   npm run backfill:case-rate -- --apply --open-items
  *     # also fold the new rows through the action-item engine, which opens
@@ -33,6 +34,12 @@ import { periodContaining } from "../src/lib/queries/period";
 
 const apply = process.argv.includes("--apply");
 const openItems = process.argv.includes("--open-items");
+const weeksArg = process.argv.find((a) => a.startsWith("--weeks="));
+const recentWeeks = weeksArg ? Number(weeksArg.slice("--weeks=".length)) : null;
+if (recentWeeks !== null && !(Number.isInteger(recentWeeks) && recentWeeks > 0)) {
+  console.error("--weeks must be a positive whole number, e.g. --weeks=6");
+  process.exit(1);
+}
 
 const [row] = await db
   .select()
@@ -72,11 +79,19 @@ const facts = await db
   .from(skillFacts)
   .groupBy(skillFacts.employeeId, skillFacts.skillLabel, weekStart);
 
+// The most recent N reporting weeks with any case-rate work, when asked for.
+const allWeeks = [...new Set(facts.map((f) => f.weekStart))].sort();
+const keepWeeks = new Set(recentWeeks === null ? allWeeks : allWeeks.slice(-recentWeeks));
+if (recentWeeks !== null) {
+  console.log(`Limiting to the ${keepWeeks.size} most recent reporting weeks: ${[...keepWeeks].join(", ")}`);
+}
+
 const byEmployeeWeek = new Map<
   string,
   { employeeId: string; weekStart: string; sourceImportId: string; skills: CaseRateSkillTotals[] }
 >();
 for (const fact of facts) {
+  if (!keepWeeks.has(fact.weekStart)) continue;
   const ref = references.get(normalizeSkill(fact.skillLabel));
   if (ref?.metric !== "case_rate" || !(ref.target > 0)) continue;
   if (periodContaining("week", fact.weekStart).start !== fact.weekStart) {

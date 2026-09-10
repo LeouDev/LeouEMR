@@ -18,6 +18,7 @@
     "verify:scope": "tsx --env-file=.env.local scripts/verify-access-scope.mts",
     "reevaluate": "tsx --env-file=.env.local scripts/reevaluate.mts",
     "backfill:case-rate": "tsx --env-file=.env.local scripts/backfill-case-rate.mts",
+    "dedupe:episodes": "tsx --env-file=.env.local scripts/dedupe-episodes.mts",
     "purge:unsourced": "tsx --env-file=.env.local scripts/purge-unsourced-results.mts",
     "delete-issue": "tsx --env-file=.env.local scripts/delete-issue.mts",
     "fix:resolution": "tsx --env-file=.env.local scripts/fix-backwards-resolution.mts",

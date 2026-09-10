@@ -87,9 +87,18 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
   // turn every single one of those rows into its own round trip just to
   // confirm nothing changed.
   const historyByIssueWeek = await loadHistoryByIssue([...live.values()].map((i) => i.id));
+  const orderedWeeks = [...new Set(weeks)].sort();
+  // Weeks already folded into an episode that has since closed. The check
+  // above only knows the live episodes, so a re-import or a backfill of a
+  // week whose episode had been closed on age found no live issue for the
+  // pair and opened a second episode for the very failure the closed one
+  // had already recorded — every replay after an age-out grew the plan by
+  // one row. A week whose result has genuinely changed since it was folded
+  // still gets through, so a corrected failure is not lost.
+  const foldedByPairWeek = await loadFoldedResults(orderedWeeks);
   const staleTouches: Array<{ employeeId: string; kpiId: string }> = [];
 
-  for (const week of [...new Set(weeks)].sort()) {
+  for (const week of orderedWeeks) {
     // Component KPIs (the PAR rating, DPU, DPO) are gates on the composite
     // MBO result rather than standalone measures, so they are shown on the
     // scorecard but never open an action item of their own.
@@ -134,6 +143,11 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
           staleTouches.push({ employeeId: metric.employeeId, kpiId: metric.kpiId });
         }
         continue;
+      }
+
+      if (!existing) {
+        const folded = foldedByPairWeek.get(`${key}|${week}`);
+        if (folded === (weekResult === "FAIL" ? "fail" : "pass")) continue;
       }
 
       const outcome = evaluateWeeklyResult(
@@ -506,6 +520,28 @@ async function reconcileStaleTouches(
   }
 
   return { corrected, flagged };
+}
+
+/**
+ * Every result already recorded for the given weeks, on any episode of any
+ * status, keyed by `${employeeId}|${kpiId}|${week}`. Bounded by the weeks
+ * being folded, not by the whole ledger.
+ */
+async function loadFoldedResults(weeks: string[]): Promise<Map<string, "pass" | "fail">> {
+  if (weeks.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      employeeId: performanceIssues.employeeId,
+      kpiId: performanceIssues.kpiId,
+      week: weeklyIssueHistory.week,
+      result: weeklyIssueHistory.result,
+    })
+    .from(weeklyIssueHistory)
+    .innerJoin(performanceIssues, eq(performanceIssues.id, weeklyIssueHistory.performanceIssueId))
+    .where(inArray(weeklyIssueHistory.week, weeks));
+
+  return new Map(rows.map((r) => [`${r.employeeId}|${r.kpiId}|${r.week}`, r.result]));
 }
 
 /** Every recorded week's result for the given issues, keyed by `${issueId}|${week}`. */
