@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { canManageActionItems, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, ewsAssessments } from "@/lib/db/schema";
 import { computeEwsRisk, employeeStatusFor } from "@/lib/ews/engine";
@@ -137,6 +138,9 @@ export async function saveEwsAssessment(input: unknown): Promise<EwsResult> {
     }
   }
 
+  // An assessment can carry a separation date, which decides who counts in
+  // every cached period figure — and a separation closes their open work.
+  invalidateCache(CACHE_TAG.ews, CACHE_TAG.issues);
   revalidatePath(`/employees/${parsed.data.employeeId}`);
   revalidatePath("/ews");
   return { ok: true, riskLevel, score };

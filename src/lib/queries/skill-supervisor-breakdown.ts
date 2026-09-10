@@ -1,4 +1,5 @@
 import { and, gte, inArray, lte, sql } from "drizzle-orm";
+import { CACHE_TAG, cachedRead, serialized } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { employees, skillFacts } from "@/lib/db/schema";
 import { normalize, loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
@@ -58,7 +59,13 @@ export function ahtChartRows(rows: SkillSupervisorRow[]): SkillSupervisorRow[] {
  * everywhere ratings are computed (see measureSkill in par-scoring.ts) —
  * this is a supplementary read of the same underlying facts.
  */
-export async function getSkillMetricsBySupervisor(period: Period): Promise<SkillSupervisorRow[]> {
+export const getSkillMetricsBySupervisor = cachedRead(
+  "skill-metrics-by-supervisor",
+  [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ews],
+  (period: Period) => serialized("analytics", () => computeSkillMetricsBySupervisor(period)),
+);
+
+async function computeSkillMetricsBySupervisor(period: Period): Promise<SkillSupervisorRow[]> {
   const owner = periodOwnerSubquery(period);
   const roster = await db
     .select({ employeeId: employees.id, supervisor: supervisorOfRecord(owner) })

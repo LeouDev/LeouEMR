@@ -1,4 +1,5 @@
 import { type SQL, and, asc, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { CACHE_TAG, cachedRead, serialized } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   employees,
@@ -113,7 +114,23 @@ export const ANALYTICS_TARGETS = {
   criticalErrors: 30,
 } as const;
 
-export async function getAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSnapshot> {
+/**
+ * Cached per filter set and evicted by anything that could change it: an
+ * import or masterlist, a ramp or skill-target change, an EWS assessment
+ * (separation dates decide who counts) or an action item changing status
+ * (the open-work counts). The snapshot is identical for every admin who
+ * asks for the same range, and computing it is a dozen aggregate queries.
+ * Cold computes go through one queue so two never fan out against the
+ * pool together — which is also what lets the page request all of its
+ * snapshots at once instead of one after the other.
+ */
+export const getAnalytics = cachedRead(
+  "analytics-snapshot",
+  [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ramp, CACHE_TAG.ews, CACHE_TAG.issues],
+  (filters: AnalyticsFilters) => serialized("analytics", () => computeAnalytics(filters)),
+);
+
+async function computeAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSnapshot> {
   // Everything below is cut by the org structure as it stood at the END of the
   // period being viewed, not as it stands today. Without this a realignment
   // retroactively moves a whole month's results to the new supervisor.
@@ -456,7 +473,13 @@ export interface MboOverview {
  * People with no MBO result in the window still appear in the headcount but
  * are left out of the average — absent data is not a failing score.
  */
-export async function getMboOverview(filters: AnalyticsFilters): Promise<MboOverview> {
+export const getMboOverview = cachedRead(
+  "mbo-overview",
+  [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ramp, CACHE_TAG.ews],
+  (filters: AnalyticsFilters) => serialized("analytics", () => computeMboOverview(filters)),
+);
+
+async function computeMboOverview(filters: AnalyticsFilters): Promise<MboOverview> {
   // Re-aggregate the whole range once and apply the gates to that, rather
   // than averaging each week's gate-share and demanding the average be 100.
   // Those are not the same measure: someone who missed one gate in one week
