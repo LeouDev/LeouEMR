@@ -1,5 +1,5 @@
 import { and, eq, gte, lte, sql } from "drizzle-orm";
-import { CACHE_TAG, cachedRead } from "@/lib/cache";
+import { CACHE_TAG, cachedRead, serialized } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   employees,
@@ -103,28 +103,18 @@ function expand(data: CompactPeriodMetrics): PeriodMetric[] {
   }));
 }
 
-/**
- * One organisation-wide aggregation at a time per server instance.
- *
- * A cold cache for two periods at once (My Stats asks for this month and
- * last) would otherwise run two of these together, each holding up to
- * three pooled connections — the fan-out that wedges Supabase's
- * transaction pooler (see src/lib/db/client.ts). Waiting for the other to
- * finish costs at most one extra aggregation's time, once, and only ever
- * on a cold cache.
- */
-let aggregationQueue: Promise<unknown> = Promise.resolve();
-function serialized<T>(work: () => Promise<T>): Promise<T> {
-  const run = aggregationQueue.then(work, work);
-  aggregationQueue = run.catch(() => undefined);
-  return run;
-}
-
+// One organisation-wide aggregation at a time per server instance: a cold
+// cache for two periods at once (My Stats asks for this month and last)
+// would otherwise run two of these together, each holding up to three
+// pooled connections — the fan-out that wedges Supabase's transaction
+// pooler (see src/lib/db/client.ts and `serialized` in src/lib/cache.ts).
 const readOrgPeriodMetrics = cachedRead(
   "org-period-metrics",
   [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ramp],
   (granularity: Period["granularity"], start: string, end: string) =>
-    serialized(async () => compact(await computeOrgPeriodMetrics({ granularity, start, end, label: "" }))),
+    serialized("period-metrics", async () =>
+      compact(await computeOrgPeriodMetrics({ granularity, start, end, label: "" })),
+    ),
 );
 
 async function computeOrgPeriodMetrics(period: Period): Promise<PeriodMetric[]> {

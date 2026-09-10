@@ -31,19 +31,19 @@ export async function AdminAnalytics({
 }) {
   const grain: TrendGrain = filters.grain === "month" ? "month" : "week";
   const bounds = { first: weeks[weeks.length - 1], last: weeks[0] };
-  // Sequential, deliberately — not a Promise.all. getAnalytics and
-  // getMboOverview each run their OWN internal Promise.all of several
-  // queries and can briefly hold 4-6 connections apiece on their own;
-  // running them concurrently risks spiking real demand past the db
-  // client's pool size (max: 8 in src/lib/db/client.ts) and wedging a
-  // connection against Supabase's transaction-mode pooler — the exact
-  // failure already diagnosed and fixed the same way in
-  // src/app/(shell)/analytics/page.tsx. This page is worse-exposed than
-  // that fix: it's the admin's default landing page, and defaults to "all
-  // weeks" rather than one period.
-  const analytics = await getAnalytics(filters);
-  const mbo = await getMboOverview(filters);
-  const facets = await getAnalyticsFacets();
+  // Requested together. getAnalytics and getMboOverview are cached reads
+  // whose cold computations are serialised through a shared queue (see
+  // src/lib/cache.ts): each fans out 4-6 queries internally, and running
+  // two of those together used to spike past the db client's pool
+  // (max: 8 in src/lib/db/client.ts) and wedge a connection against
+  // Supabase's transaction-mode pooler — the reason this was three awaits
+  // in a row. The queue keeps that guarantee; the cache removes the wait
+  // on the admin's default landing page.
+  const [analytics, mbo, facets] = await Promise.all([
+    getAnalytics(filters),
+    getMboOverview(filters),
+    getAnalyticsFacets(),
+  ]);
 
   const filtered = Boolean(filters.site || filters.manager || filters.grain || !isDefaultRange);
   // What the "by site/manager" boards and "failing latest ___" describe — a

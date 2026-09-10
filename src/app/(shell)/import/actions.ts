@@ -202,8 +202,9 @@ export async function runImport(storagePath: string, fileName: string): Promise<
 
   try {
     const summary = await commitImport(parsed, { importBatchId: batch.id });
-    // Everything aggregated from the facts is now stale, everywhere.
-    invalidateCache(CACHE_TAG.imports);
+    // Everything aggregated from the facts is now stale, everywhere — and
+    // the issue engine has just opened, updated or closed action items.
+    invalidateCache(CACHE_TAG.imports, CACHE_TAG.issues);
     revalidatePath("/import");
     revalidatePath("/dashboard");
     return { ok: true, summary };

@@ -88,10 +88,19 @@ This session (static audit — see "What could not be measured" below):
   loadAttributesBySkill / loadSkillMetrics), ramp targets and schedules,
   KPI definitions, fact date range, available/latest weeks, and the
   per-period set of employees with reportable data.
-- Not cached on purpose: anything keyed on the current user or on EWS
-  assessments (separation dates, boards), and the users row behind
-  `getCurrentUser` (roles can be changed by a script; a stale role would be
-  a security problem, not a performance one).
+- Analytics: `getAnalytics`, `getMboOverview`, `getSkillMetricsBySupervisor`
+  and `getCriticalErrorsTrendBySupervisor` are cached per filter/period.
+  Two extra tags for them: `ews` (evicted by saveEwsAssessment — separation
+  dates decide who counts) and `issues` (evicted by sendToAgent,
+  acknowledge, the import). Their cold computes run through the
+  `serialized("analytics")` queue, which is what allows the Analytics page
+  and the admin dashboard to request every snapshot at once: warm reads
+  resolve in parallel, misses still compute one at a time. Never remove
+  that queue and keep the Promise.all — that is the pool-wedge again.
+- Not cached on purpose: anything keyed on the current user, the EWS
+  board itself, and the users row behind `getCurrentUser` (roles can be
+  changed by a script; a stale role would be a security problem, not a
+  performance one).
 
 ## Navigation feedback (src/components/navigation-progress.tsx)
 

@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { canAcknowledge, canManageActionItems, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/session";
+import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
   acknowledgements,
@@ -214,6 +215,8 @@ export async function sendToAgent(actionItemId: string): Promise<ActionResult> {
     employeeName: scoped.employee.name,
   });
 
+  // The item's status changed, and the analytics open-work counts are cached.
+  invalidateCache(CACHE_TAG.issues);
   revalidatePath(`/action-items/${actionItemId}`);
   revalidatePath("/dashboard");
   return { ok: true };
@@ -279,6 +282,7 @@ export async function acknowledge(actionItemId: string): Promise<ActionResult> {
     );
   }
 
+  invalidateCache(CACHE_TAG.issues);
   revalidatePath(`/action-items/${actionItemId}`);
   revalidatePath("/dashboard");
   return { ok: true };

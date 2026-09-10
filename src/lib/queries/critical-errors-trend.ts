@@ -1,4 +1,5 @@
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { CACHE_TAG, cachedRead, serialized } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { employees, kpiDefinitions, metricFacts } from "@/lib/db/schema";
 import { eligibleForPeriod } from "./eligibility";
@@ -27,9 +28,13 @@ export interface CriticalErrorsTrendBucket {
  * twelve-bucket trend should not hand a year's worth of errors to whoever
  * happened to be supervising on the very last day of it.
  */
-export async function getCriticalErrorsTrendBySupervisor(
-  buckets: Period[],
-): Promise<CriticalErrorsTrendBucket[]> {
+export const getCriticalErrorsTrendBySupervisor = cachedRead(
+  "critical-errors-trend",
+  [CACHE_TAG.imports, CACHE_TAG.ews],
+  (buckets: Period[]) => serialized("analytics", () => computeCriticalErrorsTrend(buckets)),
+);
+
+async function computeCriticalErrorsTrend(buckets: Period[]): Promise<CriticalErrorsTrendBucket[]> {
   if (buckets.length === 0) return [];
 
   const [critical] = await db

@@ -38,40 +38,16 @@ import { GranularitySelect } from "./granularity-select";
  *
  * Kept modest deliberately: each bucket needs its own `getMboOverview` call,
  * and that query rebuilds the whole site → manager → supervisor → employee
- * tree from scratch — it is not cheap to run a dozen of. `fetchMboTrend`
- * below also reuses the current and prior period's own calls rather than
- * re-fetching them a second time as trend buckets.
+ * tree from scratch on a cold cache — it is not cheap to run a dozen of.
+ * The trend components below also reuse the current and prior period's own
+ * calls rather than re-fetching them a second time as trend buckets.
  */
 const TREND_BUCKETS = 6;
 
-/**
- * Caps how many `getMboOverview` calls run at once for the trend buckets.
- *
- * `getMboOverview` and `getAnalytics` each run their OWN internal
- * `Promise.all` of several queries (see `eligibleForPeriod` and the
- * site/manager/supervisor breakdown in analytics.ts) — a single call can
- * briefly hold 4-6 connections on its own. Running more than one of these
- * heavy calls at a time multiplies that spike past the db client's pool
- * size (`max: 8` in src/lib/db/client.ts) and wedges a connection against
- * Supabase's transaction-mode pooler, which does not tolerate postgres-js
- * pipelining beyond the pool — confirmed live via `pg_stat_activity` showing
- * queries stuck in `ClientRead` for 60s+ after that happened. 1 keeps this
- * page's own fan-out from ever exceeding what one heavy call already costs.
- */
-const TREND_FETCH_CONCURRENCY = 1;
-
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let next = 0;
-  async function worker() {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
-}
+// The trend buckets' `getMboOverview` calls used to be capped to one at a
+// time here (a single call can hold 4-6 connections, and two together
+// wedged Supabase's transaction pooler — see the main fetch below). That
+// cap now lives inside the cached read itself, where every caller gets it.
 
 type Tone = "pass" | "warn" | "fail" | "muted";
 
@@ -255,12 +231,9 @@ async function MboTrendChart({
   periodNoun: string;
 }) {
   const olderBuckets = trendBuckets.slice(0, Math.max(0, trendBuckets.length - 2));
-  const olderMbo =
-    olderBuckets.length > 0
-      ? await mapWithConcurrency(olderBuckets, TREND_FETCH_CONCURRENCY, (b) =>
-          getMboOverview({ weekFrom: b.start, weekTo: b.end }),
-        )
-      : [];
+  const olderMbo = await Promise.all(
+    olderBuckets.map((b) => getMboOverview({ weekFrom: b.start, weekTo: b.end })),
+  );
   const mboTrend: MboOverview[] = [...olderMbo, ...(mboPrior ? [mboPrior] : []), mboCurrent];
 
   return (
@@ -327,12 +300,9 @@ async function EarlyWarningSignalsCard({
   periodNoun: string;
 }) {
   const olderBuckets = trendBuckets.slice(0, Math.max(0, trendBuckets.length - 2));
-  const olderMbo =
-    olderBuckets.length > 0
-      ? await mapWithConcurrency(olderBuckets, TREND_FETCH_CONCURRENCY, (b) =>
-          getMboOverview({ weekFrom: b.start, weekTo: b.end }),
-        )
-      : [];
+  const olderMbo = await Promise.all(
+    olderBuckets.map((b) => getMboOverview({ weekFrom: b.start, weekTo: b.end })),
+  );
   const mboTrend: MboOverview[] = [...olderMbo, ...(mboPrior ? [mboPrior] : []), mboCurrent];
 
   const critBySup = Object.entries(criticalBySupervisorCurrent)
@@ -494,31 +464,32 @@ export default async function AnalyticsPage({
     .slice()
     .reverse();
 
-  // Sequential, deliberately — not a Promise.all.
-  //
-  // getMboOverview and getAnalytics each run their OWN internal Promise.all
-  // of several queries (eligibleForPeriod, the site/manager/supervisor
-  // breakdown in analytics.ts) and can briefly hold 4-6 connections on
-  // their own. Running several of these at once — as this used to — spikes
-  // real concurrent demand well past the db client's pool size (`max: 8` in
-  // src/lib/db/client.ts), which wedges a connection against Supabase's
-  // transaction-mode pooler: confirmed live via `pg_stat_activity` showing
-  // queries stuck in `ClientRead` for 60s+ after exactly that happened.
-  // Running one at a time costs some wall-clock time but never exceeds what
-  // a single heavy call already needs on its own.
-  const mboCurrent = await getMboOverview({ weekFrom: period.start, weekTo: period.end });
-  const mboPrior: MboOverview | null = priorPeriod
-    ? await getMboOverview({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
-    : null;
-  const analyticsCurrent = await getAnalytics({ weekFrom: period.start, weekTo: period.end });
-  const analyticsPrior: AnalyticsSnapshot | null = priorPeriod
-    ? await getAnalytics({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
-    : null;
-  const skillMetrics = await getSkillMetricsBySupervisor(period);
-  const skillMetricsPrior: SkillSupervisorRow[] = priorPeriod ? await getSkillMetricsBySupervisor(priorPeriod) : [];
-  const criticalTrend = await getCriticalErrorsTrendBySupervisor(trendBuckets);
-  const ewsCurrent = await getEwsRiskCounts(period);
-  const ewsPrior = priorPeriod ? await getEwsRiskCounts(priorPeriod) : null;
+  // Requested together. Every one of these except the EWS counts is a cached
+  // read (see src/lib/cache.ts): warm, they resolve in parallel from the
+  // cache; cold, their computations still run ONE AT A TIME through a
+  // shared queue, because getMboOverview and getAnalytics each fan out
+  // several queries internally and running two of those together used to
+  // spike past the db client's pool (`max: 8` in src/lib/db/client.ts) and
+  // wedge a connection against Supabase's transaction-mode pooler —
+  // confirmed live via `pg_stat_activity` showing queries stuck in
+  // `ClientRead` for 60s+. This used to be nine awaits in a row for that
+  // reason; the queue keeps the guarantee while the cache removes the wait.
+  const [mboCurrent, mboPrior, analyticsCurrent, analyticsPrior, skillMetrics, skillMetricsPrior, criticalTrend, ewsCurrent, ewsPrior] =
+    await Promise.all([
+      getMboOverview({ weekFrom: period.start, weekTo: period.end }),
+      priorPeriod
+        ? getMboOverview({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
+        : Promise.resolve<MboOverview | null>(null),
+      getAnalytics({ weekFrom: period.start, weekTo: period.end }),
+      priorPeriod
+        ? getAnalytics({ weekFrom: priorPeriod.start, weekTo: priorPeriod.end })
+        : Promise.resolve<AnalyticsSnapshot | null>(null),
+      getSkillMetricsBySupervisor(period),
+      priorPeriod ? getSkillMetricsBySupervisor(priorPeriod) : Promise.resolve<SkillSupervisorRow[]>([]),
+      getCriticalErrorsTrendBySupervisor(trendBuckets),
+      getEwsRiskCounts(period),
+      priorPeriod ? getEwsRiskCounts(priorPeriod) : Promise.resolve(null),
+    ]);
 
   // The trend line (Overview) and the early-warning signals (Risks) are the
   // only things that need MBO history beyond the current and prior period —

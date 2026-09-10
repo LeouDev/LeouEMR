@@ -19,6 +19,10 @@ export const CACHE_TAG = {
   reference: "reference",
   /** Ramp schedules and per-employee ramp assignments. */
   ramp: "ramp",
+  /** EWS assessments — they carry the separation dates that decide who counts in a period. */
+  ews: "ews",
+  /** Performance issues and action items — their statuses feed the open-work counts. */
+  issues: "issues",
 } as const;
 
 /**
@@ -73,4 +77,26 @@ export function invalidateCache(...tags: string[]): void {
   // outside a request.
   if (!process.env.NEXT_RUNTIME) return;
   for (const tag of tags) revalidateTag(tag, { expire: 0 });
+}
+
+const queues = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs `work` after everything previously queued under `queue` has
+ * finished — one heavy computation at a time per server instance.
+ *
+ * Used inside the cached reads whose cold path fans out several queries at
+ * once (an organisation-wide period aggregation, the analytics snapshot).
+ * A cache hit never comes near this; only a miss queues. That is what lets
+ * a page request all of its cached reads together: warm reads resolve in
+ * parallel, and the rare misses still never run two heavy fan-outs against
+ * the pool at once — the wedge described in src/lib/db/client.ts. Separate
+ * queues for computations that nest (analytics calls period metrics) so a
+ * caller is never waiting on itself.
+ */
+export function serialized<T>(queue: string, work: () => Promise<T>): Promise<T> {
+  const prior = queues.get(queue) ?? Promise.resolve();
+  const run = prior.then(work, work);
+  queues.set(queue, run.catch(() => undefined));
+  return run;
 }
