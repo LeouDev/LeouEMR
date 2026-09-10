@@ -32,6 +32,14 @@ const EMPTY_BY_FILTER: Record<Filter, (period: string) => string> = {
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
+/**
+ * Rows rendered before "Show all". Failing people sort first, so for the
+ * list's purpose — working through who is not passing — the first fifty
+ * are the ones that matter; an admin's full roster of six hundred was
+ * 43 kB per view (measured) for a page nobody reads to the bottom.
+ */
+const ROWS_SHOWN = 50;
+
 function pct(value: number | null, digits = 1) {
   return value === null ? "—" : `${value.toFixed(digits)}%`;
 }
@@ -45,7 +53,7 @@ function pct(value: number | null, digits = 1) {
 export default async function MboPage({
   searchParams,
 }: {
-  searchParams: Promise<{ granularity?: string; period?: string; status?: string }>;
+  searchParams: Promise<{ granularity?: string; period?: string; status?: string; all?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -104,11 +112,16 @@ export default async function MboPage({
           : true,
   );
 
-  const query = (next: Filter) => {
+  const query = (next: Filter, everyone = false) => {
     const p = new URLSearchParams({ granularity, period: period.start });
     if (next !== "all") p.set("status", next);
+    if (everyone) p.set("all", "1");
     return `/mbo?${p}`;
   };
+
+  const showAll = params.all === "1";
+  const visible = showAll ? shown : shown.slice(0, ROWS_SHOWN);
+  const abridged = visible.length < shown.length;
 
   return (
     <>
@@ -156,8 +169,22 @@ export default async function MboPage({
         <Card>
           <CardHeader
             title={TABS.find((t) => t.key === status)!.label}
-            subtitle={`${shown.length} employee${shown.length === 1 ? "" : "s"} · ${period.label}`}
+            subtitle={
+              abridged
+                ? `First ${visible.length} of ${shown.length} employees · ${period.label}`
+                : `${shown.length} employee${shown.length === 1 ? "" : "s"} · ${period.label}`
+            }
             action={
+              <div className="flex flex-wrap items-center gap-3">
+                {abridged && (
+                  <NavLink
+                    href={query(status, true)}
+                    prefetch={false}
+                    className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                  >
+                    Show all {shown.length}
+                  </NavLink>
+                )}
               <div className="flex border-2 border-ink">
                 {TABS.map((tab, i) => (
                   <NavLink
@@ -171,6 +198,7 @@ export default async function MboPage({
                     {tab.label}
                   </NavLink>
                 ))}
+              </div>
               </div>
             }
           />
@@ -195,7 +223,7 @@ export default async function MboPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((row) => (
+                  {visible.map((row) => (
                     <tr key={row.employeeId} className="border-b-2 border-line last:border-0 hover:bg-cream">
                       <td className="px-6 py-2.5">
                         <Link
