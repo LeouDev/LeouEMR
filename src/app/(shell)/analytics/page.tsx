@@ -131,7 +131,16 @@ function bucketRowsBySite(rows: SkillSupervisorRow[], siteOf: (supervisor: strin
   return out;
 }
 
-/** Builds a `?a=x&b=y` string from the current search params with the given overrides applied. */
+/**
+ * The page's own URL with the current search params and the given
+ * overrides applied.
+ *
+ * Always the full path, never a bare query string: this used to return ""
+ * when nothing remained — the Overview tab on the default month, or the
+ * default sort — and a link to "" is a link to the page you are already
+ * on, query string included. Clicking Overview from Teams or Risks
+ * therefore reloaded Teams or Risks and never went back.
+ */
 function withParams(base: Record<string, string | undefined>, overrides: Record<string, string | undefined>): string {
   const merged: Record<string, string | undefined> = { ...base, ...overrides };
   const qs = new URLSearchParams();
@@ -139,7 +148,7 @@ function withParams(base: Record<string, string | undefined>, overrides: Record<
     if (value) qs.set(key, value);
   }
   const s = qs.toString();
-  return s ? `?${s}` : "";
+  return s ? `/analytics?${s}` : "/analytics";
 }
 
 const TABS = [
