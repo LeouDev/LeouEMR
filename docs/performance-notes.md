@@ -95,6 +95,26 @@ from every environment this project gets worked on in.
   of 29 August and 5 September 2026): 772 skill-week rows, 254 items
   opened, 12 updated, 75 old items closed on age by the engine's usual
   end-of-run sweep. Earlier weeks have no skill rows.
+- **Org history is dated intervals, and a masterlist month outranks a
+  weekly file.** `employee_assignments` holds one interval per
+  (employee, supervisor/manager/site) span; the period roll-ups take
+  whoever covers the most days of the period (`periodOwnerSubquery`).
+  Both imports write through `spliceAssignments` in
+  `src/lib/org/assignments.ts`: the file replaces the days it covers and
+  the newest interval is always left open, so "the latest thing we were
+  told" is the current assignment. A masterlist upload writes the whole
+  month as one open-ended interval, stamps every interval it rewrites
+  with its batch id, and closes anyone active the day before the month
+  who is missing from the file (attrition). The weekly import goes
+  through `spliceWeeklyAssignments`, which reads committed masterlist
+  batches back from `import_batches` (`validation_summary.kind =
+  'masterlist'`; `monthStart`/`monthEnd`, or the "September 2026" label
+  on the first batches — `masterlistMonthFromBatch`) and, for anyone a
+  masterlist listed or closed, trims the file's claims to days outside
+  those months and re-closes anyone it would reopen. A hire the
+  masterlist never saw is still placed by the weekly file. Rule for
+  readers: a weekly file's supervisor column can lag a realignment by
+  weeks; the masterlist is the roster of record for its month.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
@@ -150,6 +170,21 @@ This session (static audit — see "What could not be measured" below):
   team, MBO pass and open counts still real). The column fills in by
   itself once the first week starting inside the month is imported —
   for September 2026 that is the week of Saturday 5 September.
+- **Weekly import overriding the masterlist month (2026-09-11 UTC).**
+  Symptom: a supervisor's September team read 35 on the manager
+  dashboard when the roster just uploaded gave her 20, and the 218
+  people the masterlist had closed were active again. Cause: the
+  September masterlist (open-ended 1 Sep interval per listed person) was
+  committed first, then the week of 29 Aug–4 Sep; `spliceAssignments`'
+  subtract step drops the tail of any open-ended interval the file's
+  window overlaps, so the weekly file cut the masterlist month out, put
+  its own (stale) supervisor column back for all of September, and
+  reopened the attrited. Fix: `spliceWeeklyAssignments` (see the org
+  history bullet above), commit 09eb792. The data itself is repaired by
+  re-uploading the September masterlist after that deploy: its splice
+  cuts the weekly file's open intervals at 31 Aug and its attrition pass
+  re-closes the 218. Check afterwards with the per-supervisor count
+  query in the session notes (Herbias should read 20).
 
 ## Caching layer (src/lib/cache.ts)
 
