@@ -26,6 +26,14 @@ const NAV = [
 ];
 
 /**
+ * The archive of what has been written against action items — RCA, time and
+ * motion, action plan, acknowledgement — read-only and printable. Sits right
+ * after Action Items, whose written record it is. A leader's view: an agent
+ * reads their own items on the action-item pages (canViewRecords).
+ */
+const RECORDS_NAV = { href: "/records", label: "Records" };
+
+/**
  * An agent works from their own numbers, not the shared configuration: the
  * skill reference is a scoring policy table they cannot change, so their
  * slot goes to their own stats instead.
@@ -114,9 +122,11 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
     // which is what that tab answers directly, while the roster search and
     // per-employee lookup Employees offers stays reachable by URL and from
     // every link that already points at a specific employee.
-    ...NAV.slice(1).filter(
-      (item) => item.href !== "/employees" || (user.role !== "agent" && user.role !== "admin"),
-    ),
+    ...NAV.slice(1)
+      .filter((item) => item.href !== "/employees" || (user.role !== "agent" && user.role !== "admin"))
+      .flatMap((item) =>
+        item.href === "/action-items" && user.role !== "agent" ? [item, RECORDS_NAV] : [item],
+      ),
     ...(user.role === "agent"
       ? AGENT_NAV
       : [
@@ -140,7 +150,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
      * to pass under this one rather than through it. The background is opaque
      * for the same reason.
      */
-    <header className="sticky top-0 z-30 border-b-2 border-orange-brand bg-navy-800">
+    <header className="sticky top-0 z-30 border-b-2 border-orange-brand bg-navy-800 print:hidden">
       <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2.5">
         {/* Purely decorative, sits behind the logo and the identity/actions
             cluster (both given their own stacking order below) and never

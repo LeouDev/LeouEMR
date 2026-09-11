@@ -50,6 +50,16 @@ export function withScope(user: CurrentUser, condition?: SQL): SQL | null | unde
   return condition ? and(scope, condition) : scope;
 }
 
+/**
+ * The Records archive — what has been written against action items, read-only
+ * and printable — is a leader's view. An agent reads their own items on the
+ * action-item pages; the archive is never theirs, so this fails closed for
+ * any role not listed rather than for "agent" alone.
+ */
+export function canViewRecords(user: CurrentUser): boolean {
+  return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
+}
+
 /** True when the user may act on (not just view) an employee's action items. */
 export function canManageActionItems(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "supervisor";
