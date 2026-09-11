@@ -753,7 +753,7 @@ export default async function AnalyticsPage({
 
               <ChartFrame
                 title="Teams needing attention"
-                subtitle={`Supervisors with the highest share of agents failing an MBO gate in ${period.label}`}
+                subtitle={`Supervisors with the highest share of agents failing a tracked KPI in the last reporting week of ${period.label}`}
               >
                 {struggling.length === 0 ? (
                   <EmptyState title="Nothing to flag" description="No supervisor has a failing agent this period." />
