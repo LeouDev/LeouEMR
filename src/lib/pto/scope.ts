@@ -1,6 +1,6 @@
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { employees, users } from "@/lib/db/schema";
+import { employeeAssignments, employees, users } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { resolveScopedIds } from "@/lib/queries/performance";
 
@@ -53,6 +53,20 @@ export function canSeeLeaveType(user: CurrentUser): boolean {
 }
 
 /**
+ * A report as the roster of record has it now: an employee with an open
+ * assignment interval. A row that merely still names the supervisor is not
+ * one — a masterlist that closes someone as attrited never rewrites their
+ * employee row, so it keeps naming their last supervisor and last manager
+ * indefinitely. Counting those rows as reports is what put one supervisor
+ * under three managers at once and took both her cluster view and her
+ * manager's approval of her leave away.
+ */
+const currentlyAssigned = sql`exists (
+  select 1 from ${employeeAssignments} as a
+  where a.employee_id = ${employees.id} and a.effective_to is null
+)`;
+
+/**
  * The manager name responsible for a leader who has no employee row.
  *
  * The imported workbook contains only agents, so a supervisor exists in the
@@ -69,7 +83,7 @@ export async function managerNameFor(user: CurrentUser): Promise<string | null> 
   const rows = await db
     .selectDistinct({ manager: employees.managerName })
     .from(employees)
-    .where(eq(employees.supervisorEid, user.employeeEid));
+    .where(and(eq(employees.supervisorEid, user.employeeEid), currentlyAssigned));
 
   const names = rows.map((r) => r.manager).filter((n): n is string => Boolean(n));
   // A team split across two managers has no single approver; treat that as
@@ -114,7 +128,7 @@ export async function decidableLeaderIds(user: CurrentUser): Promise<string[]> {
     .select({ id: users.id })
     .from(users)
     .innerJoin(employees, eq(employees.supervisorEid, users.employeeEid))
-    .where(and(eq(users.role, "supervisor"), ne(users.id, user.id)))
+    .where(and(eq(users.role, "supervisor"), ne(users.id, user.id), currentlyAssigned))
     .groupBy(users.id)
     .having(
       sql`count(distinct ${employees.managerName}) = 1 and max(${employees.managerName}) = ${name}`,
@@ -144,7 +158,7 @@ export function majorityName(names: Array<string | null | undefined>): string | 
  * Looser than `managerNameFor` on purpose. That one decides who may approve
  * the supervisor's own leave, where a team split across two managers rightly
  * has no single approver. This only decides which people the supervisor may
- * *see* out, and one report whose row still names another manager — a
+ * *see* out, and one current report whose row names another manager — a
  * roster miss, a name written two ways — should not take the whole cluster
  * view away. A genuine even split still resolves to nobody.
  */
@@ -154,7 +168,7 @@ async function clusterManagerFor(user: CurrentUser): Promise<string | null> {
   const rows = await db
     .select({ manager: employees.managerName, n: sql<number>`count(*)::int` })
     .from(employees)
-    .where(eq(employees.supervisorEid, user.employeeEid))
+    .where(and(eq(employees.supervisorEid, user.employeeEid), currentlyAssigned))
     .groupBy(employees.managerName);
 
   return majorityName(rows.flatMap((r) => Array<string | null>(r.n).fill(r.manager)));
