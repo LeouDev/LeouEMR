@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_PRODUCTION_HOURS, eligibilityFor, hoursBeforeCutoff } from "./eligibility";
+import { MIN_PRODUCTION_HOURS, eligibilityFor, hoursBeforeCutoff, mergeSeparations } from "./eligibility";
 import type { Period } from "./period";
 
 const month = (start: string, end: string): Period => ({
@@ -106,5 +106,39 @@ describe("hoursBeforeCutoff", () => {
   it("returns an empty map for no rows", () => {
     const result = hoursBeforeCutoff([], new Map([["a", "2026-07-22"]]));
     expect(result.size).toBe(0);
+  });
+});
+
+describe("mergeSeparations", () => {
+  it("takes a closed newest interval as a separation on its last day", () => {
+    const dates = mergeSeparations([], [{ employeeId: "a", effectiveTo: "2026-08-31" }]);
+    expect(dates.get("a")).toBe("2026-08-31");
+  });
+
+  it("reads nothing into an open newest interval", () => {
+    const dates = mergeSeparations([], [{ employeeId: "a", effectiveTo: null }]);
+    expect(dates.has("a")).toBe(false);
+  });
+
+  it("keeps the earlier of an EWS separation and a masterlist closure", () => {
+    const dates = mergeSeparations(
+      [
+        { employeeId: "a", on: "2026-08-12" },
+        { employeeId: "b", on: "2026-09-03" },
+      ],
+      [
+        { employeeId: "a", effectiveTo: "2026-08-31" },
+        { employeeId: "b", effectiveTo: "2026-08-31" },
+        { employeeId: "c", effectiveTo: null },
+      ],
+    );
+    expect(dates.get("a")).toBe("2026-08-12");
+    expect(dates.get("b")).toBe("2026-08-31");
+    expect(dates.has("c")).toBe(false);
+  });
+
+  it("keeps a tagged separation for someone with no assignment history", () => {
+    const dates = mergeSeparations([{ employeeId: "a", on: "2026-07-22" }], []);
+    expect(dates.get("a")).toBe("2026-07-22");
   });
 });

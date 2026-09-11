@@ -115,6 +115,20 @@ from every environment this project gets worked on in.
   masterlist never saw is still placed by the weekly file. Rule for
   readers: a weekly file's supervisor column can lag a realignment by
   weeks; the masterlist is the roster of record for its month.
+  The period owner falls back to the `employees` snapshot (last import
+  wins) only for someone with no history reaching the period at all; a
+  person whose history reaches it but covers no day of it was closed by
+  a masterlist before it started (`closed` on the owner row) and resolves
+  to nobody's team, site or manager for that period — the `*OfRecord`
+  helpers in org-history.ts wrap the fallback in `unlessClosed`. The
+  same closure feeds `separationDates` in eligibility.ts: a newest
+  interval that is closed is a separation on its last day (imports never
+  close the newest interval; only a masterlist does), the earlier of it
+  and an EWS separating tag winning, so headline headcounts, the MBO
+  tree, the stack rank and the comparison matrix all drop the attrited
+  from the months after they left. Verified on a local Postgres with a
+  five-person scenario (listed, attrited, no history, rehired later,
+  blank supervisor EID) for August, September and October.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
@@ -183,7 +197,15 @@ This session (static audit — see "What could not be measured" below):
   history bullet above), commit 09eb792. The data itself is repaired by
   re-uploading the September masterlist after that deploy: its splice
   cuts the weekly file's open intervals at 31 Aug and its attrition pass
-  re-closes the 218. Check afterwards with the per-supervisor count
+  re-closes the 218. Second cause, found from a team leader's "My team"
+  reading 4 while no September assignment carried her name: the period
+  owner's per-field fallback to the `employees` snapshot handed everyone
+  with no September assignment — the attrited included — to the
+  supervisor their current row still named, on both the manager
+  dashboard's by-supervisor rows and the supervisor's own view, and
+  `eligibleForPeriod` knew nothing of masterlist attrition. Fixed by the
+  `closed` owner row and the assignment-closure separation date (org
+  history bullet above). Check afterwards with the per-supervisor count
   query in the session notes (Herbias should read 20).
 
 ## Caching layer (src/lib/cache.ts)

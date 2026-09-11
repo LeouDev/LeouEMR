@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employeeAssignments, employees } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -94,17 +94,33 @@ export function periodOwnerSubquery(period: DateRange) {
     .groupBy(stints.employeeId, stints.supervisorName, stints.managerName, stints.site)
     .as("totals");
 
+  // Everyone whose history reaches the period at all. Someone here with no
+  // stint above was closed out before the period started — the only way an
+  // interval ends without a newer one taking over is a masterlist recording
+  // them as gone (see planMasterlistCommit) — and belongs to nobody for it.
+  // Without this row the *OfRecord fallbacks below would hand them to
+  // whoever their current row still names, so a supervisor's September
+  // team kept everyone the September masterlist had marked attrited.
+  const reached = db
+    .selectDistinct({ employeeId: employeeAssignments.employeeId })
+    .from(employeeAssignments)
+    .where(lte(employeeAssignments.effectiveFrom, period.end))
+    .as("reached");
+
   return db
-    .selectDistinctOn([totals.employeeId], {
-      employeeId: totals.employeeId,
+    .selectDistinctOn([reached.employeeId], {
+      employeeId: reached.employeeId,
       supervisorEid: totals.supervisorEid,
       supervisorName: totals.supervisorName,
       managerName: totals.managerName,
       site: totals.site,
       totalDays: totals.totalDays,
+      /** History reaches the period, but no day of it is covered: gone before it began. */
+      closed: sql<boolean>`${totals.employeeId} is null`.as("closed"),
     })
-    .from(totals)
-    .orderBy(totals.employeeId, sql`${totals.totalDays} desc`, totals.earliestStart)
+    .from(reached)
+    .leftJoin(totals, eq(totals.employeeId, reached.employeeId))
+    .orderBy(reached.employeeId, sql`${totals.totalDays} desc nulls last`, totals.earliestStart)
     .as("period_owner");
 }
 
@@ -123,33 +139,41 @@ export function joinPeriodOwner(owner: PeriodOwner): SQL {
  * table. It degrades to exactly the behaviour the app had before
  * assignments existed, rather than to a null that would drop them out of a
  * grouping entirely.
+ *
+ * It does not cover anyone whose history reaches the period and was closed
+ * before it (`closed` on the owner row): the masterlist said they were gone,
+ * and their current row — untouched since, still naming their last
+ * supervisor — is exactly what must not stand in. They resolve to null and
+ * so to nobody's team, nobody's site, nobody's manager for that period.
+ *
+ * `"period_owner"."closed"` and `"period_owner"."supervisor_eid"` are
+ * hardcoded rather than interpolated from `owner`: every other field on
+ * `owner` is a genuine column passed through unchanged from
+ * `employee_assignments`, but those two originate as raw `sql` expressions
+ * (an `is null` test and a `max(...)`) inside periodOwnerSubquery. Drizzle
+ * correctly re-qualifies a real column reference across nested subqueries;
+ * a field that originates as a raw `sql` expression loses that qualification
+ * by the time it reaches a THIRD layer and renders bare — ambiguous the
+ * moment this joins against `employees`, which has a same-named
+ * `supervisor_eid` of its own. Safe to hardcode: "period_owner" is the
+ * literal alias periodOwnerSubquery itself gives its outermost `.as(...)`
+ * call, not something that can drift out from under this independently.
  */
+function unlessClosed(current: SQL | AnyColumn): SQL {
+  return sql`case when ${sql.raw('"period_owner"."closed"')} then null else ${current} end`;
+}
 export function siteOfRecord(owner: PeriodOwner) {
-  return sql<string | null>`coalesce(${owner.site}, ${employees.site})`;
+  return sql<string | null>`coalesce(${owner.site}, ${unlessClosed(employees.site)})`;
 }
 export function managerOfRecord(owner: PeriodOwner) {
-  return sql<string | null>`coalesce(${owner.managerName}, ${employees.managerName})`;
+  return sql<string | null>`coalesce(${owner.managerName}, ${unlessClosed(employees.managerName)})`;
 }
 export function supervisorOfRecord(owner: PeriodOwner) {
-  return sql<string | null>`coalesce(${owner.supervisorName}, ${employees.supervisorName})`;
+  return sql<string | null>`coalesce(${owner.supervisorName}, ${unlessClosed(employees.supervisorName)})`;
 }
-/**
- * `owner.supervisorEid` needs an explicit, hardcoded qualifier here — every
- * other field on `owner` is a genuine column passed through unchanged from
- * `employee_assignments`, but this one is `max(...)` inside
- * periodOwnerSubquery's aggregate stage. Drizzle correctly re-qualifies a
- * real column reference across nested subqueries; a field that originates
- * as a raw `sql` aggregate loses that qualification by the time it reaches
- * a THIRD layer, and the ${owner.supervisorEid} interpolation below renders
- * as a bare, unqualified "supervisor_eid" — ambiguous the moment this joins
- * against `employees`, which has a same-named column of its own. Safe to
- * hardcode: the "period_owner" alias is the literal string periodOwnerSubquery
- * itself gives its outermost `.as(...)` call, not something that can drift
- * out from under this independently.
- */
 export function supervisorEidOfRecord(owner: PeriodOwner) {
   void owner;
-  return sql<string | null>`coalesce(${sql.raw('"period_owner"."supervisor_eid"')}, ${employees.supervisorEid})`;
+  return sql<string | null>`coalesce(${sql.raw('"period_owner"."supervisor_eid"')}, ${unlessClosed(employees.supervisorEid)})`;
 }
 
 /**

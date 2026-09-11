@@ -59,7 +59,7 @@ vi.mock("@/lib/db/client", async () => {
     };
   }
 
-  return { db: { select: () => chainable(), selectDistinctOn: () => chainable() } };
+  return { db: { select: () => chainable(), selectDistinct: () => chainable(), selectDistinctOn: () => chainable() } };
 });
 
 const { reportingScopeIds } = await import("./org-history");

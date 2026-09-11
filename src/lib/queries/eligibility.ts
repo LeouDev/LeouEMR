@@ -2,6 +2,7 @@ import { and, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
+  employeeAssignments,
   employees,
   ewsAssessments,
   kpiDefinitions,
@@ -29,35 +30,71 @@ const SEPARATING = ["black", "absconding"] as const;
 /**
  * When each of these employees separated, for those who have.
  *
- * Read from the latest EWS assessment carrying a separating tag. attritionDate
- * is the anchor; the assessment's own week stands in when nobody filled it,
- * because a separation with no date is still a separation and defaulting to
- * "never" would silently keep them in every future month.
+ * Two sources, the earlier date winning where both speak. An EWS assessment
+ * carrying a separating tag: attritionDate is the anchor, and the
+ * assessment's own week stands in when nobody filled it, because a
+ * separation with no date is still a separation and defaulting to "never"
+ * would silently keep them in every future month. And the assignment
+ * history: the imports always leave a person's newest interval open, so a
+ * newest interval that is closed means a masterlist recorded them as gone
+ * (planMasterlistCommit closes anyone missing from the month's roster on
+ * the day before it starts), and its last day is when they left.
  */
 export async function separationDates(employeeIds: string[]): Promise<Map<string, string>> {
   if (employeeIds.length === 0) return new Map();
 
-  // The newest assessment that CARRIES a separating tag, not the newest
-  // assessment. Those differ: a supervisor filling in a later week leaves an
-  // untagged row on top, and taking that row would silently un-separate
-  // someone who has left — putting them back into every month's reporting.
-  const rows = await db
-    .selectDistinctOn([ewsAssessments.employeeId], {
-      employeeId: ewsAssessments.employeeId,
-      attritionDate: ewsAssessments.attritionDate,
-      week: ewsAssessments.week,
-    })
-    .from(ewsAssessments)
-    .where(
-      and(
-        inArray(ewsAssessments.employeeId, employeeIds),
-        inArray(ewsAssessments.attrition, [...SEPARATING]),
-      ),
-    )
-    .orderBy(ewsAssessments.employeeId, desc(ewsAssessments.week));
+  const [tagged, newest] = await Promise.all([
+    // The newest assessment that CARRIES a separating tag, not the newest
+    // assessment. Those differ: a supervisor filling in a later week leaves an
+    // untagged row on top, and taking that row would silently un-separate
+    // someone who has left — putting them back into every month's reporting.
+    db
+      .selectDistinctOn([ewsAssessments.employeeId], {
+        employeeId: ewsAssessments.employeeId,
+        attritionDate: ewsAssessments.attritionDate,
+        week: ewsAssessments.week,
+      })
+      .from(ewsAssessments)
+      .where(
+        and(
+          inArray(ewsAssessments.employeeId, employeeIds),
+          inArray(ewsAssessments.attrition, [...SEPARATING]),
+        ),
+      )
+      .orderBy(ewsAssessments.employeeId, desc(ewsAssessments.week)),
+    db
+      .selectDistinctOn([employeeAssignments.employeeId], {
+        employeeId: employeeAssignments.employeeId,
+        effectiveTo: employeeAssignments.effectiveTo,
+      })
+      .from(employeeAssignments)
+      .where(inArray(employeeAssignments.employeeId, employeeIds))
+      .orderBy(employeeAssignments.employeeId, desc(employeeAssignments.effectiveFrom)),
+  ]);
 
+  return mergeSeparations(
+    tagged.map((row) => ({ employeeId: row.employeeId, on: row.attritionDate ?? row.week })),
+    newest,
+  );
+}
+
+/**
+ * The pure half of separationDates: one date per employee from the tagged
+ * assessments and the newest assignment intervals, the earlier winning. An
+ * open newest interval says nothing — they are still here as far as the
+ * roster knows.
+ */
+export function mergeSeparations(
+  tagged: Array<{ employeeId: string; on: string }>,
+  newestIntervals: Array<{ employeeId: string; effectiveTo: string | null }>,
+): Map<string, string> {
   const dates = new Map<string, string>();
-  for (const row of rows) dates.set(row.employeeId, row.attritionDate ?? row.week);
+  const note = (employeeId: string, on: string) => {
+    const prior = dates.get(employeeId);
+    if (prior === undefined || on < prior) dates.set(employeeId, on);
+  };
+  for (const row of tagged) note(row.employeeId, row.on);
+  for (const row of newestIntervals) if (row.effectiveTo !== null) note(row.employeeId, row.effectiveTo);
   return dates;
 }
 
