@@ -33,7 +33,7 @@ vi.mock("@/lib/db/client", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { updateSkillTarget } = await import("./(shell)/skills/actions");
-const { updateUser } = await import("./(shell)/users/actions");
+const { approvePendingUsers, updateUser } = await import("./(shell)/users/actions");
 const { createUploadTicket, previewImport, runImport } = await import("./(shell)/import/actions");
 const { addRcaNote } = await import("./(shell)/action-items/actions");
 
@@ -82,6 +82,13 @@ describe("admin-only mutations", () => {
       expect(result).toEqual({ ok: false, error: "Only administrators can manage users" });
     });
 
+    it("cannot approve pending accounts in bulk", async () => {
+      const result = await approvePendingUsers({
+        userIds: ["33333333-3333-4333-8333-333333333333"],
+      });
+      expect(result).toEqual({ ok: false, error: "Only administrators can manage users" });
+    });
+
     it("cannot request an upload ticket", async () => {
       const result = await createUploadTicket("week.xlsx", 1024);
       expect(result).toEqual({ ok: false, error: "Only administrators can import data" });
@@ -121,6 +128,14 @@ describe("admin-only mutations", () => {
   });
 
   describe("an active admin", () => {
+    it("is told when there is nothing to approve, before any database access", async () => {
+      currentUser.value = signedInAs("admin");
+      expect(await approvePendingUsers({ userIds: [] })).toEqual({
+        ok: false,
+        error: "Nothing to approve",
+      });
+    });
+
     it("passes the role check and proceeds to the database", async () => {
       currentUser.value = signedInAs("admin");
       // The db mock throws on first use, which is the proof: the admin got

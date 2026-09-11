@@ -1,6 +1,6 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -87,4 +87,59 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
 
   revalidatePath("/users");
   return { ok: true };
+}
+
+const approveSchema = z.object({
+  userIds: z.array(z.string().uuid()).min(1, "Nothing to approve").max(500),
+});
+
+/**
+ * Activates pending accounts in one go — the "approve all pending" button.
+ *
+ * Takes the ids the administrator was looking at rather than "every pending
+ * account", so a filtered list (say, pending Pharmacy Technicians only)
+ * approves exactly what is on screen and nothing that arrived since. Only
+ * rows still pending are touched: an account someone else activated or
+ * disabled in the meantime is left as they set it. Roles are not changed;
+ * a signup stays the agent it arrived as until an administrator assigns
+ * more, which is the same fail-closed rule the single-row save follows.
+ */
+export async function approvePendingUsers(
+  input: unknown,
+): Promise<{ ok: true; approved: number } | { ok: false; error: string }> {
+  const actor = await getCurrentUser();
+  if (!actor || actor.status !== "active") return { ok: false, error: "Not signed in" };
+  if (actor.role !== "admin") return { ok: false, error: "Only administrators can manage users" };
+
+  const parsed = approveSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+
+  const approved = await db
+    .update(users)
+    .set({ status: "active" })
+    .where(
+      and(
+        inArray(users.id, parsed.data.userIds),
+        eq(users.status, "pending"),
+        // Never one's own account, for the same reason updateUser refuses it.
+        ne(users.id, actor.id),
+      ),
+    )
+    .returning({ id: users.id, role: users.role });
+
+  if (approved.length > 0) {
+    await db.insert(auditLog).values(
+      approved.map((row) => ({
+        actorId: actor.id,
+        action: "user.approved",
+        entityType: "user",
+        entityId: row.id,
+        before: { status: "pending" },
+        after: { status: "active", role: row.role },
+      })),
+    );
+  }
+
+  revalidatePath("/users");
+  return { ok: true, approved: approved.length };
 }

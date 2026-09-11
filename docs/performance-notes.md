@@ -152,6 +152,16 @@ from every environment this project gets worked on in.
   is `print:break-inside-avoid`, so the browser's save-to-PDF gives a
   clean, text-selectable record. The action-item pages, their components
   and their server actions were not touched.
+- **Users page filters and bulk approval.** `/users?status=&position=`
+  filters the account list by status and by the sign-up position
+  (`employee_profiles.position`; `position=none` for accounts without a
+  profile), filtered in the page from the full list rather than in SQL
+  since the list is a few dozen rows and the counts need the whole of it.
+  "Approve all pending (N)" (`ApprovePending`, second click to confirm)
+  sends the ids on screen to `approvePendingUsers`, which activates only
+  rows still pending, never the caller's own, keeps roles as they are, and
+  writes one `user.approved` audit row per account — so a filtered list
+  approves exactly its own rows.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
