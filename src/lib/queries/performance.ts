@@ -1,4 +1,5 @@
-import { and, asc, count, desc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, max, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import {
@@ -11,12 +12,13 @@ import {
   performanceIssues,
   rcaEntries,
   rcaNotes,
+  rootCauseCategories,
   timeMotionStudies,
   users,
   weeklyIssueHistory,
   weeklyMetricResults,
 } from "@/lib/db/schema";
-import { employeeScope } from "@/lib/auth/scope";
+import { canViewRecords, employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 
 /** Statuses still requiring attention (not resolved). */
@@ -488,6 +490,170 @@ export async function getActionItemDetail(user: CurrentUser, actionItemId: strin
 
   return { ...row, history, acknowledgements: acks, metrics, notes, timeMotion };
 }
+
+/** Every status an action item can sit in, in workflow order — the Records status filter. */
+export const RECORD_STATUSES = [
+  "OPEN",
+  "AWAITING_AGENT_ACKNOWLEDGEMENT",
+  "ACKNOWLEDGED",
+  "MONITORING",
+  "SUSTAINED",
+  "COMPLETED",
+  "REOPENED",
+] as const satisfies readonly IssueStatus[];
+
+export function isRecordStatus(value: string | undefined): value is IssueStatus {
+  return value !== undefined && (RECORD_STATUSES as readonly string[]).includes(value);
+}
+
+export interface CoachingRecordRow {
+  actionItemId: string;
+  actionItemCode: string;
+  employeeId: string;
+  employeeName: string;
+  kpiName: string;
+  kpiCode: string;
+  status: IssueStatus;
+  /** The most recent week folded into the item — the coaching date the archive sorts on. */
+  latestWeek: string;
+  /** Whoever wrote the RCA, or failing that the action plan. */
+  filedBy: string | null;
+  hasRca: boolean;
+  hasPlan: boolean;
+  hasTimeMotion: boolean;
+  acknowledged: boolean;
+}
+
+export interface CoachingRecordFilter {
+  /** Matched against the employee's name, case-insensitively. */
+  search?: string;
+  status?: IssueStatus;
+  sort?: "newest" | "oldest";
+}
+
+const RECORD_LIMIT = 500;
+
+/** A search term as an ILIKE pattern that matches it literally: the wildcards are escaped, not interpreted. */
+function containsPattern(term: string): string {
+  return `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+}
+
+/**
+ * The Records archive: one row per action item with something written
+ * against it — an RCA, an action plan, a time-and-motion study or an
+ * acknowledgement. An item nobody has started on is not a record yet; it is
+ * on the Action Items page instead.
+ *
+ * Scoped exactly as the action-item list is (a supervisor's own team, a
+ * manager's supervisors' teams, an administrator's whole org), and refused
+ * outright for an agent: the archive is a leader's view. Unlike the
+ * action-item list this does not hide items of KPIs that no longer open
+ * items — an AHT record written before handle time moved to per-skill items
+ * is still part of the employee's history.
+ */
+export async function getCoachingRecords(
+  user: CurrentUser,
+  filter: CoachingRecordFilter = {},
+): Promise<CoachingRecordRow[]> {
+  if (!canViewRecords(user)) return [];
+  const ids = await scopedEmployeeIds(user);
+  if (ids === null || (Array.isArray(ids) && ids.length === 0)) return [];
+
+  const rcaAuthor = alias(users, "rca_author");
+  const planAuthor = alias(users, "plan_author");
+  const hasTimeMotion = sql<boolean>`exists (select 1 from ${timeMotionStudies} where ${timeMotionStudies.actionItemId} = ${actionItems.id})`;
+  const acknowledged = sql<boolean>`exists (select 1 from ${acknowledgements} where ${acknowledgements.actionItemId} = ${actionItems.id})`;
+  const latestWeek = sql<string>`coalesce(${performanceIssues.lastEvaluatedWeek}, ${performanceIssues.openedWeek})`;
+  const search = filter.search?.trim();
+
+  const rows = await db
+    .select({
+      actionItemId: actionItems.id,
+      actionItemCode: actionItems.code,
+      employeeId: employees.id,
+      employeeName: employees.name,
+      kpiName: kpiDefinitions.name,
+      kpiCode: kpiDefinitions.code,
+      status: performanceIssues.status,
+      latestWeek,
+      rcaId: rcaEntries.id,
+      planId: actionPlans.id,
+      rcaAuthor: rcaAuthor.name,
+      planAuthor: planAuthor.name,
+      hasTimeMotion,
+      acknowledged,
+    })
+    .from(actionItems)
+    .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+    .innerJoin(employees, eq(employees.id, performanceIssues.employeeId))
+    .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
+    .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
+    .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
+    .leftJoin(rcaAuthor, eq(rcaAuthor.id, rcaEntries.createdBy))
+    .leftJoin(planAuthor, eq(planAuthor.id, actionPlans.createdBy))
+    .where(
+      and(
+        ids === "all" ? undefined : inArray(performanceIssues.employeeId, ids),
+        filter.status ? eq(performanceIssues.status, filter.status) : undefined,
+        search ? ilike(employees.name, containsPattern(search)) : undefined,
+        or(isNotNull(rcaEntries.id), isNotNull(actionPlans.id), hasTimeMotion, acknowledged),
+      ),
+    )
+    .orderBy(filter.sort === "oldest" ? asc(latestWeek) : desc(latestWeek), employees.name)
+    .limit(RECORD_LIMIT);
+
+  return rows.map((row) => ({
+    actionItemId: row.actionItemId,
+    actionItemCode: row.actionItemCode,
+    employeeId: row.employeeId,
+    employeeName: row.employeeName,
+    kpiName: row.kpiName,
+    kpiCode: row.kpiCode,
+    status: row.status,
+    latestWeek: row.latestWeek,
+    filedBy: row.rcaAuthor ?? row.planAuthor ?? null,
+    hasRca: row.rcaId !== null,
+    hasPlan: row.planId !== null,
+    hasTimeMotion: row.hasTimeMotion,
+    acknowledged: row.acknowledged,
+  }));
+}
+
+/**
+ * One record in full for the read-only archive page: the same detail the
+ * action-item page works from (getActionItemDetail, scoped the same way),
+ * plus the names the page prints rather than the ids it stores — the root
+ * cause category and who filed the RCA and the plan.
+ */
+export async function getCoachingRecordDetail(user: CurrentUser, actionItemId: string) {
+  if (!canViewRecords(user)) return null;
+  const detail = await getActionItemDetail(user, actionItemId);
+  if (!detail) return null;
+
+  const authorIds = [...new Set([detail.rca?.createdBy, detail.plan?.createdBy].filter((id): id is string => !!id))];
+  const [authors, categories] = await Promise.all([
+    authorIds.length > 0
+      ? db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, authorIds))
+      : Promise.resolve([]),
+    detail.rca
+      ? db
+          .select({ label: rootCauseCategories.label })
+          .from(rootCauseCategories)
+          .where(eq(rootCauseCategories.id, detail.rca.rootCauseCategoryId))
+          .limit(1)
+      : Promise.resolve([]),
+  ]);
+  const nameOf = (id: string | undefined) => (id ? (authors.find((a) => a.id === id)?.name ?? null) : null);
+
+  return {
+    ...detail,
+    rootCauseCategory: categories[0]?.label ?? null,
+    rcaBy: nameOf(detail.rca?.createdBy),
+    planBy: nameOf(detail.plan?.createdBy),
+  };
+}
+
+export type CoachingRecordDetail = NonNullable<Awaited<ReturnType<typeof getCoachingRecordDetail>>>;
 
 /** Weekly scorecard for one employee — the IDP view's metric table. */
 export async function getEmployeeWeek(user: CurrentUser, employeeId: string, week: string | null) {

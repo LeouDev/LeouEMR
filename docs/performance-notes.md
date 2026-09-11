@@ -129,6 +129,20 @@ from every environment this project gets worked on in.
   from the months after they left. Verified on a local Postgres with a
   five-person scenario (listed, attrited, no history, rehired later,
   blank supervisor EID) for August, September and October.
+- **Records (`/records`) is the read-only archive of action-item work.**
+  One row per action item with something written against it — RCA, action
+  plan, time-and-motion study or acknowledgement — via `getCoachingRecords`
+  in performance.ts (scoped like the action-item list, refused for agents
+  by `canViewRecords` in scope.ts, and not filtered by
+  `generates_action_items`, so retired AHT records stay visible). The
+  detail page reuses `getActionItemDetail` through `getCoachingRecordDetail`
+  (adds the category label and the RCA/plan authors' names) and renders the
+  same sections as the action-item page with no forms or actions. "Download
+  PDF" is `window.print()`: the app header carries `print:hidden`, the
+  page band, back link and button are hidden the same way, and each Card
+  is `print:break-inside-avoid`, so the browser's save-to-PDF gives a
+  clean, text-selectable record. The action-item pages, their components
+  and their server actions were not touched.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
