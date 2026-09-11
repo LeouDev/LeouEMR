@@ -156,13 +156,25 @@ export default async function DashboardPage({
   // one below them to roll up. (Admins returned above with the org-wide view.)
   const showsRollup = user.role === "manager";
 
-  const [scopedIds, summary, attention, rollup, overdue] = await Promise.all([
+  const [scopedIds, periodIds, summary, attention, rollup, overdue] = await Promise.all([
     resolveScopedIds(user),
+    // Reporting scope for the period being viewed: whose numbers made up
+    // this team then, by the assignment history — not who reports to this
+    // leader now. The two drift apart with every realignment, and a leader
+    // whose team has since moved on used to see cards built from whoever
+    // still happened to name them, beside a table built from the real
+    // team; see org-history.ts.
+    period ? reportingScopeIds(user, period) : Promise.resolve(null),
     getTeamSummary(user, week),
     getAttentionRows(user, week, 50),
     showsRollup ? getSupervisorRollup(user, week) : Promise.resolve([]),
     getOverdueCount(user, todayIso()),
   ]);
+  // Everything about the period — the cards, the team trend, the comparison
+  // table — follows the period's team. The action-item panels stay on the
+  // operational scope, since open work belongs to whoever leads the person
+  // now.
+  const teamIds = periodIds ?? scopedIds;
 
   // Depends on the scope resolved above, so these cannot join the batch.
   // The stat cards follow the selected period; the attention table below is
@@ -170,9 +182,9 @@ export default async function DashboardPage({
   // fetched and each panel says which one it is showing.
   const weekPeriod = week ? periodContaining("week", week) : null;
   const [periodMetrics, weekMetrics] = await Promise.all([
-    period ? getPeriodMetrics(scopedIds, period) : Promise.resolve([]),
+    period ? getPeriodMetrics(teamIds, period) : Promise.resolve([]),
     weekPeriod && weekPeriod.start !== period?.start
-      ? getPeriodMetrics(scopedIds, weekPeriod)
+      ? getPeriodMetrics(teamIds, weekPeriod)
       : Promise.resolve(null),
     // The cards and the agent's own KPI list are about KPIs; a skill's
     // result is a work item and shows up in the attention table instead.
@@ -224,11 +236,9 @@ export default async function DashboardPage({
   const mboHref = (status: "pass" | "fail") =>
     `/mbo?granularity=${granularity}${period ? `&period=${period.start}` : ""}&status=${status}`;
 
-  // Reporting scope, not operational scope: this table answers "whose numbers
-  // made up my team in the period being viewed," so a realignment since then
-  // must not silently add or drop rows — see org-history.ts. resolveScopedIds
-  // (used for the cards above) intentionally stays on "who I manage now."
-  const comparisonIds = period ? await reportingScopeIds(user, period) : [];
+  // The same period team as the cards above, so the table and the cards can
+  // never disagree about who was on the team.
+  const comparisonIds = period ? teamIds : [];
 
   // Everyone with a linked employee record gets the comparison matrix. For an
   // agent it is a single row — their own KPIs against the previous period —
@@ -336,10 +346,10 @@ export default async function DashboardPage({
     : [];
 
   const [teamSeries, openByEmployee] = await Promise.all([
-    isSupervisor && scopedIds.length > 0 && weeks.length > 0
-      ? getTeamKpiTrend(scopedIds, weeks.slice(0, 12))
+    isSupervisor && teamIds.length > 0 && weeks.length > 0
+      ? getTeamKpiTrend(teamIds, weeks.slice(0, 12))
       : Promise.resolve([]),
-    isSupervisor ? getOpenIssueCounts(scopedIds) : Promise.resolve(new Map<string, number>()),
+    isSupervisor ? getOpenIssueCounts(teamIds) : Promise.resolve(new Map<string, number>()),
   ]);
 
   return (

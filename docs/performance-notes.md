@@ -162,6 +162,15 @@ from every environment this project gets worked on in.
   rows still pending, never the caller's own, keeps roles as they are, and
   writes one `user.approved` audit row per account — so a filtered list
   approves exactly its own rows.
+- **The dashboard's period cards follow the period's team.** For a
+  leader, everything about the selected period on `/dashboard` — the stat
+  cards, the team trend, the by-agent comparison and its open counts —
+  uses `reportingScopeIds(user, period)` (the assignment history), not
+  `resolveScopedIds` (who reports to them now). The two drift apart with
+  every realignment: a supervisor whose team had since moved on saw "0/1"
+  and MBO 0% built from one stale row beside a table of her real July
+  team. Only the action-item panels stay operational, since open work
+  belongs to whoever leads the person now.
 - **Separation is date-based everywhere, and the masterlist records it.**
   `separationDates` (EWS Black/Absconding tag date, or a masterlist
   closure's last day — the earlier wins) already decided who counts in
