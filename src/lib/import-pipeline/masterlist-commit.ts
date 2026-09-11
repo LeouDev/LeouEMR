@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { employeeAssignments, employees } from "@/lib/db/schema";
 import { periodContaining } from "@/lib/queries/period";
 import { collapseWeeks, shiftDay, spliceAssignments, type Assignment, type OrgWeek } from "@/lib/org/assignments";
+import { syncEmployeeSnapshots } from "@/lib/org/snapshot";
 import type { ParsedMasterlistRow } from "./masterlist";
 
 /** The month a masterlist upload speaks for, resolved from any date inside it. */
@@ -233,6 +234,9 @@ export async function commitMasterlist(
           and(isNull(employeeAssignments.effectiveTo), inArray(employeeAssignments.employeeId, plan.employeeIdsToClose)),
         );
     }
+    // The roster of record is also the current structure for everyone it
+    // lists: the employee rows (which the operational scope reads) follow it.
+    await syncEmployeeSnapshots(tx, plan.employeeIdsToReplace);
   });
 
   return { agentsWritten: plan.agentsWritten, unknownEids: plan.unknownEids, attritedClosed: plan.attritedClosed };

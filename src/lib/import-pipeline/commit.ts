@@ -23,6 +23,7 @@ import {
 import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
 import { combine } from "@/lib/queries/period-metrics";
+import { syncEmployeeSnapshots } from "@/lib/org/snapshot";
 import { masterlistMonthFromBatch } from "./masterlist-months";
 import { computeParMetrics } from "./par-scoring";
 import type { ParseResult } from "./types";
@@ -560,6 +561,10 @@ async function persistAssignments(
     for (let i = 0; i < values.length; i += CHUNK) {
       await tx.insert(employeeAssignments).values(values.slice(i, i + CHUNK));
     }
+    // upsertEmployees wrote the file's own org columns onto the snapshot;
+    // inside a masterlist month the history just spliced may say otherwise,
+    // and the history is what the snapshot must follow.
+    await syncEmployeeSnapshots(tx, employeeIds);
   });
 }
 

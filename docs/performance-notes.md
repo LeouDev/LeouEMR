@@ -129,6 +129,15 @@ from every environment this project gets worked on in.
   from the months after they left. Verified on a local Postgres with a
   five-person scenario (listed, attrited, no history, rehired later,
   blank supervisor EID) for August, September and October.
+  The `employees` row is the "now" snapshot the *operational* scope keys
+  on (who may open a page, approve leave): both imports end by running
+  `syncEmployeeSnapshots` (`src/lib/org/snapshot.ts`) inside their
+  transaction, which copies each touched person's open interval onto
+  their row. Before that the weekly import wrote the file's own columns
+  there and the masterlist wrote nothing, so a team realigned by the
+  masterlist appeared on the manager's dashboard (assignments) while
+  every one of their pages answered 404 (snapshot). Anyone with no open
+  interval — closed by a masterlist, never assigned — is left alone.
 - **Records (`/records`) is the read-only archive of action-item work.**
   One row per action item with something written against it — RCA, action
   plan, time-and-motion study or acknowledgement — via `getCoachingRecords`
@@ -220,7 +229,13 @@ This session (static audit — see "What could not be measured" below):
   `eligibleForPeriod` knew nothing of masterlist attrition. Fixed by the
   `closed` owner row and the assignment-closure separation date (org
   history bullet above). Check afterwards with the per-supervisor count
-  query in the session notes (Herbias should read 20).
+  query in the session notes (Herbias should read 20). Third cause,
+  after the re-upload put the counts right: every agent on one
+  realigned team opened as a 404 from the manager's dashboard, because
+  the masterlist never updated the `employees` snapshot the page's scope
+  reads — fixed by `syncEmployeeSnapshots` (org history bullet); the
+  data itself was repaired by one UPDATE of `employees` from each
+  person's open interval, the same statement the sync runs.
 
 ## Caching layer (src/lib/cache.ts)
 
