@@ -15,13 +15,15 @@ import {
 import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import {
   type Assignment,
+  type MasterlistMonth,
   type OrgWeek,
   collapseWeeks,
-  spliceAssignments,
+  spliceWeeklyAssignments,
 } from "@/lib/org/assignments";
 import type { KpiDefinition } from "@/lib/kpi-engine/types";
 import { runIssueEngineForWeeks } from "@/lib/action-item-engine/persistence";
 import { combine } from "@/lib/queries/period-metrics";
+import { masterlistMonthFromBatch } from "./masterlist-months";
 import { computeParMetrics } from "./par-scoring";
 import type { ParseResult } from "./types";
 
@@ -480,7 +482,8 @@ async function upsertEmployees(parsed: ParseResult): Promise<EmployeeIdMap> {
  * The file is authoritative for exactly the weeks it covers for each person,
  * so that window is spliced into their existing history rather than appended
  * or wholesale replaced — which is what makes re-importing a month, or
- * uploading an older month after a newer one, safe.
+ * uploading an older month after a newer one, safe. Months with a committed
+ * masterlist are held authoritative over the file (loadMasterlistMonths).
  *
  * The delete and re-insert run in one transaction because a partial write
  * would leave someone with no history at all, which reads as "never assigned"
@@ -502,10 +505,10 @@ async function persistAssignments(
   if (byEmployee.size === 0) return;
 
   const employeeIds = [...byEmployee.keys()];
-  const existingRows = await db
-    .select()
-    .from(employeeAssignments)
-    .where(inArray(employeeAssignments.employeeId, employeeIds));
+  const [existingRows, masterlistMonths] = await Promise.all([
+    db.select().from(employeeAssignments).where(inArray(employeeAssignments.employeeId, employeeIds)),
+    loadMasterlistMonths(),
+  ]);
 
   const existingByEmployee = new Map<string, Assignment[]>();
   for (const row of existingRows) {
@@ -537,7 +540,7 @@ async function persistAssignments(
       a.effectiveFrom.localeCompare(b.effectiveFrom),
     );
 
-    for (const a of spliceAssignments(existing, incoming, rangeStart, rangeEnd)) {
+    for (const a of spliceWeeklyAssignments(existing, incoming, rangeStart, rangeEnd, masterlistMonths)) {
       values.push({
         employeeId,
         effectiveFrom: a.effectiveFrom,
@@ -557,6 +560,25 @@ async function persistAssignments(
     for (let i = 0; i < values.length; i += CHUNK) {
       await tx.insert(employeeAssignments).values(values.slice(i, i + CHUNK));
     }
+  });
+}
+
+/**
+ * The months a committed masterlist is the complete roster for. Inside one
+ * of these, a weekly file may not move or reopen anyone the masterlist
+ * listed or closed — see spliceWeeklyAssignments. Without this the week
+ * straddling a month boundary, imported right after the masterlist, put
+ * its own (lagging) supervisor column back for the whole month and
+ * reopened everyone the masterlist had marked attrited.
+ */
+async function loadMasterlistMonths(): Promise<MasterlistMonth[]> {
+  const rows = await db
+    .select({ id: importBatches.id, validationSummary: importBatches.validationSummary })
+    .from(importBatches)
+    .where(and(eq(importBatches.status, "committed"), sql`${importBatches.validationSummary} ->> 'kind' = 'masterlist'`));
+  return rows.flatMap((row) => {
+    const month = masterlistMonthFromBatch(row);
+    return month ? [month] : [];
   });
 }
 

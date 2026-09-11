@@ -4,8 +4,10 @@ import {
   type OrgWeek,
   assignmentOn,
   collapseWeeks,
+  outsideRanges,
   shiftDay,
   spliceAssignments,
+  spliceWeeklyAssignments,
 } from "./assignments";
 
 /**
@@ -284,5 +286,88 @@ describe("assignmentOn", () => {
 
   it("returns null before the history starts, rather than guessing", () => {
     expect(assignmentOn(history, "2026-07-31")).toBeNull();
+  });
+});
+
+describe("spliceWeeklyAssignments with a masterlist month", () => {
+  const SEPTEMBER = { batchId: "ml-sep", start: "2026-09-01", end: "2026-09-30" };
+  const closed = (from: string, to: string, org: typeof LEA): Assignment => ({
+    effectiveFrom: from,
+    effectiveTo: to,
+    ...org,
+  });
+  const fromMasterlist = (from: string, org: typeof LEA): Assignment => ({
+    effectiveFrom: from,
+    effectiveTo: null,
+    sourceImportId: "ml-sep",
+    ...org,
+  });
+
+  it("keeps the masterlist's month for someone it listed, whatever the straddling week says", () => {
+    // The masterlist moved her to Lovely for September; the weekly file for
+    // Aug 29 – Sep 4, imported afterwards, still shows Lea.
+    const result = spliceWeeklyAssignments(
+      [closed(AUG_1, "2026-08-31", LEA), fromMasterlist("2026-09-01", LOVELY)],
+      collapseWeeks([week(AUG_29, LEA)]),
+      AUG_29,
+      "2026-09-04",
+      [SEPTEMBER],
+    );
+    expect(result).toEqual([
+      { ...closed(AUG_1, "2026-08-31", LEA) },
+      fromMasterlist("2026-09-01", LOVELY),
+    ]);
+    expect(assignmentOn(result, "2026-09-02")?.supervisorName).toBe("Lovely");
+  });
+
+  it("does not reopen someone the masterlist closed as attrited", () => {
+    const result = spliceWeeklyAssignments(
+      [closed(AUG_1, "2026-08-31", LEA)],
+      collapseWeeks([week(AUG_29, LEA)]),
+      AUG_29,
+      "2026-09-04",
+      [SEPTEMBER],
+    );
+    expect(result).toEqual([closed(AUG_1, "2026-08-31", LEA)]);
+    expect(assignmentOn(result, "2026-09-02")).toBeNull();
+  });
+
+  it("ignores a week that lies entirely inside the masterlist's month for someone it listed", () => {
+    const existing = [fromMasterlist("2026-09-01", LOVELY)];
+    const result = spliceWeeklyAssignments(
+      existing,
+      collapseWeeks([week(SEP_5, LEA)]),
+      SEP_5,
+      "2026-09-11",
+      [SEPTEMBER],
+    );
+    expect(result).toEqual(existing);
+  });
+
+  it("still places a hire the masterlist never saw", () => {
+    const result = spliceWeeklyAssignments([], collapseWeeks([week(SEP_5, LEA)]), SEP_5, "2026-09-11", [
+      SEPTEMBER,
+    ]);
+    expect(result).toEqual([{ effectiveFrom: SEP_5, effectiveTo: null, ...LEA }]);
+  });
+
+  it("behaves exactly like spliceAssignments when no masterlist month applies", () => {
+    const existing = [{ effectiveFrom: AUG_1, effectiveTo: null, ...LEA }];
+    const incoming = collapseWeeks([week(AUG_29, LOVELY)]);
+    expect(spliceWeeklyAssignments(existing, incoming, AUG_29, "2026-09-04", [SEPTEMBER])).toEqual(
+      spliceAssignments(existing, incoming, AUG_29, "2026-09-04"),
+    );
+  });
+
+  it("carves a file's claims down to the days outside a protected month", () => {
+    expect(
+      outsideRanges(
+        [{ effectiveFrom: AUG_22, effectiveTo: null, ...LEA }],
+        [{ start: "2026-09-01", end: "2026-09-30" }],
+      ),
+    ).toEqual([
+      { effectiveFrom: AUG_22, effectiveTo: "2026-08-31", ...LEA },
+      { effectiveFrom: "2026-10-01", effectiveTo: null, ...LEA },
+    ]);
   });
 });

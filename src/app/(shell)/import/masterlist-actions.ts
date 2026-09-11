@@ -96,7 +96,7 @@ export async function runMasterlistImport(
     return { ok: false, error: "No usable rows found in this masterlist" };
   }
 
-  const { label } = resolveMasterlistMonth(monthStart);
+  const { start, end, label } = resolveMasterlistMonth(monthStart);
 
   const [batch] = await db
     .insert(importBatches)
@@ -104,7 +104,9 @@ export async function runMasterlistImport(
       fileName,
       uploadedBy: upload.user.id,
       status: "validated",
-      validationSummary: { kind: "masterlist", month: label, issues: parsed.issues },
+      // monthStart/monthEnd are what the weekly import reads back to hold
+      // this month authoritative (loadMasterlistMonths in commit.ts).
+      validationSummary: { kind: "masterlist", month: label, monthStart: start, monthEnd: end, issues: parsed.issues },
     })
     .returning();
 
