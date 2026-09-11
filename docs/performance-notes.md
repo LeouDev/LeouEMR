@@ -162,6 +162,22 @@ from every environment this project gets worked on in.
   rows still pending, never the caller's own, keeps roles as they are, and
   writes one `user.approved` audit row per account — so a filtered list
   approves exactly its own rows.
+- **Time Off cluster view uses the majority manager.** The "My team / My
+  cluster" switch on `/pto` is offered to a supervisor whose reports mostly
+  sit under one manager (`clusterManagerFor` → `majorityName` in
+  `src/lib/pto/scope.ts`); it used to require every report's row to carry
+  exactly the same manager name, so one roster miss or a name written two
+  ways hid the switch. Approval authority (`managerNameFor`,
+  `canDecideForLeader`, `decidableLeaderIds`) keeps the strict
+  single-manager rule on purpose. Managers never get the switch: their team
+  is the cluster. All of these count only *current* reports — employees
+  with an open assignment interval (`currentlyAssigned`) — because a
+  masterlist that closes someone as attrited never rewrites their employee
+  row, which keeps naming their last supervisor and manager; those stale
+  rows had put one supervisor under three managers at once. Verified live
+  on 2026-09-11: every supervisor's extra manager rows were attrited
+  people. The stale rows themselves are the wider "218 still active"
+  issue: the Employees page and an agent's leave calendar still list them.
 - **`(shell)/loading.tsx` always draws a navy page band.** Every page under
   the shell should open with `<PageBand>` so the skeleton has something to
   become; a page without one visibly jumps on arrival. Both detail pages
