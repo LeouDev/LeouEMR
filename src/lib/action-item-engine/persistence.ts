@@ -304,6 +304,53 @@ export async function closeIssuesOnSeparation(
   return open.length;
 }
 
+/** A transaction on the db, for callers that close work as part of a larger write. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * closeIssuesOnSeparation for many people at once, inside the caller's
+ * transaction: a masterlist that marks a month's attrition closes their open
+ * work in four statements rather than four per person.
+ */
+export async function closeIssuesOnSeparationFor(
+  tx: Tx,
+  employeeIds: string[],
+  /** The week the separation was recorded, used as the resolution date. */
+  week: string,
+): Promise<number> {
+  if (employeeIds.length === 0) return 0;
+  const open = await tx
+    .select({ id: performanceIssues.id, status: performanceIssues.status })
+    .from(performanceIssues)
+    .where(
+      and(
+        inArray(performanceIssues.employeeId, employeeIds),
+        ne(performanceIssues.status, "COMPLETED"),
+      ),
+    );
+  if (open.length === 0) return 0;
+
+  const ids = open.map((i) => i.id);
+  await tx
+    .update(performanceIssues)
+    .set({ status: "COMPLETED", resolvedWeek: week, updatedAt: sql`now()` })
+    .where(inArray(performanceIssues.id, ids));
+  await tx
+    .update(actionItems)
+    .set({ status: "COMPLETED", updatedAt: sql`now()` })
+    .where(inArray(actionItems.performanceIssueId, ids));
+  await tx.insert(auditLog).values(
+    open.map((issue) => ({
+      action: "issue.closed_on_separation",
+      entityType: "performance_issue",
+      entityId: issue.id,
+      before: { status: issue.status },
+      after: { status: "COMPLETED", resolvedWeek: week, reason: "employee separated" },
+    })),
+  );
+  return open.length;
+}
+
 async function ageOutRecoveredIssues(
   live: Map<string, LiveIssue>,
   /** Report only; nothing is written. */

@@ -12,6 +12,7 @@ import {
   leaderAccountsOver,
   ptoViewIds,
 } from "@/lib/pto/scope";
+import { separatedBefore } from "@/lib/queries/eligibility";
 import { countDays, daysIn } from "@/lib/pto/rules";
 import { CancelButton, DecisionButtons, RequestForm } from "./pto-forms";
 import { ViewPicker } from "./view-picker";
@@ -87,7 +88,7 @@ export default async function PtoPage({
   // the pending queue, then your history), most of which never depended on
   // the one before. Nothing here fans out beyond a handful of small
   // queries at once, well inside the db client's pool.
-  const [calendarIds, decidableIds, leaderIds, clusterAvailable, [ownEmployee]] = await Promise.all([
+  const [viewIds, decidableIds, leaderIds, clusterAvailable, [ownEmployee], gone] = await Promise.all([
     ptoViewIds(user, view),
     canDecide ? resolveScopedIds(user) : Promise.resolve([]),
     canDecide ? decidableLeaderIds(user) : Promise.resolve([]),
@@ -95,7 +96,11 @@ export default async function PtoPage({
     user.employeeEid
       ? db.select({ id: employees.id }).from(employees).where(eq(employees.eid, user.employeeEid)).limit(1)
       : Promise.resolve([undefined] as [undefined]),
+    // Someone who left before this month is not on its calendar; they still
+    // are on the calendar of the month they left and every month before.
+    separatedBefore(monthStart),
   ]);
+  const calendarIds = viewIds.filter((id) => !gone.has(id));
 
   const base = {
     id: ptoRequests.id,

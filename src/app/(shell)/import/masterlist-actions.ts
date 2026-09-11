@@ -74,6 +74,8 @@ export interface MasterlistCommitResponse {
     agentsWritten: number;
     unknownEids: string[];
     attritedClosed: Array<{ eid: string; name: string }>;
+    issuesClosed: number;
+    reactivated: number;
   };
 }
 
@@ -111,14 +113,16 @@ export async function runMasterlistImport(
     .returning();
 
   try {
-    const summary = await commitMasterlist(parsed.rows, monthStart, batch.id);
+    const summary = await commitMasterlist(parsed.rows, monthStart, batch.id, upload.user.id);
     await db
       .update(importBatches)
       .set({ status: "committed", rowCounts: { agents: summary.agentsWritten, attrited: summary.attritedClosed.length } })
       .where(eq(importBatches.id, batch.id));
     // Assignments feed the period-owner roll-ups, which read alongside the
-    // cached aggregates; evicting the import tag keeps the two in step.
-    invalidateCache(CACHE_TAG.imports);
+    // cached aggregates; evicting the import tag keeps the two in step. The
+    // attrition pass closes open work and changes who counts, so the issue
+    // and EWS figures go too.
+    invalidateCache(CACHE_TAG.imports, CACHE_TAG.issues, CACHE_TAG.ews);
     revalidatePath("/import");
     revalidatePath("/dashboard");
     revalidatePath("/analytics");

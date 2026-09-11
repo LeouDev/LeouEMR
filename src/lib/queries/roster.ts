@@ -1,4 +1,4 @@
-import { and, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, notInArray, or, sql } from "drizzle-orm";
 import { employeeScope } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
@@ -9,6 +9,7 @@ import {
   performanceIssues,
   weeklyMetricResults,
 } from "@/lib/db/schema";
+import { separatedBefore } from "./eligibility";
 import { OPENS_ACTION_ITEMS, OPEN_STATUSES } from "./performance";
 
 export interface RosterFilters {
@@ -55,9 +56,15 @@ export async function getRoster(
   const scope = employeeScope(user);
   if (scope === null) return { rows: [], total: 0 };
 
+  // A roster for a week lists who was there that week. Someone who had left
+  // before it started — an EWS attrition tag, or a masterlist that closed
+  // them — is not on it, and still is on every earlier week's.
+  const gone = await separatedBefore(week ?? new Date().toISOString().slice(0, 10));
+
   const search = filters.search?.trim();
   const conditions = [
     scope === "all" ? undefined : scope,
+    gone.size > 0 ? notInArray(employees.id, [...gone]) : undefined,
     search
       ? or(
           ilike(employees.name, `%${search}%`),

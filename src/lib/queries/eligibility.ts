@@ -40,8 +40,10 @@ const SEPARATING = ["black", "absconding"] as const;
  * (planMasterlistCommit closes anyone missing from the month's roster on
  * the day before it starts), and its last day is when they left.
  */
-export async function separationDates(employeeIds: string[]): Promise<Map<string, string>> {
-  if (employeeIds.length === 0) return new Map();
+export async function separationDates(employeeIds: string[] | "all"): Promise<Map<string, string>> {
+  if (employeeIds !== "all" && employeeIds.length === 0) return new Map();
+  const among = (column: typeof ewsAssessments.employeeId | typeof employeeAssignments.employeeId) =>
+    employeeIds === "all" ? undefined : inArray(column, employeeIds);
 
   const [tagged, newest] = await Promise.all([
     // The newest assessment that CARRIES a separating tag, not the newest
@@ -55,12 +57,7 @@ export async function separationDates(employeeIds: string[]): Promise<Map<string
         week: ewsAssessments.week,
       })
       .from(ewsAssessments)
-      .where(
-        and(
-          inArray(ewsAssessments.employeeId, employeeIds),
-          inArray(ewsAssessments.attrition, [...SEPARATING]),
-        ),
-      )
+      .where(and(among(ewsAssessments.employeeId), inArray(ewsAssessments.attrition, [...SEPARATING])))
       .orderBy(ewsAssessments.employeeId, desc(ewsAssessments.week)),
     db
       .selectDistinctOn([employeeAssignments.employeeId], {
@@ -68,7 +65,7 @@ export async function separationDates(employeeIds: string[]): Promise<Map<string
         effectiveTo: employeeAssignments.effectiveTo,
       })
       .from(employeeAssignments)
-      .where(inArray(employeeAssignments.employeeId, employeeIds))
+      .where(among(employeeAssignments.employeeId))
       .orderBy(employeeAssignments.employeeId, desc(employeeAssignments.effectiveFrom)),
   ]);
 
@@ -96,6 +93,24 @@ export function mergeSeparations(
   for (const row of tagged) note(row.employeeId, row.on);
   for (const row of newestIntervals) if (row.effectiveTo !== null) note(row.employeeId, row.effectiveTo);
   return dates;
+}
+
+/**
+ * Everyone who had left before `date` — the people a roster or calendar for
+ * that date should not list. Someone separated on the 17th still shows on
+ * the 17th and every day before it, and on none after: the same rule the
+ * period figures follow, without the hours test, since a roster is a list of
+ * who was there rather than a judgement of whose numbers count.
+ */
+export async function separatedBefore(date: string): Promise<Set<string>> {
+  return leftBefore(await separationDates("all"), date);
+}
+
+/** The pure half of separatedBefore. */
+export function leftBefore(dates: Map<string, string>, date: string): Set<string> {
+  const gone = new Set<string>();
+  for (const [id, on] of dates) if (on < date) gone.add(id);
+  return gone;
 }
 
 /**

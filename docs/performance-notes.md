@@ -162,6 +162,20 @@ from every environment this project gets worked on in.
   rows still pending, never the caller's own, keeps roles as they are, and
   writes one `user.approved` audit row per account — so a filtered list
   approves exactly its own rows.
+- **Separation is date-based everywhere, and the masterlist records it.**
+  `separationDates` (EWS Black/Absconding tag date, or a masterlist
+  closure's last day — the earlier wins) already decided who counts in
+  every period figure. `separatedBefore(date)` in eligibility.ts applies
+  the same rule to the lists: the Employees roster hides anyone who left
+  before the viewed week starts, and the Time Off calendar anyone who left
+  before the viewed month — they still show for the week or month they
+  left and every earlier one. A masterlist commit now does what an EWS
+  attrition tag does: marks the closed people `separated` (audit row each,
+  `from: "masterlist"`), closes their open action items as of the last
+  week they were on the roster (`closeIssuesOnSeparationFor`, four
+  statements for the whole batch, inside the commit transaction), and
+  marks anyone it lists again after an earlier closure `active`. People on
+  leave are left on leave.
 - **Time Off cluster view uses the majority manager.** The "My team / My
   cluster" switch on `/pto` is offered to a supervisor whose reports mostly
   sit under one manager (`clusterManagerFor` → `majorityName` in
