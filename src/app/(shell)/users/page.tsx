@@ -1,16 +1,35 @@
 import { asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
-import { Card, CardHeader, PageBand } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { employeeProfiles, employees, users } from "@/lib/db/schema";
+import { employeeProfiles, employees, positionEnum, users } from "@/lib/db/schema";
+import { ApprovePending } from "./approve-pending";
 import { UserTable, type UserRow } from "./user-table";
+import { NO_POSITION, UsersFilters } from "./users-filters";
 
-export default async function UsersPage() {
+const STATUSES = ["active", "pending", "disabled"] as const;
+type Status = (typeof STATUSES)[number];
+const isStatus = (value: string | undefined): value is Status =>
+  value !== undefined && (STATUSES as readonly string[]).includes(value);
+
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string; position?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
   if (user.role !== "admin") redirect("/dashboard");
+
+  const params = await searchParams;
+  const status = isStatus(params.status) ? params.status : undefined;
+  const positions = positionEnum.enumValues;
+  const position =
+    params.position === NO_POSITION || (params.position && (positions as readonly string[]).includes(params.position))
+      ? params.position
+      : undefined;
 
   // The account list and the manager-name list are independent, so they are
   // fetched together rather than one after the other.
@@ -51,7 +70,17 @@ export default async function UsersPage() {
     .filter((n): n is string => Boolean(n))
     .sort();
 
-  const pending = rows.filter((row) => row.status === "pending").length;
+  // Filtered here rather than in SQL: the whole list is a few dozen rows and
+  // is needed anyway for the counts beside the filtered view.
+  const shown = rows.filter(
+    (row) =>
+      (status === undefined || row.status === status) &&
+      (position === undefined ||
+        (position === NO_POSITION ? row.signedUpAs === null : row.signedUpAs === position)),
+  );
+  const filtered = status !== undefined || position !== undefined;
+  const pendingShown = shown.filter((row) => row.status === "pending" && row.id !== user.id);
+  const pendingTotal = rows.filter((row) => row.status === "pending").length;
 
   return (
     <>
@@ -66,20 +95,30 @@ export default async function UsersPage() {
           </p>
         </div>
 
-        <Card>
+        <UsersFilters positions={positions} value={{ status: status ?? "", position: position ?? "" }} />
+
+        <Card className="mt-6">
           <CardHeader
             title="Accounts"
             subtitle={
-              pending > 0
-                ? `${pending} awaiting approval`
-                : `${rows.length} account${rows.length === 1 ? "" : "s"}`
+              filtered
+                ? `${shown.length} of ${rows.length} account${rows.length === 1 ? "" : "s"}${
+                    pendingShown.length > 0 ? ` · ${pendingShown.length} awaiting approval` : ""
+                  }`
+                : pendingTotal > 0
+                  ? `${pendingTotal} awaiting approval`
+                  : `${rows.length} account${rows.length === 1 ? "" : "s"}`
             }
+            action={<ApprovePending userIds={pendingShown.map((row) => row.id)} />}
           />
-          <UserTable
-            users={rows as UserRow[]}
-            currentUserId={user.id}
-            managerNames={managerNames}
-          />
+          {shown.length === 0 ? (
+            <EmptyState
+              title="No accounts match these filters"
+              description="Try another status or position, or clear the filters."
+            />
+          ) : (
+            <UserTable users={shown as UserRow[]} currentUserId={user.id} managerNames={managerNames} />
+          )}
         </Card>
       </main>
     </>
