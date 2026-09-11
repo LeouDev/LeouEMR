@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_PRODUCTION_HOURS, eligibilityFor, hoursBeforeCutoff, mergeSeparations } from "./eligibility";
+import { MIN_PRODUCTION_HOURS, eligibilityFor, hoursBeforeCutoff, leftBefore, mergeSeparations } from "./eligibility";
 import type { Period } from "./period";
 
 const month = (start: string, end: string): Period => ({
@@ -140,5 +140,22 @@ describe("mergeSeparations", () => {
   it("keeps a tagged separation for someone with no assignment history", () => {
     const dates = mergeSeparations([{ employeeId: "a", on: "2026-07-22" }], []);
     expect(dates.get("a")).toBe("2026-07-22");
+  });
+});
+
+describe("leftBefore", () => {
+  const dates = new Map([
+    ["a", "2026-07-17"],
+    ["b", "2026-08-31"],
+  ]);
+
+  it("lists someone from the day after they left, not the day itself", () => {
+    expect(leftBefore(dates, "2026-07-17").has("a")).toBe(false);
+    expect(leftBefore(dates, "2026-07-18").has("a")).toBe(true);
+  });
+
+  it("keeps everyone who had not left yet", () => {
+    expect([...leftBefore(dates, "2026-08-01")]).toEqual(["a"]);
+    expect(leftBefore(dates, "2026-01-01").size).toBe(0);
   });
 });

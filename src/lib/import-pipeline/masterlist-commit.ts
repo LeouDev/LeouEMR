@@ -1,6 +1,7 @@
-import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { employeeAssignments, employees } from "@/lib/db/schema";
+import { auditLog, employeeAssignments, employees } from "@/lib/db/schema";
+import { closeIssuesOnSeparationFor } from "@/lib/action-item-engine/persistence";
 import { periodContaining } from "@/lib/queries/period";
 import { collapseWeeks, shiftDay, spliceAssignments, type Assignment, type OrgWeek } from "@/lib/org/assignments";
 import { syncEmployeeSnapshots } from "@/lib/org/snapshot";
@@ -192,13 +193,32 @@ export interface MasterlistCommitSummary {
   agentsWritten: number;
   unknownEids: string[];
   attritedClosed: Array<{ eid: string; name: string }>;
+  /** Open action items closed because their owner left. */
+  issuesClosed: number;
+  /** People the roster lists again after an earlier month had closed them. */
+  reactivated: number;
 }
 
-/** Reads what's needed, plans the write with `planMasterlistCommit`, then applies it in one transaction. */
+/**
+ * Reads what's needed, plans the write with `planMasterlistCommit`, then
+ * applies it in one transaction.
+ *
+ * Attrition here is the same event an EWS attrition tag records, and it
+ * carries the same consequences: the person's employee row is marked
+ * separated and their open action items are closed as of the week they
+ * left (see closeIssuesOnSeparation), so someone who has gone does not
+ * carry open work into the months after. The date-based rules do the rest —
+ * they still count, and still show, for every day up to the closure and
+ * for none after it. A person the roster lists again after an earlier
+ * month closed them is marked active again; someone on leave is left on
+ * leave, since that state is the supervisor's to clear.
+ */
 export async function commitMasterlist(
   rows: ParsedMasterlistRow[],
   monthStart: string,
   importBatchId: string,
+  /** The administrator committing the roster, for the audit trail. */
+  actorId: string | null = null,
 ): Promise<MasterlistCommitSummary> {
   const { start, end } = resolveMasterlistMonth(monthStart);
 
@@ -218,12 +238,33 @@ export async function commitMasterlist(
 
   const plan = planMasterlistCommit(rows, start, end, knownEmployees, existingRows, activeBefore, importBatchId);
 
+  let issuesClosed = 0;
+  let reactivated = 0;
   await db.transaction(async (tx) => {
     if (plan.employeeIdsToReplace.length > 0) {
       await tx.delete(employeeAssignments).where(inArray(employeeAssignments.employeeId, plan.employeeIdsToReplace));
       const CHUNK = 500;
       for (let i = 0; i < plan.values.length; i += CHUNK) {
         await tx.insert(employeeAssignments).values(plan.values.slice(i, i + CHUNK));
+      }
+      // Listed again after an earlier month closed them: back to active.
+      const back = await tx
+        .update(employees)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(and(inArray(employees.id, plan.employeeIdsToReplace), eq(employees.status, "separated")))
+        .returning({ id: employees.id });
+      reactivated = back.length;
+      if (back.length > 0) {
+        await tx.insert(auditLog).values(
+          back.map((row) => ({
+            actorId,
+            action: "employee.status_changed",
+            entityType: "employee",
+            entityId: row.id,
+            before: { status: "separated" },
+            after: { status: "active", from: "masterlist", month: start, importBatchId },
+          })),
+        );
       }
     }
     if (plan.employeeIdsToClose.length > 0) {
@@ -233,11 +274,40 @@ export async function commitMasterlist(
         .where(
           and(isNull(employeeAssignments.effectiveTo), inArray(employeeAssignments.employeeId, plan.employeeIdsToClose)),
         );
+      const gone = await tx
+        .update(employees)
+        .set({ status: "separated", updatedAt: new Date() })
+        .where(and(inArray(employees.id, plan.employeeIdsToClose), ne(employees.status, "separated")))
+        .returning({ id: employees.id, was: employees.status });
+      if (gone.length > 0) {
+        await tx.insert(auditLog).values(
+          gone.map((row) => ({
+            actorId,
+            action: "employee.status_changed",
+            entityType: "employee",
+            entityId: row.id,
+            before: { status: row.was },
+            after: { status: "separated", from: "masterlist", month: start, closedBefore: plan.closedBefore, importBatchId },
+          })),
+        );
+        // Resolved as of the last week they were on the roster.
+        issuesClosed = await closeIssuesOnSeparationFor(
+          tx,
+          gone.map((row) => row.id),
+          periodContaining("week", plan.closedBefore).start,
+        );
+      }
     }
     // The roster of record is also the current structure for everyone it
     // lists: the employee rows (which the operational scope reads) follow it.
     await syncEmployeeSnapshots(tx, plan.employeeIdsToReplace);
   });
 
-  return { agentsWritten: plan.agentsWritten, unknownEids: plan.unknownEids, attritedClosed: plan.attritedClosed };
+  return {
+    agentsWritten: plan.agentsWritten,
+    unknownEids: plan.unknownEids,
+    attritedClosed: plan.attritedClosed,
+    issuesClosed,
+    reactivated,
+  };
 }

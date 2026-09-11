@@ -285,6 +285,12 @@ export function MasterlistWizard() {
             <ul className="mt-2 space-y-1 text-sm text-ink">
               <li>{result.agentsWritten} agents&apos; org structure written</li>
               <li>{result.attritedClosed.length} agents closed out as attrited</li>
+              {result.issuesClosed > 0 && (
+                <li>{result.issuesClosed} open action item{result.issuesClosed === 1 ? "" : "s"} closed for them</li>
+              )}
+              {result.reactivated > 0 && (
+                <li>{result.reactivated} agent{result.reactivated === 1 ? "" : "s"} back on the roster after an earlier closure</li>
+              )}
               {result.unknownEids.length > 0 && (
                 <li className="text-warn">
                   {result.unknownEids.length} unknown EID{result.unknownEids.length === 1 ? "" : "s"} skipped:{" "}
