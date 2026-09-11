@@ -34,7 +34,7 @@ vi.mock("@/lib/db/client", () => {
   return { db: builder };
 });
 
-const { canDecideForLeader, decidableLeaderIds, hasCluster, managerNameFor, ptoViewIds } =
+const { canDecideForLeader, decidableLeaderIds, hasCluster, majorityName, managerNameFor, ptoViewIds } =
   await import("./scope");
 
 function user(role: UserRole, overrides: Partial<CurrentUser> = {}): CurrentUser {
@@ -141,9 +141,31 @@ describe("decidableLeaderIds", () => {
 });
 
 describe("cluster view", () => {
+  // The cluster query is grouped: one row per manager name with its count.
   it("offers a cluster only to a supervisor whose manager resolves", async () => {
-    queue.results = [[{ manager: "Comendador, Leou" }]];
+    queue.results = [[{ manager: "Comendador, Leou", n: 4 }]];
     expect(await hasCluster(user("supervisor"))).toBe(true);
+  });
+
+  it("keeps the cluster when one report's row still names another manager", async () => {
+    // A roster miss or a name written two ways must not take the view away.
+    queue.results = [
+      [
+        { manager: "Comendador, Leou", n: 3 },
+        { manager: "Alvaro, Cres", n: 1 },
+      ],
+    ];
+    expect(await hasCluster(user("supervisor"))).toBe(true);
+  });
+
+  it("offers none on a genuine even split between two managers", async () => {
+    queue.results = [
+      [
+        { manager: "Comendador, Leou", n: 2 },
+        { manager: "Alvaro, Cres", n: 2 },
+      ],
+    ];
+    expect(await hasCluster(user("supervisor"))).toBe(false);
   });
 
   it("offers none to a manager, whose team already is the cluster", async () => {
@@ -151,7 +173,7 @@ describe("cluster view", () => {
   });
 
   it("widens a supervisor's calendar to the manager's whole span", async () => {
-    queue.results = [[{ manager: "Comendador, Leou" }], [{ id: "e1" }, { id: "e2" }]];
+    queue.results = [[{ manager: "Comendador, Leou", n: 4 }], [{ id: "e1" }, { id: "e2" }]];
     expect(await ptoViewIds(user("supervisor"), "cluster")).toEqual(["e1", "e2"]);
   });
 
@@ -171,5 +193,30 @@ describe("cluster view", () => {
     perfScope.ids = ["should-not-be-used"];
     queue.results = [[{ id: "self", supervisorEid: "S1" }], [{ id: "teammate" }]];
     expect(await ptoViewIds(user("agent"), "cluster")).toEqual(["teammate"]);
+  });
+});
+
+describe("majorityName", () => {
+  it("returns the only name when every row agrees", () => {
+    expect(majorityName(["Comendador, Leou", "Comendador, Leou"])).toBe("Comendador, Leou");
+  });
+
+  it("lets one stray row through", () => {
+    expect(majorityName(["Comendador, Leou", "Comendador, Leou", "Comendador, Leou", "Alvaro, Cres"])).toBe(
+      "Comendador, Leou",
+    );
+  });
+
+  it("ignores blank rows when counting", () => {
+    expect(majorityName(["Comendador, Leou", null, undefined, "Comendador, Leou"])).toBe("Comendador, Leou");
+  });
+
+  it("resolves to nobody on an even split", () => {
+    expect(majorityName(["Comendador, Leou", "Alvaro, Cres"])).toBeNull();
+  });
+
+  it("resolves to nobody with no names at all", () => {
+    expect(majorityName([])).toBeNull();
+    expect(majorityName([null, null])).toBeNull();
   });
 });
