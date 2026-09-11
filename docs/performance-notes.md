@@ -235,7 +235,14 @@ This session (static audit — see "What could not be measured" below):
   the masterlist never updated the `employees` snapshot the page's scope
   reads — fixed by `syncEmployeeSnapshots` (org history bullet); the
   data itself was repaired by one UPDATE of `employees` from each
-  person's open interval, the same statement the sync runs.
+  person's open interval, the same statement the sync runs (427 rows,
+  all on supervisor_eid: the weekly file and the masterlist disagreed on
+  supervisor EIDs and the masterlist's won). Checked afterwards: every
+  supervisor EID in the roster with an account resolves to it; the one
+  team-leader account with no agents (Lea Fernandez, 001305110) is
+  correct — she is not on the September roster because she has no team
+  yet. When she gets one, the masterlist must list her agents under that
+  EID, since it is what her account matches on.
 
 ## Caching layer (src/lib/cache.ts)
 
