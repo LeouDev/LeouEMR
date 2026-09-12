@@ -9,6 +9,7 @@ import {
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { eligibleForPeriod, hasReportableData } from "./eligibility";
 import type { Period } from "./period";
+import { foldSkillRows } from "@/lib/kpi-engine/skill-result";
 
 export interface SkillAttainment {
   skillCode: string;
@@ -60,13 +61,20 @@ export async function getMboAttainmentBySkill(period: Period): Promise<SkillAtta
 
   const references = await loadSkillReferences();
 
-  const totals = new Map<string, { name: string; scored: number; passing: number }>();
+  // One row per configured skill per person, whatever the files called it
+  // across the period (see foldSkillRows): rated apart, one skill counted
+  // as two in this tree.
+  const byEmployee = new Map<string, typeof rows>();
   for (const row of rows) {
     if (!eligibleSet.has(row.employeeId) || !reportingSet.has(row.employeeId)) continue;
+    byEmployee.set(row.employeeId, [...(byEmployee.get(row.employeeId) ?? []), row]);
+  }
+  const folded = [...byEmployee.values()].flatMap(
+    (personRows) => foldSkillRows(personRows, (row) => references.get(normalize(row.skillLabel))).folded,
+  );
 
-    const ref = references.get(normalize(row.skillLabel));
-    if (!ref) continue;
-
+  const totals = new Map<string, { name: string; scored: number; passing: number }>();
+  for (const { ref, row } of folded) {
     const actual = measureSkill(ref.metric, row);
     if (actual === null) continue;
 

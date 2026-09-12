@@ -77,3 +77,43 @@ export function measureSkillWeek(
   if (actual === null || !Number.isFinite(actual)) return null;
   return { actual, target };
 }
+
+/**
+ * Rows folded into one per configured skill, the totals summed.
+ *
+ * A source file does not always write a skill the same way from one week
+ * to the next — "Fax", then "UHCWest Fax" — and the skill configuration
+ * maps every spelling and alias to the one reference. Anything that rates
+ * or counts skills has to fold such rows before measuring: rated apart, one
+ * skill scored twice in the production rate with its volume split between
+ * the halves, wrote two results onto its own KPI for the week (the ledger
+ * keeps one), and counted as two skills in the MBO tree. The first row's
+ * other fields (its targets, its label, its week) stand for the fold; rows
+ * no reference answers to come back separately for the caller to report.
+ */
+export function foldSkillRows<Row extends SkillWeekTotals & { weightHours?: number }, Ref extends { code: string }>(
+  rows: readonly Row[],
+  resolve: (row: Row) => Ref | undefined,
+): { folded: Array<{ ref: Ref; row: Row }>; unmatched: Row[] } {
+  const byCode = new Map<string, { ref: Ref; row: Row }>();
+  const unmatched: Row[] = [];
+  for (const row of rows) {
+    const ref = resolve(row);
+    if (!ref) {
+      unmatched.push(row);
+      continue;
+    }
+    const entry = byCode.get(ref.code);
+    if (!entry) {
+      byCode.set(ref.code, { ref, row: { ...row } });
+      continue;
+    }
+    entry.row.cases += row.cases;
+    entry.row.hours += row.hours;
+    entry.row.prodWeight += row.prodWeight;
+    if (entry.row.weightHours !== undefined || row.weightHours !== undefined) {
+      entry.row.weightHours = (entry.row.weightHours ?? 0) + (row.weightHours ?? 0);
+    }
+  }
+  return { folded: [...byCode.values()], unmatched };
+}

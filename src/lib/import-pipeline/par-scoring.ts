@@ -9,7 +9,7 @@ import {
   skillReferences,
 } from "@/lib/db/schema";
 import { CASE_RATE_KPI_CODE, blendCaseRate, type CaseRateSkillTotals } from "@/lib/kpi-engine/case-rate";
-import { measureSkill, measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
+import { foldSkillRows, measureSkill, measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 import {
   computeSkillRating,
   computeSkillRatio,
@@ -181,7 +181,15 @@ export async function computeParMetrics(
     byEmployeeWeek.set(key, list);
   }
 
-  for (const [, skills] of byEmployeeWeek) {
+  for (const [, weekRows] of byEmployeeWeek) {
+    // One row per configured skill, whatever the file called it that week
+    // (see foldSkillRows); a label no reference answers to is reported.
+    const { folded, unmatched: unknown } = foldSkillRows(weekRows, (row) =>
+      references.get(normalize(row.skillType)),
+    );
+    for (const row of unknown) unmatched.add(row.skillType);
+    const skills = folded.map((entry) => entry.row);
+
     // Case rate is its own KPI as well as an input to the rating below: a
     // case-rate agent's only output figure, scored against what their own
     // skill mix expected of the cases they worked. Hours play no part in

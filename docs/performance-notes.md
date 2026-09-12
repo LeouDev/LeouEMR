@@ -237,6 +237,23 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Every skill roll-up folds a skill's spellings before measuring.**
+  Follow-up to the breakdown fix below, across the rest of the readers of
+  `skill_facts`: `foldSkillRows` in `src/lib/kpi-engine/skill-result.ts`
+  (tested) sums rows that resolve to the same reference — the first row's
+  label, week and targets stand for the fold, unresolved rows come back
+  for reporting — and is applied in `computeParMetrics` (import-time PAR,
+  per-skill KPI rows and case rate per employee-week), `getPeriodMetrics`
+  (the same over a period) and `getMboAttainmentBySkill`. Rated apart,
+  one skill scored twice in the production rate with its volume split,
+  wrote two results onto its own KPI for the week (the ledger's unique
+  key kept whichever came last) and counted as two skills in the MBO
+  tree. The supervisor skill breakdown already keyed on the reference
+  code, and the case-rate blends (my-stats, trend) sum cases and weight
+  against one per-case target, so a split changes nothing there. Weekly
+  ledger rows written before this for an employee-week that carried two
+  spellings of one skill stay as computed until those weeks are
+  re-imported; period figures rebuild from the facts on the next read.
 - **The employee page's skill breakdown is one row per configured skill.**
   `getEmployeeSkillBreakdown` used to group `skill_facts` by the raw label
   and only then resolve each group to its reference, so a source file that

@@ -13,7 +13,7 @@ import { applySourceTarget, evaluateKpi } from "@/lib/kpi-engine/evaluate";
 import type { KpiDefinition, KpiStatus } from "@/lib/kpi-engine/types";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { CASE_RATE_KPI_CODE, blendCaseRate } from "@/lib/kpi-engine/case-rate";
-import { measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
+import { foldSkillRows, measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { periodsBetween } from "./period";
@@ -454,6 +454,15 @@ async function computeDerived(
   const grouped = new Map<string, typeof skills>();
   for (const row of skills) {
     grouped.set(row.employeeId, [...(grouped.get(row.employeeId) ?? []), row]);
+  }
+  // One row per configured skill per person, whatever the files called it
+  // across the period (see foldSkillRows). The loops below still resolve
+  // each row by its label, which is the fold's first label: the same skill.
+  for (const [employeeId, rows] of grouped) {
+    grouped.set(
+      employeeId,
+      foldSkillRows(rows, (row) => refs.get(normalizeSkill(row.skillLabel))).folded.map((entry) => entry.row),
+    );
   }
 
   for (const [employeeId, rows] of grouped) {
