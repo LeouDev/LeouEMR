@@ -237,6 +237,23 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **A team leader's cluster can be set on their account.** The Users
+  page's manager field (`users.manager_name`, kept by `updateUser` for
+  supervisor accounts as well as managers; "Manager span / cluster") names
+  the cluster a team leader belongs to. `clusterManagerFor` consults it
+  only for a month the roster gives them no team, before the last-known
+  manager from their reports' history; once their reports are on the
+  roster, the roster's manager of record is the cluster and the link is
+  not read. Came from a team leader moved to a new cluster before her
+  September team was rostered: her cluster resolved to the manager her
+  August reports sat under, so a peer leader's November leave in the new
+  cluster never showed. The approval chain follows the same rule:
+  `managerNameFor` answers with the link when the leader has no current
+  reports (a split team still resolves to nobody, link or not), so the
+  linked manager can approve and cancel their leave, and
+  `decidableLeaderIds` adds linked leaders without reports to the
+  manager's queue. A manager's Team leaders view needs no link — it is
+  the manager's own span.
 - **Month arrows keep the calendar view, and leaders always file as
   leaders.** The Previous/Next links on the leave calendar carry the `view`
   parameter (`monthHref` in pto/calendar.tsx), so stepping a month no longer

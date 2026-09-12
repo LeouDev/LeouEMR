@@ -40,10 +40,13 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   if (!before) return { ok: false, error: "User not found" };
 
   const employeeEid = parsed.data.employeeEid?.trim() || null;
-  // Only meaningful for managers; cleared otherwise so a demoted account
-  // cannot keep a span it no longer has a role for.
+  // A manager's span, or the cluster a team leader belongs to while the
+  // roster gives them no team; cleared for any other role so a demoted
+  // account cannot keep a span it no longer has a role for.
   const managerName =
-    parsed.data.role === "manager" ? parsed.data.managerName?.trim() || null : null;
+    parsed.data.role === "manager" || parsed.data.role === "supervisor"
+      ? parsed.data.managerName?.trim() || null
+      : null;
 
   if (employeeEid) {
     // The claim at sign-up is never trusted on its own — same reasoning as

@@ -56,7 +56,7 @@ export function UserTable({
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Role</th>
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee ID</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Manager span</th>
+            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Manager span / cluster</th>
             <th className="px-6 py-2.5 font-semibold text-ink">Save</th>
           </tr>
         </thead>
@@ -194,15 +194,17 @@ function UserRowEditor({
         )}
       </td>
       <td className="px-3 py-2">
-        {role === "manager" ? (
+        {role === "manager" || role === "supervisor" ? (
           <select
             value={managerName}
             disabled={isSelf}
             onChange={(e) => setManagerName(e.target.value)}
             className={`${control} max-w-56`}
-            aria-label={`Manager span for ${user.name}`}
+            aria-label={role === "manager" ? `Manager span for ${user.name}` : `Cluster for ${user.name}`}
           >
-            <option value="">Not linked — sees nobody</option>
+            {/* A team leader's cluster normally comes from the roster; the
+                link only stands in for a month the roster gives them no team. */}
+            <option value="">{role === "manager" ? "Not linked — sees nobody" : "From the roster"}</option>
             {managerNames.map((name) => (
               <option key={name} value={name}>
                 {name}
