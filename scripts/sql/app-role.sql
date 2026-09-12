@@ -19,7 +19,7 @@
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'emr_app') then
-    create role emr_app login password 'CHANGE_ME';
+    create role emr_app login password 059bebef50a5bc80d7b44ed4e23871951890073f0d361aa8;
   end if;
 end $$;
 
