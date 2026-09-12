@@ -255,6 +255,12 @@ from every environment this project gets worked on in.
   session pooler, keeping the eight newest; restore notes are in the
   script header (re-run app-role.sql afterwards, grants are not dumped).
   Accounts live in Supabase's auth schema and are outside the dump.
+  Done 13 Sep (Manila time): the role created (30 tables readable),
+  production `DATABASE_URL` switched to `emr_app` and redeployed, the
+  first dump taken (21 MB), and the Monday 06:00 cron installed on the
+  administrator's Mac mini with the PATH line for Homebrew's libpq. A
+  copy of the backups folder off that machine was recommended, not yet
+  confirmed.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager
