@@ -9,7 +9,7 @@ import { describeSignupError } from "@/lib/auth/signup-availability";
 import { checkSignupAvailability } from "./actions";
 import { EMPTY_SIGNUP, SignupFields, fieldClass, labelClass, type SignupDetails } from "./signup-fields";
 import { safeReturnPath } from "@/lib/auth/return-path";
-import { MIN_PASSWORD_LENGTH, passwordProblem } from "@/lib/auth/password";
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, passwordProblem } from "@/lib/auth/password";
 
 type Mode = "signin" | "signup" | "reset";
 
@@ -229,7 +229,7 @@ function LoginForm() {
               required
               minLength={mode === "signup" ? MIN_PASSWORD_LENGTH : 1}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              placeholder={mode === "signup" ? `At least ${MIN_PASSWORD_LENGTH} characters` : "••••••••"}
+              placeholder={mode === "signup" ? PASSWORD_HINT : "••••••••"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={fieldClass}

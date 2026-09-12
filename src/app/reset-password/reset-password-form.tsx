@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MIN_PASSWORD_LENGTH, passwordProblem } from "@/lib/auth/password";
+import { MIN_PASSWORD_LENGTH, PASSWORD_HINT, passwordProblem } from "@/lib/auth/password";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { fieldClass, labelClass } from "../login/signup-fields";
 
@@ -43,7 +43,7 @@ export function ResetPasswordForm({ next }: { next: string }) {
           required
           minLength={MIN_PASSWORD_LENGTH}
           autoComplete="new-password"
-          placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
+          placeholder={PASSWORD_HINT}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className={fieldClass}
