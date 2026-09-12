@@ -259,7 +259,13 @@ from every environment this project gets worked on in.
   reads `auth.mfa_factors` in one query for the Authenticator column and
   offers `resetMfa` (admin client `auth.admin.mfa.deleteFactor`, audit
   `user.mfa_reset`) for a lost phone. Sign-out is the browser client, so
-  a session stuck at the code prompt can always sign out.
+  a session stuck at the code prompt can always sign out. Live since the
+  12 Sep merge (production 22:11 UTC): TOTP enabled in Supabase,
+  `sync:auth-roles` run (it needs `SUPABASE_SERVICE_ROLE_KEY` in
+  `.env.local`; a duplicate empty line of that variable lower in the file
+  had been overriding the real one), `MFA_GRACE_UNTIL=2026-09-19` set in
+  Vercel so required roles see the banner until then, and the
+  administrator's own authenticator paired the same night.
 - **Email links land on a button, not an automatic exchange (12 Sep).**
   `/auth/confirm` was a route handler that spent the one-time token on
   GET. Corporate mail security (the team is on Optum mail) opens every
