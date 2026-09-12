@@ -9,3 +9,10 @@
 export function confirmDestination(type: string): string {
   return type === "recovery" ? "/reset-password" : "/pending";
 }
+
+export const CONFIRM_TYPES = ["signup", "invite", "magiclink", "recovery", "email_change", "email"] as const;
+export type ConfirmType = (typeof CONFIRM_TYPES)[number];
+
+export function isConfirmType(value: string | null | undefined): value is ConfirmType {
+  return (CONFIRM_TYPES as readonly string[]).includes(value ?? "");
+}

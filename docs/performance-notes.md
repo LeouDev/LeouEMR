@@ -237,6 +237,16 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Email links land on a button, not an automatic exchange (12 Sep).**
+  `/auth/confirm` was a route handler that spent the one-time token on
+  GET. Corporate mail security (the team is on Optum mail) opens every
+  link to scan it, so the token was gone before the person clicked and
+  Supabase logged "One-time token not found" on `/verify`. It is now a
+  page (`src/app/auth/confirm/page.tsx`) with a Continue button whose
+  server action (`confirmLink` in actions.ts) does the `verifyOtp`; a
+  plain visit spends nothing. Same URL shape as before, so the Supabase
+  templates are unchanged. `isConfirmType` and `confirmDestination`
+  (src/lib/auth/confirm-destination.ts) are the pure parts.
 - **Password reset exists (12 Sep).** The login page had no way to
   recover a forgotten password; an administrator had to reset it in the
   Supabase dashboard. "Forgot your password?" on the sign-in form now

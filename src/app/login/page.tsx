@@ -23,7 +23,7 @@ function LoginForm() {
   // link that's already been used, or one old enough to have expired.
   const [error, setError] = useState<string | null>(() =>
     searchParams.get("error") === "confirmation_failed"
-      ? "That confirmation link is invalid or has expired. Sign up again to get a new one."
+      ? "That link is invalid, has expired, or was already used. Request a new one: sign up again, or use \u201cForgot your password?\u201d."
       : null,
   );
   const [notice, setNotice] = useState<string | null>(null);
