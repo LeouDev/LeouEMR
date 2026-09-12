@@ -9,8 +9,9 @@ import { describeSignupError } from "@/lib/auth/signup-availability";
 import { checkSignupAvailability } from "./actions";
 import { EMPTY_SIGNUP, SignupFields, fieldClass, labelClass, type SignupDetails } from "./signup-fields";
 import { safeReturnPath } from "@/lib/auth/return-path";
+import { MIN_PASSWORD_LENGTH, passwordProblem } from "@/lib/auth/password";
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "reset";
 
 function LoginForm() {
   const searchParams = useSearchParams();
@@ -32,6 +33,32 @@ function LoginForm() {
     event.preventDefault();
     setError(null);
     setNotice(null);
+
+    if (mode === "reset") {
+      // The same notice whether or not an account exists: the form must not
+      // become a way to find out who is registered. The link in the email
+      // lands on /auth/confirm, which signs them in only to choose a new
+      // password.
+      setSubmitting(true);
+      const supabase = createSupabaseBrowserClient();
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
+      setSubmitting(false);
+      if (resetError && /rate limit|too many/i.test(resetError.message)) {
+        setError("Too many reset requests for now. Wait a few minutes and try again.");
+        return;
+      }
+      setNotice("If an account exists for that address, a link to choose a new password is on its way.");
+      setMode("signin");
+      return;
+    }
+
+    if (mode === "signup") {
+      const problem = passwordProblem(password);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
 
     // Validate before the scene starts: a rejected employee ID should
     // correct itself immediately, not six seconds later.
@@ -154,9 +181,17 @@ function LoginForm() {
         }`}
       >
         <PanelHeading
-          kicker={mode === "signin" ? "Sign in" : "Sign up"}
-          title={mode === "signin" ? "Welcome back." : "Create your account."}
+          kicker={mode === "signin" ? "Sign in" : mode === "reset" ? "Password reset" : "Sign up"}
+          title={
+            mode === "signin" ? "Welcome back." : mode === "reset" ? "Forgot your password?" : "Create your account."
+          }
         />
+
+        {mode === "reset" && (
+          <p className="text-base leading-relaxed text-muted">
+            Enter the address you signed up with and we will email you a link to choose a new one.
+          </p>
+        )}
 
         {mode === "signup" && (
           <SignupFields
@@ -178,19 +213,34 @@ function LoginForm() {
           />
         </label>
 
-        <label className="flex flex-col gap-2">
-          <span className={labelClass}>Password</span>
-          <input
-            type="password"
-            required
-            minLength={8}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-            placeholder={mode === "signup" ? "At least 8 characters" : "••••••••"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={fieldClass}
-          />
-        </label>
+        {mode !== "reset" && (
+          <label className="flex flex-col gap-2">
+            <span className={labelClass}>Password</span>
+            <input
+              type="password"
+              required
+              minLength={mode === "signup" ? MIN_PASSWORD_LENGTH : 1}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              placeholder={mode === "signup" ? `At least ${MIN_PASSWORD_LENGTH} characters` : "••••••••"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={fieldClass}
+            />
+            {mode === "signin" && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("reset");
+                  setError(null);
+                  setNotice(null);
+                }}
+                className="self-end text-sm font-semibold text-orange-brand transition hover:text-orange-brand-dark"
+              >
+                Forgot your password?
+              </button>
+            )}
+          </label>
+        )}
 
         {error && (
           <p role="alert" className="border-2 border-fail bg-fail-bg px-4 py-3 text-sm font-semibold text-fail">
@@ -205,14 +255,15 @@ function LoginForm() {
 
         <button
           type="submit"
+          disabled={submitting}
           className="btn-primary px-5 py-4 text-base"
         >
-          {mode === "signin" ? "Sign in" : "Create account"}
+          {mode === "signin" ? "Sign in" : mode === "reset" ? "Email me a reset link" : "Create account"}
         </button>
 
         <div className="flex gap-2 border-t-2 border-line pt-[18px] text-sm">
           <span className="text-muted">
-            {mode === "signin" ? "New to the command center?" : "Already have an account?"}
+            {mode === "signin" ? "New to the command center?" : mode === "reset" ? "Remembered it?" : "Already have an account?"}
           </span>
           <button
             type="button"

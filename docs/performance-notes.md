@@ -237,6 +237,20 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Password reset exists (12 Sep).** The login page had no way to
+  recover a forgotten password; an administrator had to reset it in the
+  Supabase dashboard. "Forgot your password?" on the sign-in form now
+  calls `resetPasswordForEmail` and shows the same notice whether or not
+  the address is registered. The link in the email goes through
+  `/auth/confirm` with `type=recovery` (`confirmDestination` sends it to
+  `/reset-password`; every other type still lands on `/pending`), which
+  signs the person in only to choose a new password; the same page serves
+  anyone signed in who wants to change theirs. `MIN_PASSWORD_LENGTH` (12,
+  `src/lib/auth/password.ts`) applies on the sign-up and reset forms;
+  Supabase's own floor and leaked-password check still apply at the
+  server. Operator step: the "Reset password" email template in Supabase
+  must link to `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=recovery`,
+  the same shape the "Confirm signup" template already uses.
 - **Security hardening (12 Sep, feature branch).** Four edges closed
   after a review of the whole app. (1) The end-of-day report
   (`my-stats/actions.ts`) relays through a mailbox the app holds
