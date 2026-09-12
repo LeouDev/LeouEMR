@@ -664,18 +664,38 @@ async function reconcileStaleTouches(
 async function loadFoldedResults(weeks: string[]): Promise<Map<string, "pass" | "fail">> {
   if (weeks.length === 0) return new Map();
 
-  const rows = await db
-    .select({
-      employeeId: performanceIssues.employeeId,
-      kpiId: performanceIssues.kpiId,
-      week: weeklyIssueHistory.week,
-      result: weeklyIssueHistory.result,
-    })
-    .from(weeklyIssueHistory)
-    .innerJoin(performanceIssues, eq(performanceIssues.id, weeklyIssueHistory.performanceIssueId))
-    .where(inArray(weeklyIssueHistory.week, weeks));
+  const [rows, openings] = await Promise.all([
+    db
+      .select({
+        employeeId: performanceIssues.employeeId,
+        kpiId: performanceIssues.kpiId,
+        week: weeklyIssueHistory.week,
+        result: weeklyIssueHistory.result,
+      })
+      .from(weeklyIssueHistory)
+      .innerJoin(performanceIssues, eq(performanceIssues.id, weeklyIssueHistory.performanceIssueId))
+      .where(inArray(weeklyIssueHistory.week, weeks)),
+    // An episode's opening week is a recorded failure whether or not a
+    // history row says so: episodes opened by earlier versions of the engine
+    // carry no row for the week they opened on, and re-importing that week
+    // found nothing folded and opened a second episode for the very failure
+    // the first one exists for.
+    db
+      .select({
+        employeeId: performanceIssues.employeeId,
+        kpiId: performanceIssues.kpiId,
+        week: performanceIssues.openedWeek,
+      })
+      .from(performanceIssues)
+      .where(inArray(performanceIssues.openedWeek, weeks)),
+  ]);
 
-  return new Map(rows.map((r) => [`${r.employeeId}|${r.kpiId}|${r.week}`, r.result]));
+  const folded = new Map<string, "pass" | "fail">(
+    openings.map((o) => [`${o.employeeId}|${o.kpiId}|${o.week}`, "fail" as const]),
+  );
+  // A recorded result outranks the inference above.
+  for (const r of rows) folded.set(`${r.employeeId}|${r.kpiId}|${r.week}`, r.result);
+  return folded;
 }
 
 /** Every recorded week's result for the given issues, keyed by `${issueId}|${week}`. */

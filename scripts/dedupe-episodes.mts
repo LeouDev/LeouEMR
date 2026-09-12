@@ -43,6 +43,13 @@ const kpis = new Map((await db.select().from(kpiDefinitions)).map((k) => [k.id, 
 const names = new Map((await db.select().from(employees)).map((e) => [e.id, `${e.name} (${e.eid})`]));
 
 const historyByIssue = new Map<string, Map<string, "pass" | "fail">>();
+// An episode's opening week is a recorded failure even when no history row
+// says so — episodes opened by earlier versions of the engine carry none for
+// the week they opened on, which is what let their duplicates slip past this
+// rule before.
+for (const issue of issues) {
+  historyByIssue.set(issue.id, new Map([[issue.openedWeek, "fail" as const]]));
+}
 for (const row of history) {
   const weeks = historyByIssue.get(row.performanceIssueId) ?? new Map();
   weeks.set(row.week, row.result);

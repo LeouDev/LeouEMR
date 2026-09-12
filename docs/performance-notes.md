@@ -237,6 +237,20 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **An episode's opening week counts as a recorded failure, row or no
+  row.** The Sep 10 fix (`loadFoldedResults`) stopped a re-import from
+  opening a second episode for a failure a closed episode had recorded,
+  but it read only `weekly_issue_history`, and episodes opened by earlier
+  versions of the engine have no history row for the week they opened on
+  (that insert in `applyOpens` dates from 7 Sep). Re-importing such a week
+  found nothing folded and opened a duplicate all the same — the 12 Sep
+  dedupe report listed dozens opened on 16 May duplicating episodes from
+  the same week. `loadFoldedResults` now also seeds every episode's
+  `opened_week` as a failure (a recorded result outranks it), and
+  `dedupe:episodes` seeds its history map the same way, so it catches the
+  duplicates of such episodes too. A one-off repair inserting the missing
+  opening rows is optional (the page timeline is the only reader that
+  would notice); the engine no longer depends on them.
 - **The employee page lists every week the ledger has for the person,
   and a thin skill week is shown but not judged.** `getEmployeeMatrix`
   used to take its week list from scorecard rows only (`PLAN_KPI_CODES`),
