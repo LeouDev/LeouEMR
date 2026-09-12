@@ -43,8 +43,16 @@ function LoginForm() {
       const supabase = createSupabaseBrowserClient();
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
       setSubmitting(false);
-      if (resetError && /rate limit|too many/i.test(resetError.message)) {
-        setError("Too many reset requests for now. Wait a few minutes and try again.");
+      if (resetError) {
+        // An unknown address is not an error here — Supabase answers as if
+        // it sent — so any error is the service failing (rate limit, the
+        // mail server refusing), which the person should know about rather
+        // than wait for an email that is not coming.
+        setError(
+          /rate limit|too many/i.test(resetError.message)
+            ? "Too many reset requests for now. Wait a few minutes and try again."
+            : "The reset email could not be sent right now. Try again in a few minutes, or ask an administrator.",
+        );
         return;
       }
       setNotice("If an account exists for that address, a link to choose a new password is on its way.");
