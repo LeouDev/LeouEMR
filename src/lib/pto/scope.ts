@@ -229,6 +229,10 @@ export async function hasCluster(user: CurrentUser, period: DateRange): Promise<
  * does not see them on June's. Who a leader may *decide* for is a separate
  * question and stays on the current structure. An agent's calendar is their
  * team now, since that is who they arrange cover with.
+ *
+ * For a supervisor's cluster view these are the cluster's agents, but the
+ * page draws only the leaders over them: the view is the other team leaders'
+ * leave, not their reports' (see the leaders-only rule on the page).
  */
 export async function ptoViewIds(user: CurrentUser, view: PtoView, period: DateRange): Promise<string[]> {
   if (user.role === "agent" || user.role === "admin") return ptoScopeIds(user);

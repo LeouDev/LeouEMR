@@ -7,10 +7,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, ptoRequests, users } from "@/lib/db/schema";
 import { resolveScopedIds } from "@/lib/queries/performance";
-import { PROBLEM_MESSAGES, canCancel, canDecide, validateRequest } from "@/lib/pto/rules";
+import { approvedOnSubmission, PROBLEM_MESSAGES, canCancel, canDecide, validateRequest } from "@/lib/pto/rules";
 import { canDecideForLeader } from "@/lib/pto/scope";
 
-export type PtoResult = { ok: true } | { ok: false; error: string };
+export type PtoResult = { ok: true; approved?: boolean } | { ok: false; error: string };
 
 const requestSchema = z.object({
   startDate: z.string().trim().min(1),
@@ -83,6 +83,11 @@ export async function requestPto(input: unknown): Promise<PtoResult> {
   );
   if (problem) return { ok: false, error: PROBLEM_MESSAGES[problem] };
 
+  // A manager's own leave is approved as it is filed (see
+  // approvedOnSubmission): nobody in the roster sits above them to decide
+  // it. decidedBy stays null — no one decided it — and the note says why.
+  const approved = approvedOnSubmission(user.role);
+
   const code = await nextCode();
   const [created] = await db
     .insert(ptoRequests)
@@ -94,19 +99,26 @@ export async function requestPto(input: unknown): Promise<PtoResult> {
       endDate: parsed.data.endDate,
       type: parsed.data.type,
       reason: parsed.data.reason || null,
+      ...(approved
+        ? {
+            status: "approved" as const,
+            decidedAt: new Date(),
+            decisionNote: "Approved on submission: a manager's own leave needs no approval",
+          }
+        : {}),
     })
     .returning();
 
   await db.insert(auditLog).values({
     actorId: user.id,
-    action: "pto.requested",
+    action: approved ? "pto.requested_and_approved" : "pto.requested",
     entityType: "pto_request",
     entityId: created.id,
-    after: { code, ...parsed.data },
+    after: { code, ...parsed.data, status: approved ? "approved" : "pending" },
   });
 
   revalidatePath("/pto");
-  return { ok: true };
+  return { ok: true, approved };
 }
 
 const decisionSchema = z.object({
@@ -190,7 +202,15 @@ export async function decidePto(input: unknown): Promise<PtoResult> {
   return { ok: true };
 }
 
-/** Withdraws your own request. Leaders cancel by denying, which is recorded. */
+/**
+ * Cancels a pending or approved request.
+ *
+ * The requester may always withdraw their own. A leader may cancel the
+ * leave of the people they decide for — a supervisor their direct reports',
+ * a manager their supervisors' own, an administrator anyone's — under
+ * exactly the authority check decidePto applies, so cancelling can never
+ * reach further than approving could. The audit row says which it was.
+ */
 export async function cancelPto(requestId: string): Promise<PtoResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
@@ -201,11 +221,27 @@ export async function cancelPto(requestId: string): Promise<PtoResult> {
     .where(eq(ptoRequests.id, requestId))
     .limit(1);
   if (!request) return { ok: false, error: "Request not found" };
-  if (request.requestedBy !== user.id) {
-    return { ok: false, error: "You can only withdraw your own request" };
-  }
   if (!canCancel(request.status)) {
     return { ok: false, error: `This request was already ${request.status}` };
+  }
+
+  const own = request.requestedBy === user.id;
+  if (!own) {
+    if (user.role === "agent") return { ok: false, error: "You can only withdraw your own request" };
+    if (request.employeeId) {
+      const scoped = await resolveScopedIds(user);
+      if (!scoped.includes(request.employeeId)) {
+        return { ok: false, error: "That employee is not in your team" };
+      }
+    } else {
+      const [requester] = request.requestedBy
+        ? await db.select().from(users).where(eq(users.id, request.requestedBy)).limit(1)
+        : [];
+      if (!requester) return { ok: false, error: "Request has no requester" };
+      if (!(await canDecideForLeader(user, requester))) {
+        return { ok: false, error: "Only their manager can cancel that request" };
+      }
+    }
   }
 
   await db
@@ -219,7 +255,7 @@ export async function cancelPto(requestId: string): Promise<PtoResult> {
     entityType: "pto_request",
     entityId: request.id,
     before: { status: request.status },
-    after: { status: "cancelled" },
+    after: { status: "cancelled", by: own ? "requester" : "leader" },
   });
 
   revalidatePath("/pto");

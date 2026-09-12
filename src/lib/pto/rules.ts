@@ -70,6 +70,18 @@ export const PROBLEM_MESSAGES: Record<RequestProblem, string> = {
 };
 
 /** Whether a request can still be decided. A decided one is final. */
+/**
+ * Whether a request from this role is approved the moment it is filed.
+ *
+ * A manager's own leave has nobody above them in the roster to decide it —
+ * only an administrator could, and the business does not want it waiting on
+ * one — so it is recorded as approved on submission and drawn on the
+ * calendar straight away. Everyone else's waits for the leader over them.
+ */
+export function approvedOnSubmission(role: "admin" | "manager" | "supervisor" | "agent"): boolean {
+  return role === "manager";
+}
+
 export function canDecide(status: PtoStatus): boolean {
   return status === "pending";
 }

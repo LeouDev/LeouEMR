@@ -6,7 +6,7 @@ export interface ViewTab {
   label: string;
 }
 
-/** A supervisor's choice: their own reports, or the whole cluster under their manager. */
+/** A supervisor's choice: their own reports, or the team leaders under the same manager. */
 export const SUPERVISOR_TABS: readonly ViewTab[] = [
   { key: "team", label: "My team" },
   { key: "cluster", label: "My cluster" },
