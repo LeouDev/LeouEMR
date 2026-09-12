@@ -293,7 +293,16 @@ from every environment this project gets worked on in.
   back may still have gone through and the message says to check with
   the team lead before resending. The cause of that night's stall was
   not established from the code alone; with this in place the next
-  attempt names it.
+  attempt names it. The next send after the deploy went through.
+- **The sender is copied on every EOD report (13 Sep).** Asked for once
+  the first report arrived: nothing about a report is stored server-side,
+  so the CC is the agent's only record of what went out. `sendEodEmail`
+  sets `cc` to the sender's account address (already a known address, so
+  it bypasses no recipient rule), skipped when the report is addressed to
+  themselves, and the `eod.sent` audit row records it as `after.cc`.
+  Brevo counts recipients, so each report now costs two of the free
+  relay's 300 daily sends; the card subtitle says a copy goes to the
+  sender's inbox.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager

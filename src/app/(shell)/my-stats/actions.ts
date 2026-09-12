@@ -162,12 +162,18 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
   // agent's real address so "Reply" in the team lead's inbox goes to them,
   // not to the shared mailbox this is relayed through.
   const mailbox = process.env.EOD_SMTP_FROM?.trim() || smtp.login;
+  // The sender keeps a copy in their own inbox — nothing about the report
+  // is stored here, so this is their only record of what went out. Their
+  // account address is already a known one; it needs no recipient check.
+  // Addressing the report to themselves would otherwise list them twice.
+  const copyTo = parsed.data.tlEmail.toLowerCase() === user.email.toLowerCase() ? undefined : user.email;
 
   try {
     await smtp.client.sendMail({
       from: `"${user.name} (via OptumRx EMR)" <${mailbox}>`,
       replyTo: user.email,
       to: parsed.data.tlEmail,
+      cc: copyTo,
       subject: parsed.data.subject,
       text: parsed.data.text,
       html: parsed.data.html,
@@ -197,7 +203,7 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
       action: "eod.sent",
       entityType: "user",
       entityId: user.id,
-      after: { to: parsed.data.tlEmail, subject: parsed.data.subject },
+      after: { to: parsed.data.tlEmail, cc: copyTo ?? null, subject: parsed.data.subject },
     });
   } catch {
     // The report has gone; a failed audit write must not report it as unsent.

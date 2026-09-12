@@ -674,7 +674,7 @@ export function CaseTracker({
       <Card>
         <CardHeader
           title="End of day email"
-          subtitle="Sends the formatted report straight to your team lead, with today's case log attached"
+          subtitle="Sends the formatted report straight to your team lead, with today's case log attached and a copy to your own inbox"
         />
         <div className="flex flex-wrap items-end gap-3 px-6 py-5">
           <div>

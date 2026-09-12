@@ -139,6 +139,23 @@ describe("sendEodEmail — configured", () => {
     expect(call.html).toBe(REPORT.html);
   });
 
+  it("copies the sender on every report, except when they are the team lead themselves", async () => {
+    vi.resetModules();
+    const { sendEodEmail } = await import("./actions");
+
+    await sendEodEmail(REPORT);
+    expect(sendMail.mock.calls[0][0].cc).toBe("kristian.reyes@example.test");
+    expect(queue.inserted[0]).toMatchObject({ after: { cc: "kristian.reyes@example.test" } });
+
+    sendMail.mockClear();
+    queue.results = [[], [{ n: 0 }]];
+    queue.inserted = [];
+    await sendEodEmail({ ...REPORT, tlEmail: "Kristian.Reyes@example.test" });
+    expect(sendMail.mock.calls[0][0].to).toBe("Kristian.Reyes@example.test");
+    expect(sendMail.mock.calls[0][0].cc).toBeUndefined();
+    expect(queue.inserted[0]).toMatchObject({ after: { cc: null } });
+  });
+
   it("uses EOD_SMTP_FROM over the login mailbox when a display alias is set", async () => {
     process.env.EOD_SMTP_FROM = "eod-reports@gmail.com";
     vi.resetModules();
