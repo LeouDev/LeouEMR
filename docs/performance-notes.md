@@ -237,6 +237,19 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Month arrows keep the calendar view, and leaders always file as
+  leaders.** The Previous/Next links on the leave calendar carry the `view`
+  parameter (`monthHref` in pto/calendar.tsx), so stepping a month no longer
+  drops a manager back to Everyone or a team leader to My team. The
+  month's request query is never skipped for a month with no agents in
+  scope: your own request, and the other leaders' in a leaders-only view,
+  still belong on it. And `requestPto` files a supervisor's or manager's
+  leave against their account (`employeeId` null) even when an employee row
+  carries their EID — a working team leader the roster also lists — since
+  a leader's leave is decided a level up and read on the leaders'
+  calendars, not as one more agent's. A request such a leader filed
+  before this was stored as an agent request; setting its `employee_id`
+  to null moves it to the leaders' calendars.
 - **The leave calendar shows the team as it stood in the viewed month.**
   `ptoViewIds(user, view, period)`, `hasCluster(user, period)` and
   `leaderAccountsOver(ids, period)` in `src/lib/pto/scope.ts` all take the

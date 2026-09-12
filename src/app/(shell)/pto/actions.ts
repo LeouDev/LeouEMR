@@ -54,14 +54,19 @@ export async function requestPto(input: unknown): Promise<PtoResult> {
   const parsed = requestSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter both a start and an end date." };
 
-  const [employee] = await db
-    .select({ id: employees.id })
-    .from(employees)
-    .where(eq(employees.eid, user.employeeEid))
-    .limit(1);
-
   // Only agents are in the imported roster. A supervisor or manager files
-  // against their own account instead, which is why employeeId is nullable.
+  // against their own account instead, which is why employeeId is nullable —
+  // and they do so even when an employee row happens to carry their EID (a
+  // working team leader the roster also lists): their leave is decided a
+  // level up and read on the leaders' calendars, not as one more agent's.
+  const [employee] = isLeader
+    ? [undefined]
+    : await db
+        .select({ id: employees.id })
+        .from(employees)
+        .where(eq(employees.eid, user.employeeEid))
+        .limit(1);
+
   if (!employee && !isLeader) {
     return { ok: false, error: "No employee record matches your account" };
   }

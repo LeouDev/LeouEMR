@@ -32,11 +32,16 @@ function monthLabel(month: string): string {
  */
 export function PtoCalendar({
   month,
+  view,
   byDay,
 }: {
   month: string;
+  /** The calendar view being shown, carried across the month links so stepping a month keeps it. */
+  view?: string;
   byDay: Map<string, DayEntry[]>;
 }) {
+  const monthHref = (by: number) =>
+    `/pto?${new URLSearchParams({ month: shiftMonth(month, by), ...(view ? { view } : {}) })}`;
   const [year, monthNum] = month.split("-").map(Number);
   const first = new Date(Date.UTC(year, monthNum - 1, 1));
   const daysInMonth = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
@@ -57,14 +62,14 @@ export function PtoCalendar({
     <div>
       <div className="flex items-center justify-between gap-3 border-b-2 border-line px-6 py-3">
         <Link
-          href={`/pto?month=${shiftMonth(month, -1)}`}
+          href={monthHref(-1)}
           className="border-2 border-ink px-3 py-1.5 text-xs font-bold tracking-[0.08em] text-ink uppercase transition hover:bg-orange-brand-100"
         >
           ← Previous
         </Link>
         <span className="text-sm font-bold text-ink">{monthLabel(month)}</span>
         <Link
-          href={`/pto?month=${shiftMonth(month, 1)}`}
+          href={monthHref(1)}
           className="border-2 border-ink px-3 py-1.5 text-xs font-bold tracking-[0.08em] text-ink uppercase transition hover:bg-orange-brand-100"
         >
           Next →

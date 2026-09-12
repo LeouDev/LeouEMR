@@ -207,31 +207,29 @@ export default async function PtoPage({
   const agentIds = leadersOnly ? [] : calendarIds;
   const leaderVisibleIds = view === "agents" ? [user.id] : [...new Set([user.id, ...leadersOver])];
 
-  // Everything overlapping the visible month, for the calendar.
-  const inMonth = calendarIds.length
-    ? await db
-        .select(base)
-        .from(ptoRequests)
-        .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
-        .leftJoin(users, eq(users.id, ptoRequests.requestedBy))
-        .where(
-          and(
-            or(
-              agentIds.length ? inArray(ptoRequests.employeeId, agentIds) : undefined,
-              // Leaders appear on the calendar of the people they lead. The
-              // null employee id is what makes this a leader's *own* request
-              // rather than anything else their account touched.
-              leaderVisibleIds.length
-                ? and(isNull(ptoRequests.employeeId), inArray(ptoRequests.requestedBy, leaderVisibleIds))
-                : undefined,
-            ),
-            lte(ptoRequests.startDate, monthEnd),
-            gte(ptoRequests.endDate, monthStart),
-            inArray(ptoRequests.status, ["pending", "approved"]),
-          ),
-        )
-        .orderBy(asc(ptoRequests.startDate))
-    : [];
+  // Everything overlapping the visible month, for the calendar. Never
+  // skipped for a month with no agents in it: a leader's own request, and
+  // the other leaders' in a leaders-only view, still belong on that month.
+  const inMonth = await db
+    .select(base)
+    .from(ptoRequests)
+    .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
+    .leftJoin(users, eq(users.id, ptoRequests.requestedBy))
+    .where(
+      and(
+        or(
+          agentIds.length ? inArray(ptoRequests.employeeId, agentIds) : undefined,
+          // Leaders appear on the calendar of the people they lead. The
+          // null employee id is what makes this a leader's *own* request
+          // rather than anything else their account touched.
+          and(isNull(ptoRequests.employeeId), inArray(ptoRequests.requestedBy, leaderVisibleIds)),
+        ),
+        lte(ptoRequests.startDate, monthEnd),
+        gte(ptoRequests.endDate, monthStart),
+        inArray(ptoRequests.status, ["pending", "approved"]),
+      ),
+    )
+    .orderBy(asc(ptoRequests.startDate));
 
 
   // Approved days per person in the visible month, for the calendar cells.
@@ -297,7 +295,7 @@ export default async function PtoPage({
               ) : undefined
             }
           />
-          <PtoCalendar month={month} byDay={byDay} />
+          <PtoCalendar month={month} view={view} byDay={byDay} />
         </Card>
 
         {canDecide && (
