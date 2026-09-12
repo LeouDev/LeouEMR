@@ -1,5 +1,7 @@
 import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
+import { separationDates } from "@/lib/queries/eligibility";
+import { periodContaining } from "@/lib/queries/period";
 import {
   actionItems,
   actionPlans,
@@ -16,6 +18,7 @@ import {
   canAutoReplay,
   evaluateWeeklyResult,
   replayEmployeeKpiHistory,
+  separationResolutionWeeks,
   shouldAgeOut,
 } from "./engine";
 import {
@@ -40,6 +43,8 @@ export interface EngineRunResult {
   completed: number;
   /** Long-running issues closed on age because their KPI had recovered. */
   agedOut: number;
+  /** Open issues closed because the person had already left. */
+  closedOnSeparation: number;
   /** Issues whose already-folded history no longer matched current data and were safely rebuilt. */
   corrected: number;
   /** Same situation, but left untouched for a person to review — see canAutoReplay. */
@@ -71,6 +76,7 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
     updated: 0,
     completed: 0,
     agedOut: 0,
+    closedOnSeparation: 0,
     corrected: 0,
     flagged: 0,
   };
@@ -215,8 +221,89 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
   // Last, so it sees the statuses this run has just written rather than the
   // ones it started with.
   result.agedOut = await ageOutRecoveredIssues(live);
+  result.closedOnSeparation = await closeIssuesOfSeparated();
 
   return result;
+}
+
+/**
+ * Closes the open work of everyone who has already left, wherever their
+ * separation was recorded.
+ *
+ * The EWS tag and the masterlist each close a person's issues at the moment
+ * they record the separation, but only from the day that behaviour existed,
+ * and only for the person whose status they were changing right then.
+ * Anyone tagged or dropped from a roster before that kept an open action
+ * item on their old leader's list indefinitely, with nothing that would
+ * ever close it: the engine never opens new work for someone inactive, but
+ * it did not close what was already there either, and the age-out rule
+ * refuses an issue whose last result is a failure — which is what the last
+ * week of someone who left usually is. Run on every engine pass, this
+ * catches every such case, and is a no-op once there is nothing to close.
+ *
+ * Who counts as gone is the same rule every list and period figure follows
+ * (separationDates: an EWS Black/Absconding tag, or a masterlist closure),
+ * and the issue is resolved as of the week they left. Someone whose date is
+ * still ahead keeps their work until it arrives.
+ */
+export async function closeIssuesOfSeparated(
+  /** Report only; nothing is written. */
+  dryRun = false,
+): Promise<number> {
+  const today = new Date().toISOString().slice(0, 10);
+  const leftOn = new Map([...(await separationDates("all"))].filter(([, on]) => on <= today));
+  if (leftOn.size === 0) return 0;
+
+  const open = await db
+    .select({
+      id: performanceIssues.id,
+      employeeId: performanceIssues.employeeId,
+      status: performanceIssues.status,
+    })
+    .from(performanceIssues)
+    .where(
+      and(
+        inArray(performanceIssues.employeeId, [...leftOn.keys()]),
+        ne(performanceIssues.status, "COMPLETED"),
+      ),
+    );
+  if (open.length === 0 || dryRun) return open.length;
+
+  const byWeek = separationResolutionWeeks(open, leftOn, (on) => periodContaining("week", on).start);
+  const weekOfIssue = new Map<string, string>();
+  for (const [week, ids] of byWeek) for (const id of ids) weekOfIssue.set(id, week);
+
+  await db.transaction(async (tx) => {
+    for (const [week, ids] of byWeek) {
+      await tx
+        .update(performanceIssues)
+        .set({ status: "COMPLETED", resolvedWeek: week, updatedAt: sql`now()` })
+        .where(inArray(performanceIssues.id, ids));
+    }
+    await tx
+      .update(actionItems)
+      .set({ status: "COMPLETED", updatedAt: sql`now()` })
+      .where(
+        inArray(
+          actionItems.performanceIssueId,
+          open.map((i) => i.id),
+        ),
+      );
+    await tx.insert(auditLog).values(
+      open.map((issue) => ({
+        action: "issue.closed_on_separation",
+        entityType: "performance_issue",
+        entityId: issue.id,
+        before: { status: issue.status },
+        after: {
+          status: "COMPLETED",
+          resolvedWeek: weekOfIssue.get(issue.id),
+          reason: "employee separated",
+        },
+      })),
+    );
+  });
+  return open.length;
 }
 
 /**

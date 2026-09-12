@@ -10,6 +10,7 @@ import { db } from "@/lib/db/client";
 import { auditLog, employees, ewsAssessments } from "@/lib/db/schema";
 import { computeEwsRisk, employeeStatusFor } from "@/lib/ews/engine";
 import { closeIssuesOnSeparation } from "@/lib/action-item-engine/persistence";
+import { periodContaining } from "@/lib/queries/period";
 
 const schema = z.object({
   employeeId: z.string().uuid(),
@@ -103,7 +104,11 @@ export async function saveEwsAssessment(input: unknown): Promise<EwsResult> {
   // A supervisor correcting a week from two months ago must not resurrect an
   // attrition tag that has since been cleared, or clear one still standing.
   const [latest] = await db
-    .select({ attrition: ewsAssessments.attrition, week: ewsAssessments.week })
+    .select({
+      attrition: ewsAssessments.attrition,
+      attritionDate: ewsAssessments.attritionDate,
+      week: ewsAssessments.week,
+    })
     .from(ewsAssessments)
     .where(eq(ewsAssessments.employeeId, parsed.data.employeeId))
     .orderBy(desc(ewsAssessments.week))
@@ -130,12 +135,16 @@ export async function saveEwsAssessment(input: unknown): Promise<EwsResult> {
       before: { status: current.status },
       after: { status: nextStatus, from: latest?.attrition ?? "none", week: latest?.week ?? null },
     });
+  }
 
-    // Someone who has left should not carry open work. Leave states keep
-    // theirs — they come back to it.
-    if (nextStatus === "separated") {
-      await closeIssuesOnSeparation(parsed.data.employeeId, latest?.week ?? parsed.data.week);
-    }
+  // Someone who has left should not carry open work. Leave states keep
+  // theirs — they come back to it. Closed whether or not the status changed
+  // just now: a masterlist may have marked them separated first, or the tag
+  // is being re-saved, and either way nothing of theirs should stay open.
+  // Resolved as of the week they left, the same week every list uses.
+  if (nextStatus === "separated") {
+    const left = latest?.attritionDate ?? latest?.week ?? parsed.data.week;
+    await closeIssuesOnSeparation(parsed.data.employeeId, periodContaining("week", left).start);
   }
 
   // An assessment can carry a separation date, which decides who counts in

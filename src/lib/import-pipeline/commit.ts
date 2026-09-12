@@ -40,6 +40,8 @@ export interface CommitSummary {
   issuesCorrected: number;
   /** Same situation, left for a person to review — see canAutoReplay. */
   issuesFlagged: number;
+  /** Open issues closed because their owner had already left, whichever way that was recorded. */
+  issuesClosedOnSeparation: number;
   /** Skill labels present in the data with no configured reference. */
   unmatchedSkills: string[];
 }
@@ -168,6 +170,7 @@ export async function commitImport(
     issuesUpdated: engineResult.updated,
     issuesCorrected: engineResult.corrected,
     issuesFlagged: engineResult.flagged,
+    issuesClosedOnSeparation: engineResult.closedOnSeparation,
   };
 }
 

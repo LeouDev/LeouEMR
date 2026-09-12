@@ -278,6 +278,12 @@ export function ImportWizard() {
               <li>
                 {result.issuesOpened} action items opened, {result.issuesUpdated} updated
               </li>
+              {result.issuesClosedOnSeparation > 0 && (
+                <li>
+                  {result.issuesClosedOnSeparation} action item
+                  {result.issuesClosedOnSeparation === 1 ? "" : "s"} closed because the person has left
+                </li>
+              )}
               <li>Weeks: {result.weeks.join(", ")}</li>
               {result.issuesCorrected > 0 && (
                 <li className="text-warn">

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  separationResolutionWeeks,
   acknowledgeByAgent,
   canAutoReplay,
   evaluateWeeklyResult,
@@ -320,5 +321,49 @@ describe("shouldAgeOut", () => {
         ageOutAfterDays: 14,
       }),
     ).toBe(true);
+  });
+});
+
+describe("separationResolutionWeeks — where the open work of someone who left is resolved", () => {
+  // Stand-in for the reporting calendar: two July dates share a week.
+  const weekStartOf = (date: string) =>
+    ({ "2026-07-15": "2026-07-13", "2026-07-17": "2026-07-13", "2026-08-05": "2026-08-03" })[date] ??
+    date;
+
+  it("groups each issue under the week its owner's separation date falls in", () => {
+    const byWeek = separationResolutionWeeks(
+      [
+        { id: "i1", employeeId: "a" },
+        { id: "i2", employeeId: "b" },
+        { id: "i3", employeeId: "a" },
+        { id: "i4", employeeId: "c" },
+      ],
+      new Map([
+        ["a", "2026-07-17"],
+        ["b", "2026-07-15"],
+        ["c", "2026-08-05"],
+      ]),
+      weekStartOf,
+    );
+    expect([...byWeek.entries()]).toEqual([
+      ["2026-07-13", ["i1", "i2", "i3"]],
+      ["2026-08-03", ["i4"]],
+    ]);
+  });
+
+  it("leaves out an issue whose owner has no separation date", () => {
+    const byWeek = separationResolutionWeeks(
+      [
+        { id: "i1", employeeId: "a" },
+        { id: "i2", employeeId: "still-here" },
+      ],
+      new Map([["a", "2026-07-17"]]),
+      weekStartOf,
+    );
+    expect([...byWeek.entries()]).toEqual([["2026-07-13", ["i1"]]]);
+  });
+
+  it("is empty when nobody has left", () => {
+    expect(separationResolutionWeeks([{ id: "i1", employeeId: "a" }], new Map(), weekStartOf).size).toBe(0);
   });
 });

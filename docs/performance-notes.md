@@ -212,6 +212,24 @@ from every environment this project gets worked on in.
   statements for the whole batch, inside the commit transaction), and
   marks anyone it lists again after an earlier closure `active`. People on
   leave are left on leave.
+- **Open work of anyone already gone is closed on every engine run.** The
+  EWS tag and the masterlist close a person's issues at the moment they
+  record the separation, but only since those hooks existed (7 and 11
+  September) and only for the person whose status they changed right
+  then, so an agent tagged earlier, or dropped by an earlier month's
+  roster, kept an open item on the leader's Action Items list for good:
+  the engine never opened new work for someone inactive but never closed
+  what was there, and the age-out rule refuses an issue whose last result
+  is a failure — the usual last week of someone who left.
+  `closeIssuesOfSeparated` (persistence.ts; end of `runIssueEngineForWeeks`,
+  so every weekly import runs it; also `npm run close-separated [-- --apply]`)
+  closes every open issue of anyone `separationDates` says has left by
+  today, resolved as of the week they left (`separationResolutionWeeks`
+  in engine.ts groups them so it is one statement per week), with the same
+  `issue.closed_on_separation` audit row. The EWS hook now closes whether
+  or not the status changed just then (a masterlist may have marked them
+  first) and as of the tag's date, and the masterlist closes work for
+  everyone it closes, not only the newly marked.
 - **The leave calendar shows the team as it stood in the viewed month.**
   `ptoViewIds(user, view, period)`, `hasCluster(user, period)` and
   `leaderAccountsOver(ids, period)` in `src/lib/pto/scope.ts` all take the

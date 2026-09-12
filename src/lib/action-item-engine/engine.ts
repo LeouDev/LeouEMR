@@ -281,3 +281,27 @@ export function shouldAgeOut(
   const days = (now - opened) / 86_400_000;
   return days >= config.ageOutAfterDays;
 }
+
+/**
+ * The week each open issue of someone who has left is resolved as of: the
+ * reporting week their separation date falls in, so the record shows the
+ * work ending when they did rather than when the sweep happened to run.
+ * Grouped by week so the caller writes one statement per week, not per
+ * issue. An issue whose owner has no separation date is left out.
+ */
+export function separationResolutionWeeks(
+  open: ReadonlyArray<{ id: string; employeeId: string }>,
+  leftOn: ReadonlyMap<string, string>,
+  weekStartOf: (date: string) => string,
+): Map<string, string[]> {
+  const byWeek = new Map<string, string[]>();
+  for (const issue of open) {
+    const on = leftOn.get(issue.employeeId);
+    if (on === undefined) continue;
+    const week = weekStartOf(on);
+    const ids = byWeek.get(week);
+    if (ids) ids.push(issue.id);
+    else byWeek.set(week, [issue.id]);
+  }
+  return byWeek;
+}

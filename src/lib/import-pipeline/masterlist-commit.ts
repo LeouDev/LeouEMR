@@ -290,13 +290,15 @@ export async function commitMasterlist(
             after: { status: "separated", from: "masterlist", month: start, closedBefore: plan.closedBefore, importBatchId },
           })),
         );
-        // Resolved as of the last week they were on the roster.
-        issuesClosed = await closeIssuesOnSeparationFor(
-          tx,
-          gone.map((row) => row.id),
-          periodContaining("week", plan.closedBefore).start,
-        );
       }
+      // Resolved as of the last week they were on the roster. For everyone
+      // closed, not only the newly marked: someone an EWS tag had already
+      // separated may still carry open work from before that closed it.
+      issuesClosed = await closeIssuesOnSeparationFor(
+        tx,
+        plan.employeeIdsToClose,
+        periodContaining("week", plan.closedBefore).start,
+      );
     }
     // The roster of record is also the current structure for everyone it
     // lists: the employee rows (which the operational scope reads) follow it.

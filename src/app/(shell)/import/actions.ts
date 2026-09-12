@@ -169,6 +169,7 @@ export interface CommitResponse {
     issuesUpdated: number;
     issuesCorrected: number;
     issuesFlagged: number;
+    issuesClosedOnSeparation: number;
     weeks: string[];
     metricsSkippedNoKpi: string[];
   };
