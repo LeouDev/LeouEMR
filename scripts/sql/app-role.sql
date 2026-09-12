@@ -15,11 +15,13 @@
 --
 -- Before running: replace CHANGE_ME with a strong password (openssl rand
 -- -hex 24 gives a good one with no characters that need escaping in a URL).
+-- Do that in the SQL editor, never in this file: a password committed here
+-- is in the repository's history for good and has to be rotated.
 
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'emr_app') then
-    create role emr_app login password '059bebef50a5bc80d7b44ed4e23871951890073f0d361aa8';
+    create role emr_app login password 'CHANGE_ME';
   end if;
 end $$;
 
