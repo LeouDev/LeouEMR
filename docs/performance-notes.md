@@ -237,6 +237,24 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **A limited database role for the deployed app, and a weekly backup.**
+  `scripts/sql/app-role.sql` (idempotent; paste into the SQL editor as
+  postgres after replacing CHANGE_ME) creates `emr_app`: login, DML on
+  every public table and sequence, the same by default privilege on
+  tables postgres creates later, `select` on `auth.mfa_factors` for the
+  Users page (best effort), and an allow-all RLS policy
+  `emr_app_full_access` per public table — needed because RLS is on
+  everywhere and a non-owner role is subject to it. It cannot do DDL,
+  read the rest of the auth schema, or reach other schemas. Production
+  `DATABASE_URL` on Vercel then uses `emr_app.<ref>` through the same
+  pooler; `.env.local` keeps the postgres role for migrations and
+  backups. Re-run the SQL after any migration that adds a table, or the
+  app cannot see it. `npm run backup` (`scripts/backup-db.sh`) dumps the
+  public schema with pg_dump (`brew install libpq`) to
+  `~/EMR-backups/emr-YYYY-MM-DD.dump`, switching a 6543 URL to the 5432
+  session pooler, keeping the eight newest; restore notes are in the
+  script header (re-run app-role.sql afterwards, grants are not dumped).
+  Accounts live in Supabase's auth schema and are outside the dump.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager
