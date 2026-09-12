@@ -813,12 +813,11 @@ export async function getEmployeeMatrix(
       })
       .from(weeklyMetricResults)
       .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-      // The grid is the scorecard (PLAN_KPI_CODES), not the list of what
-      // opens items: PAR and MBO belong on it though they open nothing, and
-      // the skills that do open items belong in the table below instead.
-      .where(
-        and(eq(weeklyMetricResults.employeeId, employeeId), inArray(kpiDefinitions.code, [...PLAN_KPI_CODES])),
-      )
+      // Every KPI, not only the scorecard's: the week list has to cover a
+      // week that so far has only skill results (a backfill, or a partial
+      // week), or an item opened on such a week points at a week the page
+      // does not show. The grid itself stays the scorecard, below.
+      .where(eq(weeklyMetricResults.employeeId, employeeId))
       .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
     db
       .select({
@@ -858,7 +857,12 @@ export async function getEmployeeMatrix(
   const kpiOrder = new Map<string, { code: string; name: string; direction: string }>();
   const cells = new Map<string, MatrixCell>();
 
+  // The grid is the scorecard (PLAN_KPI_CODES), not the list of what opens
+  // items: PAR and MBO belong on it though they open nothing, and the
+  // skills that do open items belong in the table below instead.
+  const scorecard = new Set<string>(PLAN_KPI_CODES);
   for (const row of rows) {
+    if (!scorecard.has(row.kpiCode)) continue;
     kpiOrder.set(row.kpiCode, { code: row.kpiCode, name: row.kpiName, direction: row.direction });
     cells.set(`${row.kpiCode}|${row.week}`, {
       actualValue: row.actualValue,

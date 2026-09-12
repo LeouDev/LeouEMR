@@ -237,6 +237,19 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **The employee page lists every week the ledger has for the person,
+  and a thin skill week is shown but not judged.** `getEmployeeMatrix`
+  used to take its week list from scorecard rows only (`PLAN_KPI_CODES`),
+  so a week that so far had only skill results — the September backfill
+  wrote skill rows for a week no full workbook had covered — was missing
+  from the plan, the item timeline and the skill breakdown, while an item
+  opened on it pointed at a week the page did not show. The week list now
+  comes from every ledger row; the grid is still filtered to the
+  scorecard in code. And `SkillWeekCell.judged` (skill-breakdown.ts, via
+  `measureSkillWeek`) carries the engine's own rule — under
+  `MIN_SKILL_HOURS` on an hours-based skill, no result and no item — so
+  the breakdown draws such a week muted with a hover note instead of red,
+  which had read as a failure with no development item behind it.
 - **Every skill roll-up folds a skill's spellings before measuring.**
   Follow-up to the breakdown fix below, across the rest of the readers of
   `skill_facts`: `foldSkillRows` in `src/lib/kpi-engine/skill-result.ts`

@@ -3,6 +3,7 @@ import { db } from "@/lib/db/client";
 import { skillFacts } from "@/lib/db/schema";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { loadRampTargets, loadSkillReferences, measureSkill, normalize } from "@/lib/import-pipeline/par-scoring";
+import { measureSkillWeek } from "@/lib/kpi-engine/skill-result";
 
 export interface SkillWeekCell {
   cases: number;
@@ -11,6 +12,13 @@ export interface SkillWeekCell {
   actual: number | null;
   target: number | null;
   rating: number | null;
+  /**
+   * Whether the week counts against the skill's KPI at all. The engine does
+   * not judge a week with under an hour on an hours-based skill (see
+   * measureSkillWeek), so no result is written and no item opens; the figure
+   * is still shown, but not as a pass or a fail.
+   */
+  judged: boolean;
 }
 
 export interface SkillBreakdownRow {
@@ -80,11 +88,13 @@ export async function getEmployeeSkillBreakdown(
       // among them, so the merged row needs no particular source spelling.
       const override = rampTargets.get(`${employeeEid}|${week}|${normalize(ref.code)}`);
       const target = ref.lowerIsBetter ? (override?.ahtTarget ?? ref.target) : (override?.cphTarget ?? ref.target);
+      // The same test the import applies before writing the week's result.
+      const judged = measureSkillWeek(ref.metric, totals, target ?? undefined) !== null;
       const rating =
-        actual !== null && target
+        judged && actual !== null && target
           ? computeSkillRating(computeSkillRatio(actual, target, ref.lowerIsBetter), ref.thresholds)
           : null;
-      cells.set(week, { ...totals, actual, target, rating });
+      cells.set(week, { ...totals, actual, target, rating, judged });
     }
 
     rows.push({ skillLabel: ref.name, metric: ref.metric, lowerIsBetter: ref.lowerIsBetter, cells });

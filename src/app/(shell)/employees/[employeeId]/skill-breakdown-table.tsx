@@ -13,9 +13,12 @@ const STICKY = "sticky left-0 z-10 min-w-52 bg-surface px-6 py-2";
  * was cleared, so nothing should read as cleared.
  */
 function toneFor(
-  cell: { actual: number | null; target: number | null },
+  cell: { actual: number | null; target: number | null; judged: boolean },
   lowerIsBetter: boolean,
 ): string {
+  // Too little time on the skill for the week to count (see SkillWeekCell.judged):
+  // the figure is information, not a verdict, so it is neither green nor red.
+  if (!cell.judged) return "text-muted";
   if (cell.actual === null || cell.target === null) return "text-ink";
   const met = lowerIsBetter ? cell.actual <= cell.target : cell.actual >= cell.target;
   return met ? "font-semibold text-pass" : "font-semibold text-fail";
@@ -86,7 +89,8 @@ export function SkillBreakdownTable({ rows, weeks }: { rows: SkillBreakdownRow[]
                     title={
                       `${cell.cases} cases over ${cell.hours.toFixed(1)}h` +
                       (cell.target ? ` · target ${formatActual(row.metric, cell.target)}` : "") +
-                      (cell.rating !== null ? ` · rating ${cell.rating.toFixed(2)}` : "")
+                      (cell.rating !== null ? ` · rating ${cell.rating.toFixed(2)}` : "") +
+                      (cell.judged ? "" : " · under an hour on the skill, so this week is not judged")
                     }
                   >
                     <span className={toneFor(cell, row.lowerIsBetter)}>
