@@ -163,11 +163,44 @@ describe("aggregateWorkbook", () => {
     expect(result.employees[0]).toMatchObject({
       eid: "1",
       name: "Person A",
-      supervisorEid: "900",
+      // Padded to the nine digits every EID match compares on.
+      supervisorEid: "000000900",
       supervisorName: "Sup One",
       managerName: "Mgr One",
       site: "CEBU",
     });
+  });
+
+  it("fills a supervisor's EID from another sheet when the last one read names them without it", () => {
+    // Attendance is read after Productivity, and its row has a Supervisor
+    // column but no Sup EID column — the shape that used to leave the week
+    // with a name and no EID, reaching nobody's account.
+    const result = aggregateWorkbook({
+      Productivity: [
+        {
+          EID: "1",
+          EMPLOYEENAME: "Person A",
+          "Sup EID": "001305110",
+          SUPERVISOR: "Lea Ibag Fernandez",
+          Weekly: week,
+          CASESCOMPLETED: 10,
+          PRODUCTIVITYHOUR: 1,
+        },
+      ],
+      Attendance: [
+        { EID: "1", EMPLOYEENAME: "Person A", SUPERVISOR: "Lea Ibag Fernandez", Weekly: week, PRESENT: 1 },
+        { EID: "2", EMPLOYEENAME: "Person B", SUPERVISOR: "Lea Ibag Fernandez", Weekly: week, PRESENT: 1 },
+        { EID: "3", EMPLOYEENAME: "Person C", SUPERVISOR: "Someone Else", Weekly: week, PRESENT: 1 },
+      ],
+    });
+
+    const byEid = new Map(result.orgWeeks.map((w) => [w.eid, w]));
+    expect(byEid.get("1")?.supervisorEid).toBe("001305110");
+    // Person B never had an EID on any sheet, but the name is known.
+    expect(byEid.get("2")?.supervisorEid).toBe("001305110");
+    // A name no sheet ever pairs with an EID stays as it came.
+    expect(byEid.get("3")?.supervisorEid).toBeNull();
+    expect(result.employees.find((e) => e.eid === "2")?.supervisorEid).toBe("001305110");
   });
 
   it("warns about sheets it does not recognize rather than failing the import", () => {

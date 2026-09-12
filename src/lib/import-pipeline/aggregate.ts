@@ -3,6 +3,7 @@ import {
   parseWeekLabel,
   resolveColumns,
   toNumber,
+  normalizeEid,
   toText,
   type HeaderMap,
 } from "./columns";
@@ -211,6 +212,8 @@ export function aggregateWorkbook(
   const recognized = new Set(Object.values(resolvedSheets));
   const unrecognizedSheets = Object.keys(sheets).filter((name) => !recognized.has(name));
 
+  fillSupervisorEids(employees, orgWeeks);
+
   return {
     employees: [...employees.values()],
     orgWeeks: [...orgWeeks.values()],
@@ -273,6 +276,47 @@ function matchSheets(sheets: SheetRows): Record<string, string> {
   return matched;
 }
 
+/**
+ * Gives a supervisor known by name only the EID that name carries elsewhere
+ * in the same workbook.
+ *
+ * The sheets are read in a fixed order and the last row read wins for an
+ * agent's week, so a sheet with a Supervisor column and no Sup EID column
+ * leaves the week with a name and no EID whenever it is read last. Every
+ * match on a team leader — their account, the roster of record, the period
+ * owner — is on the EID, so such a week reached nobody: one leader's August
+ * read 6 agents against 16 in her files. A name that never appears with an
+ * EID anywhere in the workbook is left as it is; the period rules resolve
+ * it from the history instead (see periodOwnerSubquery). Only an unambiguous
+ * name is filled — a name seen with two EIDs is left alone.
+ */
+export function fillSupervisorEids(
+  employees: Map<string, ParsedEmployee>,
+  orgWeeks: Map<string, ParsedOrgWeek>,
+): void {
+  const eidsByName = new Map<string, Set<string>>();
+  const note = (name: string | null | undefined, eid: string | null | undefined) => {
+    if (!name || !eid) return;
+    const set = eidsByName.get(name) ?? new Set<string>();
+    set.add(eid);
+    eidsByName.set(name, set);
+  };
+  for (const week of orgWeeks.values()) note(week.supervisorName, week.supervisorEid);
+  for (const employee of employees.values()) note(employee.supervisorName, employee.supervisorEid);
+
+  const resolve = (name: string | null | undefined): string | null => {
+    if (!name) return null;
+    const set = eidsByName.get(name);
+    return set && set.size === 1 ? [...set][0] : null;
+  };
+  for (const week of orgWeeks.values()) {
+    if (!week.supervisorEid) week.supervisorEid = resolve(week.supervisorName);
+  }
+  for (const employee of employees.values()) {
+    if (!employee.supervisorEid) employee.supervisorEid = resolve(employee.supervisorName) ?? undefined;
+  }
+}
+
 function captureEmployee(
   employees: Map<string, ParsedEmployee>,
   eid: string,
@@ -287,7 +331,7 @@ function captureEmployee(
       toText(cols.supervisorName ? row[cols.supervisorName] : undefined) ??
       existing?.supervisorName,
     supervisorEid:
-      toText(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? existing?.supervisorEid,
+      normalizeEid(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? existing?.supervisorEid,
     managerName:
       toText(cols.managerName ? row[cols.managerName] : undefined) ?? existing?.managerName,
     site: toText(cols.site ? row[cols.site] : undefined) ?? existing?.site,
@@ -312,7 +356,7 @@ function captureOrgWeek(
   row: Record<string, unknown>,
   cols: HeaderMap,
 ) {
-  const supervisorEid = toText(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? null;
+  const supervisorEid = normalizeEid(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? null;
   const supervisorName = toText(cols.supervisorName ? row[cols.supervisorName] : undefined) ?? null;
   const managerName = toText(cols.managerName ? row[cols.managerName] : undefined) ?? null;
   const site = toText(cols.site ? row[cols.site] : undefined) ?? null;
