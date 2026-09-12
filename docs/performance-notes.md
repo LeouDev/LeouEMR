@@ -219,10 +219,33 @@ from every environment this project gets worked on in.
   (`reportingScopeIds`, `periodOwnerSubquery`), the same rule as the
   dashboard's period cards. A team leader whose team has since moved on
   still sees June's leave on June's calendar, and the "My team / My
-  cluster" switch follows the month's team. Who a leader may *decide* for
+  cluster" switch follows the month's team. "My cluster" draws only the
+  team leaders under the same manager (their own leave), never the other
+  teams' agents — the page empties `agentIds` for it, as for a manager's
+  "Team leaders" view, while the cluster's agent ids still decide which
+  leaders are found. Who a leader may *decide* for
   (`decidableIds`, `decidableLeaderIds`) stays on the current structure —
   a wider or older view never widens authority. Agents and admins keep
   their current-team calendar.
+- **A leader can cancel the leave of the people they decide for.**
+  `cancelPto` lets the requester withdraw their own request and lets a
+  leader cancel a pending or approved request for anyone they could
+  approve — the same authority check as `decidePto` (`resolveScopedIds`
+  for an agent's request, `canDecideForLeader` for a leader's own), so
+  cancelling never reaches further than approving; the audit row records
+  `by: requester | leader`. On `/pto` a leader gets a Cancel beside
+  Approve/Deny in the pending queue and an "Approved leave ahead" card
+  (approved, ending today or later, for the people they decide for) with
+  a Cancel per row.
+- **A manager's own leave is approved on submission.**
+  `approvedOnSubmission(role)` in `src/lib/pto/rules.ts` (managers only):
+  `requestPto` inserts the request as `approved` with `decidedAt` set,
+  `decidedBy` null (nobody decided it) and a decision note saying why,
+  audits it as `pto.requested_and_approved`, and returns `approved: true`
+  so the form says it is on the calendar rather than awaiting review. An
+  agent's request still waits for their team leader and a team leader's
+  for their manager; an administrator's own request still waits for
+  another administrator.
 - **A manager's leave calendar has three views.** `/pto?view=` for a
   manager is `everyone` (default), `agents` (the span's agents only) or
   `leaders` (the team leaders' own leave only); a supervisor keeps `team`

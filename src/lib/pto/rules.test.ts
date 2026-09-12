@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvedOnSubmission,
   canCancel,
   canDecide,
   countDays,
@@ -130,3 +131,15 @@ describe("daysIn", () => {
   });
 });
 
+
+describe("approvedOnSubmission", () => {
+  it("approves a manager's own request as it is filed", () => {
+    expect(approvedOnSubmission("manager")).toBe(true);
+  });
+
+  it("leaves everyone else's request for the leader over them", () => {
+    expect(approvedOnSubmission("agent")).toBe(false);
+    expect(approvedOnSubmission("supervisor")).toBe(false);
+    expect(approvedOnSubmission("admin")).toBe(false);
+  });
+});

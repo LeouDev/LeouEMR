@@ -163,16 +163,48 @@ export default async function PtoPage({
     .orderBy(desc(ptoRequests.startDate))
     .limit(50);
 
-  const [leadersOver, pending, mine] = await Promise.all([
+  // Approved leave still ahead for the people this leader decides for —
+  // the list a cancellation is made from. Same authority as the pending
+  // queue, so what is offered here is exactly what cancelPto allows.
+  const upcomingQuery = canDecide && (decidableIds.length || leaderIds.length)
+    ? db
+        .select(base)
+        .from(ptoRequests)
+        .leftJoin(employees, eq(employees.id, ptoRequests.employeeId))
+        .leftJoin(users, eq(users.id, ptoRequests.requestedBy))
+        .where(
+          and(
+            or(
+              decidableIds.length ? inArray(ptoRequests.employeeId, decidableIds) : undefined,
+              leaderIds.length
+                ? and(isNull(ptoRequests.employeeId), inArray(ptoRequests.requestedBy, leaderIds))
+                : undefined,
+            ),
+            eq(ptoRequests.status, "approved"),
+            gte(ptoRequests.endDate, today),
+          ),
+        )
+        .orderBy(asc(ptoRequests.startDate))
+        .limit(100)
+    : Promise.resolve([]);
+
+  const [leadersOver, pending, mine, upcoming] = await Promise.all([
     leaderAccountsOver(calendarIds, monthPeriod),
     pendingQuery,
     mineQuery,
+    upcomingQuery,
   ]);
-  // A manager's split views: the agents' leave alone, or the team leaders'
-  // own leave alone. Everyone else's calendar carries both — a team's
-  // calendar needs to show its own leader out. Your own account always
-  // counts, so your own request shows on your calendar whichever view.
-  const agentIds = view === "leaders" ? [] : calendarIds;
+  // The leaders-only views: a manager's "Team leaders", and a supervisor's
+  // "My cluster", which shows the leave of every team leader under the same
+  // manager and none of the other teams' agents — a team leader arranges
+  // cover with their peers, not with another leader's reports. The agent
+  // ids still drive which leaders are found (leadersOver above); they are
+  // simply not drawn. A manager's "Agents" view is the reverse. Every other
+  // view carries both, since a team's calendar needs to show its own leader
+  // out. Your own account always counts, so your own request shows on your
+  // calendar whichever view.
+  const leadersOnly = view === "leaders" || (user.role === "supervisor" && view === "cluster");
+  const agentIds = leadersOnly ? [] : calendarIds;
   const leaderVisibleIds = view === "agents" ? [user.id] : [...new Set([user.id, ...leadersOver])];
 
   // Everything overlapping the visible month, for the calendar.
@@ -247,7 +279,7 @@ export default async function PtoPage({
                 ? "Approved and pending leave across your team"
                 : user.role === "supervisor"
                   ? view === "cluster"
-                    ? "Approved and pending leave across your manager's whole cluster"
+                    ? "Approved and pending leave of the team leaders in your manager's cluster"
                     : "Approved and pending leave for your direct reports"
                   : user.role === "manager"
                     ? view === "agents"
@@ -319,7 +351,10 @@ export default async function PtoPage({
                           {r.requestedBy === user.id ? (
                             <span className="text-xs text-muted">Your own request</span>
                           ) : (
-                            <DecisionButtons requestId={r.id} />
+                            <span className="inline-flex flex-wrap items-center gap-2">
+                              <DecisionButtons requestId={r.id} />
+                              <CancelButton requestId={r.id} label="Cancel" />
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -328,6 +363,56 @@ export default async function PtoPage({
                 </table>
               </div>
             )}
+          </Card>
+        )}
+
+        {canDecide && upcoming.length > 0 && (
+          <Card>
+            <CardHeader
+              title="Approved leave ahead"
+              subtitle={`${upcoming.length} approved request${upcoming.length === 1 ? "" : "s"} from today on, for the people you decide for`}
+            />
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b-2 border-ink bg-cream">
+                    <th className={`${HEAD} px-6`}>Employee</th>
+                    <th className={HEAD}>Dates</th>
+                    <th className={HEAD}>Days</th>
+                    <th className={HEAD}>Type</th>
+                    <th className={`${HEAD} px-6`} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {upcoming.map((r) => (
+                    <tr key={r.id} className="border-b-2 border-line last:border-0">
+                      <td className="px-6 py-3 font-medium text-ink">
+                        {displayName(r)}
+                        {r.employeeId === null && (
+                          <span className="ml-2 bg-line px-1.5 py-0.5 text-[10px] font-bold tracking-[0.06em] text-ink uppercase">
+                            Supervisor
+                          </span>
+                        )}
+                        <span className="block font-mono text-[10px] text-muted">{r.code}</span>
+                      </td>
+                      <td className="px-3 py-3 font-mono text-xs text-ink">
+                        {r.startDate}
+                        {r.endDate !== r.startDate && ` → ${r.endDate}`}
+                      </td>
+                      <td className="px-3 py-3 font-mono tabular-nums text-ink">{countDays(r)}</td>
+                      <td className="px-3 py-3 capitalize text-muted">{r.type}</td>
+                      <td className="px-6 py-3">
+                        {r.requestedBy === user.id ? (
+                          <span className="text-xs text-muted">Your own request</span>
+                        ) : (
+                          <CancelButton requestId={r.id} label="Cancel" />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         )}
 

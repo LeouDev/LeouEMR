@@ -51,7 +51,7 @@ vi.mock("@/lib/db/client", () => ({
   },
 }));
 
-const { decidePto } = await import("./actions");
+const { cancelPto, decidePto } = await import("./actions");
 
 const OTHER_TEAM = "11111111-1111-4111-8111-111111111111";
 const MY_TEAM = "22222222-2222-4222-8222-222222222222";
@@ -221,5 +221,58 @@ describe("deciding a leader's own leave", () => {
       error: "Only a supervisor, manager or administrator can decide leave",
     });
     expect(stored.updates).toHaveLength(0);
+  });
+});
+
+/**
+ * Cancelling reaches exactly as far as deciding: the requester withdraws
+ * their own, and a leader cancels only for the people they could approve.
+ */
+describe("cancelling leave", () => {
+  it("lets a supervisor cancel a direct report's approved leave", async () => {
+    stored.request = { ...pendingRequestFor(MY_TEAM), status: "approved" };
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: true });
+    expect(stored.updates).toHaveLength(1);
+    expect(stored.updates[0]).toMatchObject({ status: "cancelled" });
+  });
+
+  it("refuses a request from outside the caller's span", async () => {
+    stored.request = pendingRequestFor(OTHER_TEAM);
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: false, error: "That employee is not in your team" });
+    expect(stored.updates).toHaveLength(0);
+  });
+
+  it("lets a manager cancel a supervisor's own leave in their cluster", async () => {
+    currentUser.value = signedInAs("manager", MANAGER_ID);
+    stored.request = { ...pendingRequestFor(MY_TEAM, REQUESTING_LEADER_ID), employeeId: null };
+    leaderRule.allows = true;
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: true });
+    expect(stored.updates).toHaveLength(1);
+  });
+
+  it("refuses a manager from outside the supervisor's cluster", async () => {
+    currentUser.value = signedInAs("manager", MANAGER_ID);
+    stored.request = { ...pendingRequestFor(MY_TEAM, REQUESTING_LEADER_ID), employeeId: null };
+    leaderRule.allows = false;
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: false, error: "Only their manager can cancel that request" });
+    expect(stored.updates).toHaveLength(0);
+  });
+
+  it("still lets anyone withdraw their own request", async () => {
+    currentUser.value = signedInAs("agent");
+    stored.request = pendingRequestFor(MY_TEAM, currentUser.value.id);
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: true });
+  });
+
+  it("never lets an agent cancel someone else's", async () => {
+    currentUser.value = signedInAs("agent");
+    stored.request = pendingRequestFor(MY_TEAM);
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: false, error: "You can only withdraw your own request" });
+    expect(stored.updates).toHaveLength(0);
+  });
+
+  it("refuses to cancel what is already decided against or withdrawn", async () => {
+    stored.request = { ...pendingRequestFor(MY_TEAM), status: "denied" };
+    expect(await cancelPto(REQUEST_ID)).toEqual({ ok: false, error: "This request was already denied" });
   });
 });

@@ -24,14 +24,14 @@ export function RequestForm() {
   const [type, setType] = useState<(typeof TYPES)[number]["value"]>("vacation");
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState<null | "pending" | "approved">(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setSaved(false);
+    setSaved(null);
 
     // An end date left blank almost always means a single day off.
     // Cleared in a finally: a server action that rejects rather than returning
@@ -47,7 +47,7 @@ export function RequestForm() {
     setBusy(false);
 
     if (result.ok) {
-      setSaved(true);
+      setSaved(result.approved ? "approved" : "pending");
       setStart("");
       setEnd("");
       setReason("");
@@ -92,7 +92,9 @@ export function RequestForm() {
       )}
       {saved && !error && (
         <p role="status" className="border-2 border-pass bg-pass-bg px-4 py-3 text-sm font-semibold text-pass sm:col-span-2">
-          Request submitted. Your supervisor will review it.
+          {saved === "approved"
+            ? "Approved and added to the calendar."
+            : "Request submitted. The leader over you will review it."}
         </p>
       )}
 
@@ -161,8 +163,8 @@ export function DecisionButtons({ requestId }: { requestId: string }) {
   );
 }
 
-/** Withdraw control for the requester's own row. */
-export function CancelButton({ requestId }: { requestId: string }) {
+/** Withdraw control for the requester's own row, or a leader's cancel on someone they decide for. */
+export function CancelButton({ requestId, label = "Withdraw" }: { requestId: string; label?: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +189,7 @@ export function CancelButton({ requestId }: { requestId: string }) {
         }}
         className="border-2 border-ink px-3 py-1 text-xs font-bold tracking-[0.08em] text-ink uppercase transition hover:bg-orange-brand-100 disabled:opacity-40"
       >
-        Withdraw
+        {label}
       </button>
       {error && <span className="text-xs text-fail">{error}</span>}
     </span>
