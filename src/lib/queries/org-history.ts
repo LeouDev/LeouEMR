@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type AnyColumn, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employeeAssignments, employees } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -94,6 +94,23 @@ export function periodOwnerSubquery(period: DateRange) {
     .groupBy(stints.employeeId, stints.supervisorName, stints.managerName, stints.site)
     .as("totals");
 
+  // The EID a supervisor's name carries everywhere else in the history, for
+  // a stint that names them without one — a sheet with a Supervisor column
+  // and no Sup EID column, read last for that week. Every match on a leader
+  // is on the EID, so without this such a stint reached nobody: one
+  // leader's August read 6 agents against the 26 her files named. The
+  // most frequent EID for the exact name string; a name never seen with an
+  // EID stays unresolved.
+  const eidByName = db
+    .select({
+      supervisorName: employeeAssignments.supervisorName,
+      eid: sql<string>`mode() within group (order by ${employeeAssignments.supervisorEid})`.as("eid"),
+    })
+    .from(employeeAssignments)
+    .where(and(isNotNull(employeeAssignments.supervisorName), isNotNull(employeeAssignments.supervisorEid)))
+    .groupBy(employeeAssignments.supervisorName)
+    .as("eid_by_name");
+
   // Everyone whose history reaches the period at all. Someone here with no
   // stint above was closed out before the period started — the only way an
   // interval ends without a newer one taking over is a masterlist recording
@@ -110,7 +127,7 @@ export function periodOwnerSubquery(period: DateRange) {
   return db
     .selectDistinctOn([reached.employeeId], {
       employeeId: reached.employeeId,
-      supervisorEid: totals.supervisorEid,
+      supervisorEid: sql<string | null>`coalesce(${totals.supervisorEid}, ${eidByName.eid})`.as("supervisor_eid"),
       supervisorName: totals.supervisorName,
       managerName: totals.managerName,
       site: totals.site,
@@ -120,6 +137,7 @@ export function periodOwnerSubquery(period: DateRange) {
     })
     .from(reached)
     .leftJoin(totals, eq(totals.employeeId, reached.employeeId))
+    .leftJoin(eidByName, eq(eidByName.supervisorName, totals.supervisorName))
     .orderBy(reached.employeeId, sql`${totals.totalDays} desc nulls last`, totals.earliestStart)
     .as("period_owner");
 }

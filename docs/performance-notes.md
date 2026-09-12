@@ -174,6 +174,18 @@ from every environment this project gets worked on in.
   `captureEmployee`). Agent EIDs are left as they come until the data is
   checked for short ones, since padding them could split an existing
   employee row in two. Historical rows need a one-off `lpad` repair.
+  The real cause of that "6 against 16" was different, though: 20 of her
+  agents' August stints carried her name and no EID at all, because the
+  last sheet read for them (the sheets go Productivity, Quality, NPS,
+  Attendance, Feedback; the last row read wins per agent-week) has a
+  Supervisor column but no Sup EID column. Two fixes: the parser fills a
+  name-only row from any row in the same workbook that names the same
+  supervisor with an EID (`fillSupervisorEids`, unambiguous names only),
+  and `periodOwnerSubquery` resolves a stint's missing EID through
+  `eid_by_name` — the most frequent EID that exact name string carries
+  anywhere in the history — before the employee-row fallback. Historical
+  rows are repaired with the same name lookup (one UPDATE each on
+  `employee_assignments` and `employees`, see the session notes).
 - **The dashboard's period cards follow the period's team.** For a
   leader, everything about the selected period on `/dashboard` — the stat
   cards, the team trend, the by-agent comparison and its open counts —
