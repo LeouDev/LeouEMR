@@ -237,6 +237,15 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **The employee page's skill breakdown is one row per configured skill.**
+  `getEmployeeSkillBreakdown` used to group `skill_facts` by the raw label
+  and only then resolve each group to its reference, so a source file that
+  wrote the same skill two ways across weeks ("Fax" through 1 May, another
+  spelling from 2 May) gave one agent's page two rows both named Fax with
+  the history split between them at the change. `groupSkillFacts` in
+  skill-breakdown.ts (tested) resolves first and keys on the reference
+  code, as the supervisor and MBO roll-ups already did; the ramp override
+  is looked up by the reference code, which every override is keyed under.
 - **A team leader's cluster can be set on their account.** The Users
   page's manager field (`users.manager_name`, kept by `updateUser` for
   supervisor accounts as well as managers; "Manager span / cluster") names
