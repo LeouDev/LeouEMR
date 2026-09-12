@@ -82,8 +82,11 @@ const currentlyAssigned = sql`exists (
  * whoever manages those reports — read off the team rather than stored, since
  * nothing in the source states it directly.
  *
- * Returns null when the person has no reports, which fails closed: nobody can
- * approve their leave until an administrator links them properly.
+ * Someone with no reports on the roster right now — between teams, or not
+ * yet rostered — is answered by the cluster an administrator linked on
+ * their account, the same stand-in the calendar uses; with nothing linked
+ * either this fails closed, and nobody can approve their leave until an
+ * administrator links them.
  */
 export async function managerNameFor(user: CurrentUser): Promise<string | null> {
   if (!user.employeeEid) return null;
@@ -94,9 +97,12 @@ export async function managerNameFor(user: CurrentUser): Promise<string | null> 
     .where(and(eq(employees.supervisorEid, user.employeeEid), currentlyAssigned));
 
   const names = rows.map((r) => r.manager).filter((n): n is string => Boolean(n));
+  if (names.length === 1) return names[0];
+  if (names.length === 0) return user.managerName ?? null;
   // A team split across two managers has no single approver; treat that as
-  // unresolved rather than picking one arbitrarily.
-  return names.length === 1 ? names[0] : null;
+  // unresolved rather than picking one arbitrarily — the link does not
+  // settle a split either, since the roster is speaking.
+  return null;
 }
 
 /** Whether `decider` may approve leave for `requester`, neither having an employee row. */
@@ -132,16 +138,36 @@ export async function decidableLeaderIds(user: CurrentUser): Promise<string[]> {
   if (user.role !== "manager") return [];
 
   const name = user.managerName ?? user.name;
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .innerJoin(employees, eq(employees.supervisorEid, users.employeeEid))
-    .where(and(eq(users.role, "supervisor"), ne(users.id, user.id), currentlyAssigned))
-    .groupBy(users.id)
-    .having(
-      sql`count(distinct ${employees.managerName}) = 1 and max(${employees.managerName}) = ${name}`,
-    );
-  return rows.map((r) => r.id);
+  const [byRoster, byLink] = await Promise.all([
+    db
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(employees, eq(employees.supervisorEid, users.employeeEid))
+      .where(and(eq(users.role, "supervisor"), ne(users.id, user.id), currentlyAssigned))
+      .groupBy(users.id)
+      .having(
+        sql`count(distinct ${employees.managerName}) = 1 and max(${employees.managerName}) = ${name}`,
+      ),
+    // Linked to this manager on the account and with no reports on the
+    // roster right now — the same stand-in managerNameFor uses. A leader
+    // who has reports is answered by the roster alone, whatever the link.
+    db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.role, "supervisor"),
+          ne(users.id, user.id),
+          eq(users.managerName, name),
+          sql`not exists (
+            select 1 from ${employees} as e
+            join ${employeeAssignments} as a on a.employee_id = e.id and a.effective_to is null
+            where e.supervisor_eid = ${users.employeeEid}
+          )`,
+        ),
+      ),
+  ]);
+  return [...new Set([...byRoster, ...byLink].map((r) => r.id))];
 }
 
 /**
@@ -174,9 +200,12 @@ export function majorityName(names: Array<string | null | undefined>): string | 
 async function clusterManagerFor(user: CurrentUser, period: DateRange): Promise<string | null> {
   const team = await reportingScopeIds(user, period);
   // No team this month — between teams, or one not yet on the roster —
-  // does not mean no cluster: they still sit under the manager their
-  // reports last did.
-  if (team.length === 0) return lastKnownManagerFor(user);
+  // does not mean no cluster. An administrator can say which cluster on
+  // the account (the same manager link a manager's account carries);
+  // failing that, they still sit under the manager their reports last did.
+  // Only for a month with no team: once the roster places their reports,
+  // the roster is the record and the link is not consulted.
+  if (team.length === 0) return user.managerName ?? lastKnownManagerFor(user);
 
   const owner = periodOwnerSubquery(period);
   const rows = await db

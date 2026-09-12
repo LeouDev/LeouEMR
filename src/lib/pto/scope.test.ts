@@ -96,6 +96,18 @@ describe("managerNameFor", () => {
     expect(await managerNameFor(user("supervisor"))).toBeNull();
   });
 
+  it("falls back to the cluster linked on the account when the person has no reports", async () => {
+    queue.results = [[]];
+    expect(await managerNameFor(user("supervisor", { managerName: "Comendador, Leou" }))).toBe(
+      "Comendador, Leou",
+    );
+  });
+
+  it("does not let the link settle a team split across two managers", async () => {
+    queue.results = [[{ manager: "Comendador, Leou" }, { manager: "Dela Cruz, Maria" }]];
+    expect(await managerNameFor(user("supervisor", { managerName: "Comendador, Leou" }))).toBeNull();
+  });
+
   it("returns null for an unlinked account without querying", async () => {
     expect(await managerNameFor(user("supervisor", { employeeEid: null }))).toBeNull();
     expect(queue.results).toHaveLength(0);
@@ -121,6 +133,16 @@ describe("canDecideForLeader", () => {
     queue.results = [[]];
     const manager = user("manager", { id: "manager-1", managerName: "Comendador, Leou" });
     expect(await canDecideForLeader(manager, requester)).toBe(false);
+  });
+
+  it("lets the manager linked on a requester's account decide while they have no reports", async () => {
+    queue.results = [[]];
+    const linked = user("supervisor", { id: "supervisor-9", managerName: "Comendador, Leou" });
+    const manager = user("manager", { id: "manager-1", managerName: "Comendador, Leou" });
+    expect(await canDecideForLeader(manager, linked)).toBe(true);
+    expect(await canDecideForLeader(user("manager", { id: "manager-2", managerName: "Alvaro, Cres" }), linked)).toBe(
+      false,
+    );
   });
 
   it("never lets anyone decide their own request", async () => {
@@ -155,10 +177,19 @@ describe("decidableLeaderIds", () => {
   });
 
   it("returns the supervisors under a manager", async () => {
-    queue.results = [[{ id: "supervisor-1" }, { id: "supervisor-2" }]];
+    // Two reads: the roster's answer, then the accounts linked with no reports.
+    queue.results = [[{ id: "supervisor-1" }, { id: "supervisor-2" }], []];
     expect(await decidableLeaderIds(user("manager", { managerName: "Comendador, Leou" }))).toEqual([
       "supervisor-1",
       "supervisor-2",
+    ]);
+  });
+
+  it("adds a leader linked to the manager on their account who has no reports on the roster", async () => {
+    queue.results = [[{ id: "supervisor-1" }], [{ id: "supervisor-9" }, { id: "supervisor-1" }]];
+    expect(await decidableLeaderIds(user("manager", { managerName: "Comendador, Leou" }))).toEqual([
+      "supervisor-1",
+      "supervisor-9",
     ]);
   });
 });
@@ -204,6 +235,25 @@ describe("cluster view", () => {
     reporting.ids = [];
     queue.results = [[]];
     expect(await hasCluster(user("supervisor"), MONTH)).toBe(false);
+  });
+
+  it("takes the cluster linked on the account when there is no team that month", async () => {
+    // No history read at all: the link answers before the history would.
+    reporting.ids = [];
+    queue.results = [];
+    expect(await hasCluster(user("supervisor", { managerName: "Comendador, Leou" }), MONTH)).toBe(true);
+  });
+
+  it("lets the roster outrank the account's link once the month has a team", async () => {
+    // The link stands in only while the roster is silent; with reports on
+    // the roster their manager of record is the cluster, whatever the link says.
+    reporting.ids = ["e1", "e2"];
+    queue.results = [
+      [{ manager: "Tuting, Frederic" }, { manager: "Tuting, Frederic" }],
+      [{ id: "t1" }],
+    ];
+    const ids = await ptoViewIds(user("supervisor", { managerName: "Comendador, Leou" }), "cluster", MONTH);
+    expect(ids).toEqual(["t1"]);
   });
 
   it("offers none to a manager, whose team already is the cluster", async () => {
