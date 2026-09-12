@@ -24,6 +24,31 @@ export function parseDomainList(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Domains anyone can get an address on. Sharing one of these with the
+ * sender says nothing about being a colleague, so the "same domain as the
+ * sender" fallback never applies to them — and listing one in
+ * MAIL_ALLOWED_DOMAINS is refused for the same reason.
+ */
+export const PUBLIC_MAIL_DOMAINS: ReadonlySet<string> = new Set([
+  "gmail.com",
+  "googlemail.com",
+  "yahoo.com",
+  "yahoo.com.ph",
+  "ymail.com",
+  "outlook.com",
+  "hotmail.com",
+  "live.com",
+  "msn.com",
+  "icloud.com",
+  "me.com",
+  "aol.com",
+  "proton.me",
+  "protonmail.com",
+  "mail.com",
+  "zoho.com",
+]);
+
 export function recipientAllowed(
   to: string,
   context: {
@@ -35,7 +60,7 @@ export function recipientAllowed(
   const target = to.trim().toLowerCase();
   if (context.leaderEmails.some((e) => e.trim().toLowerCase() === target)) return true;
   const domain = emailDomain(target);
-  if (domain === null) return false;
+  if (domain === null || PUBLIC_MAIL_DOMAINS.has(domain)) return false;
   if (context.allowedDomains.length > 0) return context.allowedDomains.includes(domain);
   const own = emailDomain(context.senderEmail);
   return own !== null && own === domain;

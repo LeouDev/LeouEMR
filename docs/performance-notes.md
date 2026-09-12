@@ -244,7 +244,9 @@ from every environment this project gets worked on in.
   (`recipientAllowed` in `src/lib/mail/recipients.ts`): the sender's
   current supervisor's or manager's account address always, otherwise
   an address on `MAIL_ALLOWED_DOMAINS`, or with that unset the sender's
-  own domain; at most `EOD_DAILY_LIMIT` (10) sends per account per UTC
+  own domain — public providers (`PUBLIC_MAIL_DOMAINS`: gmail.com and
+  the like) never count as a company domain either way, since accounts
+  here may well be on Gmail; at most `EOD_DAILY_LIMIT` (10) sends per account per UTC
   day, counted off `audit_log` rows `eod.sent` that every send now
   writes; body, text, CSV and attachment name are size- and
   shape-capped. (2) Sign-up: `SIGNUP_EMAIL_DOMAINS` limits new accounts

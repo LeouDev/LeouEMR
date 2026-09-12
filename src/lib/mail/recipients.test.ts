@@ -39,6 +39,18 @@ describe("recipientAllowed", () => {
     expect(recipientAllowed("peer@gmail.com", context)).toBe(false);
   });
 
+  it("never treats a public mail provider as a company domain, even when it is the sender's own or is listed", () => {
+    const gmailSender = "agent@gmail.com";
+    expect(recipientAllowed("anyone@gmail.com", { allowedDomains: [], leaderEmails: [], senderEmail: gmailSender })).toBe(false);
+    expect(
+      recipientAllowed("anyone@gmail.com", { allowedDomains: ["gmail.com"], leaderEmails: [], senderEmail: gmailSender }),
+    ).toBe(false);
+    // The sender's own leader on Gmail is still fine: matched by account, not by domain.
+    expect(
+      recipientAllowed("lead@gmail.com", { allowedDomains: [], leaderEmails: ["lead@gmail.com"], senderEmail: gmailSender }),
+    ).toBe(true);
+  });
+
   it("refuses an address with no domain", () => {
     expect(recipientAllowed("lead", { allowedDomains: [], leaderEmails: [], senderEmail: sender })).toBe(false);
   });
