@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Confirm your account</title>
+<!--[if mso]>
+<style>
+  table { border-collapse: collapse; }
+  .fallback-font { font-family: Arial, sans-serif !important; }
+</style>
+<![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f3f2f2;">
+  <span style="display:none;font-size:1px;color:#f3f2f2;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">Confirm your email address to finish creating your account.</span>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f3f2f2;">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background-color:#f3f2f2;">
+
+          <!-- Header band -->
+          <tr>
+            <td bgcolor="#0b1f3a" style="background-color:#0b1f3a;border:2px solid #201e1d;border-bottom:0;padding:20px 32px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td width="36" valign="middle" style="padding-right:12px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td width="36" height="36" bgcolor="#16335e" style="width:36px;height:36px;border-radius:18px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;color:#f26522;mso-line-height-rule:exactly;line-height:36px;">E</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="middle">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;line-height:20px;font-weight:800;letter-spacing:-0.01em;color:#f5f4f1;mso-line-height-rule:exactly;">EMR</td>
+                      </tr>
+                      <tr>
+                        <td style="padding-top:4px;">
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="140" height="2" bgcolor="#f26522" style="width:140px;height:2px;line-height:2px;font-size:2px;">&nbsp;</td></tr></table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding-top:5px;font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#f5f4f1;mso-line-height-rule:exactly;">Performance Command Center</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Body card -->
+          <tr>
+            <td style="background-color:#ffffff;border:2px solid #201e1d;border-top:0;padding:40px 40px 8px;">
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#c22a10;padding-bottom:12px;mso-line-height-rule:exactly;">
+                    Verify your email
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:26px;line-height:32px;font-weight:700;color:#201e1d;padding-bottom:16px;mso-line-height-rule:exactly;">
+                    Confirm your account
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:24px;color:#201e1d;padding-bottom:28px;mso-line-height-rule:exactly;">
+                    Welcome to Leou EMR. Click the button below to confirm that this email address is yours. Once it is confirmed, an administrator will approve your account and assign your role, and you can sign in with the password you chose. The link works once and expires after an hour.
+                  </td>
+                </tr>
+
+                <!-- Button -->
+                <tr>
+                  <td style="padding-bottom:28px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td bgcolor="#ec3013" style="padding:14px 32px;border:2px solid #201e1d;">
+                          <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup" style="display:block;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ffffff;text-decoration:none;">Confirm email address</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="border-top:2px solid #e2e0dc;padding-top:20px;padding-bottom:28px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#5a574f;mso-line-height-rule:exactly;">
+                    Button not working? Copy and paste this link into your browser:<br>
+                    <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup" style="color:#c22a10;word-break:break-all;">{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup</a>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="border-top:2px solid #e2e0dc;padding-top:20px;padding-bottom:24px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:20px;color:#5a574f;mso-line-height-rule:exactly;">
+                    Didn't create this account? You can ignore this email &mdash; nothing will be activated.
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 8px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#5a574f;mso-line-height-rule:exactly;">
+                    Leou EMR &middot; [company address goes here]<br>
+                    You're receiving this because an account was created with this email address.
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
