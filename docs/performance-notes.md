@@ -162,6 +162,18 @@ from every environment this project gets worked on in.
   rows still pending, never the caller's own, keeps roles as they are, and
   writes one `user.approved` audit row per account — so a filtered list
   approves exactly its own rows.
+- **EIDs are nine digits everywhere, padded on the way in.** Excel keeps
+  an all-digit cell as a number unless the column is text, so the same
+  supervisor arrives as "001305110" from one sheet and 1305110 from
+  another. The roster parser always padded; the weekly parser did not,
+  and every EID match (a team leader's account, the period owner, the
+  roster of record) compares the padded form, so an unpadded Sup EID
+  matched nobody — one team leader's August read 6 agents against 16 in
+  the file. `normalizeEid` in columns.ts pads any 1–9 digit value; the
+  weekly parser uses it for supervisor EIDs (`captureOrgWeek`,
+  `captureEmployee`). Agent EIDs are left as they come until the data is
+  checked for short ones, since padding them could split an existing
+  employee row in two. Historical rows need a one-off `lpad` repair.
 - **The dashboard's period cards follow the period's team.** For a
   leader, everything about the selected period on `/dashboard` — the stat
   cards, the team trend, the by-agent comparison and its open counts —

@@ -123,3 +123,19 @@ export function toText(value: unknown): string | null {
   if (text === "" || text === "-" || text === "--") return null;
   return text;
 }
+
+/**
+ * An EID as the app stores it: nine digits, leading zeros included.
+ *
+ * Excel keeps an all-digit cell as a number unless the column is text, so
+ * the same person arrives as "001305110" from one sheet and 1305110 from
+ * another. Everything that matches people on an EID — a team leader's
+ * account, the roster, the period owner — compares the padded form, so an
+ * unpadded one matches nobody. Anything that is not purely digits is kept
+ * as written.
+ */
+export function normalizeEid(value: unknown): string | null {
+  const text = toText(value);
+  if (text === null) return null;
+  return /^\d{1,9}$/.test(text) ? text.padStart(9, "0") : text;
+}

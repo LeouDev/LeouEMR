@@ -3,6 +3,7 @@ import {
   parseWeekLabel,
   resolveColumns,
   toNumber,
+  normalizeEid,
   toText,
   type HeaderMap,
 } from "./columns";
@@ -287,7 +288,7 @@ function captureEmployee(
       toText(cols.supervisorName ? row[cols.supervisorName] : undefined) ??
       existing?.supervisorName,
     supervisorEid:
-      toText(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? existing?.supervisorEid,
+      normalizeEid(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? existing?.supervisorEid,
     managerName:
       toText(cols.managerName ? row[cols.managerName] : undefined) ?? existing?.managerName,
     site: toText(cols.site ? row[cols.site] : undefined) ?? existing?.site,
@@ -312,7 +313,7 @@ function captureOrgWeek(
   row: Record<string, unknown>,
   cols: HeaderMap,
 ) {
-  const supervisorEid = toText(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? null;
+  const supervisorEid = normalizeEid(cols.supervisorEid ? row[cols.supervisorEid] : undefined) ?? null;
   const supervisorName = toText(cols.supervisorName ? row[cols.supervisorName] : undefined) ?? null;
   const managerName = toText(cols.managerName ? row[cols.managerName] : undefined) ?? null;
   const site = toText(cols.site ? row[cols.site] : undefined) ?? null;

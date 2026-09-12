@@ -163,7 +163,8 @@ describe("aggregateWorkbook", () => {
     expect(result.employees[0]).toMatchObject({
       eid: "1",
       name: "Person A",
-      supervisorEid: "900",
+      // Padded to the nine digits every EID match compares on.
+      supervisorEid: "000000900",
       supervisorName: "Sup One",
       managerName: "Mgr One",
       site: "CEBU",
