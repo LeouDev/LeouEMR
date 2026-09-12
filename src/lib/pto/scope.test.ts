@@ -15,6 +15,19 @@ const perfScope = vi.hoisted(() => ({ ids: [] as string[] }));
 
 vi.mock("@/lib/queries/performance", () => ({ resolveScopedIds: async () => perfScope.ids }));
 
+// The calendar's team for a month comes from the structure of record; the
+// period-owner helpers only need to be embeddable in a query the db mock
+// below swallows, so they are stubs here and tested in org-history's own
+// suite.
+const reporting = vi.hoisted(() => ({ ids: [] as string[] }));
+vi.mock("@/lib/queries/org-history", () => ({
+  reportingScopeIds: async () => reporting.ids,
+  periodOwnerSubquery: () => ({}),
+  joinPeriodOwner: () => ({}),
+  managerOfRecord: () => ({}),
+  supervisorEidOfRecord: () => ({}),
+}));
+
 // Drizzle builders are thenables that chain, so one self-returning proxy
 // stands in for every query shape here. Each awaited query takes the next
 // result set, which is what lets a two-query function be driven precisely.
@@ -34,8 +47,15 @@ vi.mock("@/lib/db/client", () => {
   return { db: builder };
 });
 
-const { canDecideForLeader, decidableLeaderIds, hasCluster, majorityName, managerNameFor, ptoViewIds } =
-  await import("./scope");
+const {
+  calendarViewFor,
+  canDecideForLeader,
+  decidableLeaderIds,
+  hasCluster,
+  majorityName,
+  managerNameFor,
+  ptoViewIds,
+} = await import("./scope");
 
 function user(role: UserRole, overrides: Partial<CurrentUser> = {}): CurrentUser {
   return {
@@ -50,9 +70,12 @@ function user(role: UserRole, overrides: Partial<CurrentUser> = {}): CurrentUser
   };
 }
 
+const MONTH = { start: "2026-08-01", end: "2026-08-31" };
+
 beforeEach(() => {
   queue.results = [];
   perfScope.ids = [];
+  reporting.ids = [];
 });
 
 describe("managerNameFor", () => {
@@ -141,58 +164,68 @@ describe("decidableLeaderIds", () => {
 });
 
 describe("cluster view", () => {
-  // The cluster query is grouped: one row per manager name with its count.
+  // The cluster query returns one row per report with their manager of
+  // record for the month.
   it("offers a cluster only to a supervisor whose manager resolves", async () => {
-    queue.results = [[{ manager: "Comendador, Leou", n: 4 }]];
-    expect(await hasCluster(user("supervisor"))).toBe(true);
+    reporting.ids = ["e1", "e2"];
+    queue.results = [[{ manager: "Comendador, Leou" }, { manager: "Comendador, Leou" }]];
+    expect(await hasCluster(user("supervisor"), MONTH)).toBe(true);
   });
 
-  it("keeps the cluster when one report's row still names another manager", async () => {
+  it("keeps the cluster when one report's row names another manager", async () => {
     // A roster miss or a name written two ways must not take the view away.
+    reporting.ids = ["e1", "e2", "e3", "e4"];
     queue.results = [
       [
-        { manager: "Comendador, Leou", n: 3 },
-        { manager: "Alvaro, Cres", n: 1 },
+        { manager: "Comendador, Leou" },
+        { manager: "Comendador, Leou" },
+        { manager: "Comendador, Leou" },
+        { manager: "Alvaro, Cres" },
       ],
     ];
-    expect(await hasCluster(user("supervisor"))).toBe(true);
+    expect(await hasCluster(user("supervisor"), MONTH)).toBe(true);
   });
 
   it("offers none on a genuine even split between two managers", async () => {
-    queue.results = [
-      [
-        { manager: "Comendador, Leou", n: 2 },
-        { manager: "Alvaro, Cres", n: 2 },
-      ],
-    ];
-    expect(await hasCluster(user("supervisor"))).toBe(false);
+    reporting.ids = ["e1", "e2"];
+    queue.results = [[{ manager: "Comendador, Leou" }, { manager: "Alvaro, Cres" }]];
+    expect(await hasCluster(user("supervisor"), MONTH)).toBe(false);
+  });
+
+  it("offers none to a supervisor with no team in that month", async () => {
+    // Nothing is queried: no team, no cluster.
+    reporting.ids = [];
+    expect(await hasCluster(user("supervisor"), MONTH)).toBe(false);
   });
 
   it("offers none to a manager, whose team already is the cluster", async () => {
-    expect(await hasCluster(user("manager"))).toBe(false);
+    expect(await hasCluster(user("manager"), MONTH)).toBe(false);
   });
 
-  it("widens a supervisor's calendar to the manager's whole span", async () => {
-    queue.results = [[{ manager: "Comendador, Leou", n: 4 }], [{ id: "e1" }, { id: "e2" }]];
-    expect(await ptoViewIds(user("supervisor"), "cluster")).toEqual(["e1", "e2"]);
+  it("widens a supervisor's calendar to the manager's whole span for the month", async () => {
+    reporting.ids = ["e1"];
+    queue.results = [[{ manager: "Comendador, Leou" }], [{ id: "e1" }, { id: "e2" }]];
+    expect(await ptoViewIds(user("supervisor"), "cluster", MONTH)).toEqual(["e1", "e2"]);
   });
 
-  it("keeps the team view at the supervisor's own reports", async () => {
-    perfScope.ids = ["e1"];
-    expect(await ptoViewIds(user("supervisor"), "team")).toEqual(["e1"]);
+  it("keeps the team view at the supervisor's reports for the month, not today's", async () => {
+    reporting.ids = ["june-report"];
+    perfScope.ids = ["todays-report"];
+    expect(await ptoViewIds(user("supervisor"), "team", MONTH)).toEqual(["june-report"]);
   });
 
   it("falls back to the team when the manager cannot be resolved", async () => {
     // Fail closed: an unresolvable manager must not widen the calendar.
-    queue.results = [[]];
-    perfScope.ids = ["e1"];
-    expect(await ptoViewIds(user("supervisor"), "cluster")).toEqual(["e1"]);
+    reporting.ids = ["e1", "e2"];
+    queue.results = [[{ manager: "Comendador, Leou" }, { manager: "Alvaro, Cres" }]];
+    expect(await ptoViewIds(user("supervisor"), "cluster", MONTH)).toEqual(["e1", "e2"]);
   });
 
-  it("ignores the cluster view for an agent", async () => {
+  it("keeps an agent on their team now, whichever view is asked for", async () => {
     perfScope.ids = ["should-not-be-used"];
+    reporting.ids = ["should-not-be-used-either"];
     queue.results = [[{ id: "self", supervisorEid: "S1" }], [{ id: "teammate" }]];
-    expect(await ptoViewIds(user("agent"), "cluster")).toEqual(["teammate"]);
+    expect(await ptoViewIds(user("agent"), "cluster", MONTH)).toEqual(["teammate"]);
   });
 });
 
@@ -218,5 +251,26 @@ describe("majorityName", () => {
   it("resolves to nobody with no names at all", () => {
     expect(majorityName([])).toBeNull();
     expect(majorityName([null, null])).toBeNull();
+  });
+});
+
+describe("calendarViewFor", () => {
+  it("lets a manager pick everyone, agents or team leaders, defaulting to everyone", () => {
+    expect(calendarViewFor("manager", undefined)).toBe("everyone");
+    expect(calendarViewFor("manager", "agents")).toBe("agents");
+    expect(calendarViewFor("manager", "leaders")).toBe("leaders");
+    // A supervisor's view names mean nothing to a manager.
+    expect(calendarViewFor("manager", "cluster")).toBe("everyone");
+  });
+
+  it("lets a supervisor pick their team or their cluster, defaulting to the team", () => {
+    expect(calendarViewFor("supervisor", undefined)).toBe("team");
+    expect(calendarViewFor("supervisor", "cluster")).toBe("cluster");
+    expect(calendarViewFor("supervisor", "leaders")).toBe("team");
+  });
+
+  it("keeps an agent and an administrator on the one view they have", () => {
+    expect(calendarViewFor("agent", "cluster")).toBe("team");
+    expect(calendarViewFor("admin", "leaders")).toBe("team");
   });
 });
