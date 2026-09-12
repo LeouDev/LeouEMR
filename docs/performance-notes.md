@@ -282,12 +282,23 @@ from every environment this project gets worked on in.
   leaked-password check, MFA), a limited database role and backups are
   operator steps outside the code; the domain lists stay unset until the
   administrator names the company domains. Done on 12 Sep after the merge
-  (production 19:44 UTC): a dedicated Gmail account is the sender for
-  both the end-of-day report (Vercel `EOD_SMTP_*`) and Supabase Auth's
-  own emails (custom SMTP on, send limit raised to 30/h; sign-in and
-  token-refresh limits raised for a floor that shares one IP). Still
-  open: password length and leaked-password protection in Supabase Auth,
-  MFA, the limited database role, the weekly backup.
+  (production 19:44 UTC): a dedicated Gmail account is the sender
+  identity for both the end-of-day report (Vercel `EOD_SMTP_*`) and
+  Supabase Auth's own emails (custom SMTP on, send limit raised to 30/h;
+  sign-in and token-refresh limits raised for a floor that shares one
+  IP). Gmail itself refused SMTP from Supabase's servers for the
+  brand-new account (534 "log in with your web browser", and Google has
+  retired the DisplayUnlockCaptcha override), so the mail server is
+  Brevo's free relay (300/day, adds a small Brevo line to each email):
+  host `smtp-relay.brevo.com`, port 587, login is the generated
+  `…@smtp-brevo.com` address on Brevo's SMTP tab (not the account
+  email; 535 otherwise), password an `xsmtpsib-` SMTP key, and Brevo's
+  Security → Authorized IPs restriction deactivated for SMTP keys (525
+  "Unauthorized IP address" otherwise). The Gmail address is the
+  verified Brevo sender. First successful reset email 12 Sep 20:39 UTC.
+  Supabase Auth: minimum password 12 with letters and digits
+  (leaked-password protection is Pro-only). Still open: MFA, the
+  limited database role, the weekly backup.
 - **An episode's opening week counts as a recorded failure, row or no
   row.** The Sep 10 fix (`loadFoldedResults`) stopped a re-import from
   opening a second episode for a failure a closed episode had recorded,
