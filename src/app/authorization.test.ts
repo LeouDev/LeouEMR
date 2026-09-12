@@ -33,7 +33,7 @@ vi.mock("@/lib/db/client", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 const { updateSkillTarget } = await import("./(shell)/skills/actions");
-const { approvePendingUsers, updateUser } = await import("./(shell)/users/actions");
+const { approvePendingUsers, resetMfa, updateUser } = await import("./(shell)/users/actions");
 const { createUploadTicket, previewImport, runImport } = await import("./(shell)/import/actions");
 const { addRcaNote } = await import("./(shell)/action-items/actions");
 
@@ -80,6 +80,11 @@ describe("admin-only mutations", () => {
         status: "active",
       });
       expect(result).toEqual({ ok: false, error: "Only administrators can manage users" });
+    });
+
+    it("cannot reset someone's authenticator", async () => {
+      const result = await resetMfa({ userId: "22222222-2222-4222-8222-222222222222" });
+      expect(result).toEqual({ ok: false, error: "Only administrators can reset an authenticator" });
     });
 
     it("cannot approve pending accounts in bulk", async () => {

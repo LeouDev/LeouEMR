@@ -27,6 +27,7 @@
     "migrate:0039": "tsx --env-file=.env.local scripts/apply-0039.mts",
     "age-out": "tsx --env-file=.env.local scripts/age-out-issues.mts",
     "close-separated": "tsx --env-file=.env.local scripts/close-separated-issues.mts",
+    "sync:auth-roles": "tsx --env-file=.env.local scripts/sync-auth-roles.mts",
     "reset:imports": "tsx --env-file=.env.local scripts/reset-imported-data.mts"
   },
   "dependencies": {
