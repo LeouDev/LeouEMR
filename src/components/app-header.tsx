@@ -195,6 +195,14 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
               )}
             </Link>
 
+            <Link
+              href="/mfa"
+              prefetch={false}
+              className="border-2 border-navy-500 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cream uppercase transition hover:border-orange-brand hover:text-orange-brand"
+            >
+              Security
+            </Link>
+
             <SignOutButton />
           </div>
         </div>

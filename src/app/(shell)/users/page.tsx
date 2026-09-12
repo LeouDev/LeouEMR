@@ -55,16 +55,30 @@ export default async function UsersPage({
     .leftJoin(employees, eq(employees.eid, users.employeeEid))
     .orderBy(desc(users.status), asc(users.name));
 
+  // Who has paired an authenticator, straight from Supabase Auth's factor
+  // table: one read for the whole page rather than one admin call per row.
+  // Null if the read fails (a project where the role cannot see the auth
+  // schema): the column then says so rather than showing everyone unpaired.
+  const mfaQuery: Promise<Array<{ user_id: string; verified: boolean }> | null> = db
+    .execute(
+      sql`select user_id, bool_or(status = 'verified') as verified from auth.mfa_factors where factor_type = 'totp' group by user_id`,
+    )
+    .then((rows) => rows as unknown as Array<{ user_id: string; verified: boolean }>)
+    .catch(() => null);
+
   // The names a manager's span can be linked to are exactly those present in
   // the imported data — offering free text would just recreate the typo that
   // made a span silently empty.
-  const [rows, managerRows] = await Promise.all([
+  const [accountRows, managerRows, mfaRows] = await Promise.all([
     rowsQuery,
     db
       .selectDistinct({ name: employees.managerName })
       .from(employees)
       .where(isNotNull(employees.managerName)),
+    mfaQuery,
   ]);
+  const enrolled = mfaRows === null ? null : new Set(mfaRows.filter((r) => r.verified).map((r) => r.user_id));
+  const rows = accountRows.map((row) => ({ ...row, mfaEnrolled: enrolled === null ? null : enrolled.has(row.id) }));
   const managerNames = managerRows
     .map((r) => r.name)
     .filter((n): n is string => Boolean(n))

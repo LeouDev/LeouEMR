@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { updateUser } from "./actions";
+import { ResetMfaButton } from "./reset-mfa-button";
+import { mfaRequiredFor } from "@/lib/auth/mfa";
 import { describeActionError } from "@/lib/ui/action-error";
 
 export interface UserRow {
@@ -16,6 +18,8 @@ export interface UserRow {
   signedUpAs: string | null;
   /** Null when unlinked; whether `employeeEid` resolves to a real roster row otherwise. */
   eidMatches: boolean | null;
+  /** Whether an authenticator app is paired with the account (see src/lib/auth/mfa.ts); null when unknown. */
+  mfaEnrolled: boolean | null;
 }
 
 const ROLES = ["admin", "manager", "supervisor", "agent"] as const;
@@ -57,6 +61,7 @@ export function UserTable({
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee ID</th>
             <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Manager span / cluster</th>
+            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Authenticator</th>
             <th className="px-6 py-2.5 font-semibold text-ink">Save</th>
           </tr>
         </thead>
@@ -215,6 +220,9 @@ function UserRowEditor({
           <span className="text-xs text-muted">—</span>
         )}
       </td>
+      <td className="px-3 py-2">
+        <MfaCell user={user} role={role} />
+      </td>
       <td className="px-6 py-2">
         {isSelf ? (
           <span className="text-xs text-muted">Your account</span>
@@ -230,5 +238,27 @@ function UserRowEditor({
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * Paired, or not — and for a role that must pair, "not" is the thing an
+ * administrator needs to see. The reset removes the pairing so someone with
+ * a new phone can pair again; it is offered only where there is one.
+ */
+function MfaCell({ user, role }: { user: UserRow; role: UserRow["role"] }) {
+  if (user.mfaEnrolled === null) return <span className="text-xs text-muted">Unavailable</span>;
+  if (user.mfaEnrolled) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold text-pass">Paired</span>
+        <ResetMfaButton userId={user.id} name={user.name} />
+      </div>
+    );
+  }
+  return (
+    <span className={`text-xs ${mfaRequiredFor(role) ? "font-semibold text-warn" : "text-muted"}`}>
+      {mfaRequiredFor(role) ? "Not paired — required" : "—"}
+    </span>
   );
 }

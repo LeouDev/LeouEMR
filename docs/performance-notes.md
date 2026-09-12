@@ -237,6 +237,29 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Second step at sign-in (authenticator app), feature branch 12 Sep.**
+  Supabase Auth TOTP (free plan; must be enabled under Authentication >
+  Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager
+  and supervisor sessions must carry assurance level `aal2`; agents may
+  enrol. Enforced three ways that agree: the middleware redirects to
+  `/mfa` from the token alone (`aal` claim + `app_metadata.role`, which
+  `updateUser` copies on every role save and `npm run sync:auth-roles`
+  copies for existing accounts — without the claim the middleware does
+  nothing and the next two layers hold); the shell layout redirects from
+  the users table's role and the `x-session-aal` header the middleware
+  sets; and `getCurrentUser` returns null for a *server action* request
+  (`x-request-kind: action`, from the `Next-Action` header) whose session
+  owes the step, so a password-only session cannot act even by calling
+  actions directly. Pages that get someone to the step are exempt
+  (`MFA_EXEMPT_PREFIXES`: /mfa, /login, /auth, /pending,
+  /reset-password). `MFA_GRACE_UNTIL=YYYY-MM-DD` turns "enrol" into a
+  reminder banner until that date. `/mfa` (src/app/mfa) does enrol,
+  challenge and verify in the browser client, clearing a half-finished
+  enrolment first; the header's Security link reaches it. The Users page
+  reads `auth.mfa_factors` in one query for the Authenticator column and
+  offers `resetMfa` (admin client `auth.admin.mfa.deleteFactor`, audit
+  `user.mfa_reset`) for a lost phone. Sign-out is the browser client, so
+  a session stuck at the code prompt can always sign out.
 - **Email links land on a button, not an automatic exchange (12 Sep).**
   `/auth/confirm` was a route handler that spent the one-time token on
   GET. Corporate mail security (the team is on Optum mail) opens every

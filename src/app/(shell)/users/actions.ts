@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, users } from "@/lib/db/schema";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type UserActionResult = { ok: true } | { ok: false; error: string };
 
@@ -73,6 +74,7 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
     .update(users)
     .set({ role: parsed.data.role, status: parsed.data.status, employeeEid, managerName })
     .where(eq(users.id, parsed.data.userId));
+  await recordRoleInToken(parsed.data.userId, parsed.data.role);
 
   await db.insert(auditLog).values({
     actorId: actor.id,
@@ -145,4 +147,61 @@ export async function approvePendingUsers(
 
   revalidatePath("/users");
   return { ok: true, approved: approved.length };
+}
+
+/**
+ * Copies the role into the account's auth metadata, where it rides in the
+ * session token: that is how the middleware knows, without a database
+ * round trip, whether this session must have taken its second step (see
+ * src/lib/auth/mfa.ts). Best effort — the shell layout and getCurrentUser
+ * apply the same rule from the users table, so a missed copy only costs
+ * the fast path, never the enforcement. `npm run sync:auth-roles` copies
+ * every account at once.
+ */
+async function recordRoleInToken(userId: string, role: string): Promise<void> {
+  try {
+    await createSupabaseAdminClient().auth.admin.updateUserById(userId, { app_metadata: { role } });
+  } catch {
+    // see above
+  }
+}
+
+const resetMfaSchema = z.object({ userId: z.string().uuid() });
+
+/**
+ * Removes someone's authenticator so they can pair a new one — the way
+ * back in after a lost or replaced phone. Their next sign-in shows the
+ * pairing screen again; until then a required role cannot get past it,
+ * which is the point of the second step.
+ */
+export async function resetMfa(input: unknown): Promise<UserActionResult> {
+  const actor = await getCurrentUser();
+  if (!actor || actor.status !== "active") return { ok: false, error: "Not signed in" };
+  if (actor.role !== "admin") return { ok: false, error: "Only administrators can reset an authenticator" };
+
+  const parsed = resetMfaSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Invalid input" };
+
+  const [target] = await db.select().from(users).where(eq(users.id, parsed.data.userId)).limit(1);
+  if (!target) return { ok: false, error: "User not found" };
+
+  const admin = createSupabaseAdminClient();
+  const { data, error } = await admin.auth.admin.mfa.listFactors({ userId: target.id });
+  if (error) return { ok: false, error: `Could not read their authenticator: ${error.message}` };
+  for (const factor of data?.factors ?? []) {
+    const { error: deleteError } = await admin.auth.admin.mfa.deleteFactor({ id: factor.id, userId: target.id });
+    if (deleteError) return { ok: false, error: `Could not remove their authenticator: ${deleteError.message}` };
+  }
+
+  await db.insert(auditLog).values({
+    actorId: actor.id,
+    action: "user.mfa_reset",
+    entityType: "user",
+    entityId: target.id,
+    before: { factors: (data?.factors ?? []).length },
+    after: { factors: 0 },
+  });
+
+  revalidatePath("/users");
+  return { ok: true };
 }

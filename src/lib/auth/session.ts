@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { cache } from "react";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
+import { graceUntilSetting, mfaDecision, todayUtc, type AssuranceLevel } from "./mfa";
 
 export type UserRole = "admin" | "manager" | "supervisor" | "agent";
 export type UserStatus = "active" | "pending" | "disabled";
@@ -51,11 +52,37 @@ export interface CurrentUser {
  * it. The cache is per-request, so it cannot leak one user's identity into
  * another's render.
  */
+export interface SessionAssurance {
+  /** What the session has proved: a password alone, or a password and an authenticator code. */
+  aal: AssuranceLevel;
+  /** Whether this request is a server action rather than a page render. */
+  isAction: boolean;
+}
+
+/** What the middleware verified about this request's session — see middleware.ts. */
+export const sessionAssurance = cache(async function sessionAssurance(): Promise<SessionAssurance> {
+  const headerList = await headers();
+  return {
+    aal: headerList.get("x-session-aal") === "aal2" ? "aal2" : "aal1",
+    isAction: headerList.get("x-request-kind") === "action",
+  };
+});
+
 export const getCurrentUser = cache(async function getCurrentUser(): Promise<CurrentUser | null> {
   const headerList = await headers();
   const userId = headerList.get("x-user-id");
   if (!userId) return null;
 
   const [record] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  return record ?? null;
+  if (!record) return null;
+
+  // A role that owes its second step may render the pages that get it
+  // there (the shell layout sends it to /mfa), but must not act: every
+  // server action starts here, so a password-only session calling one
+  // directly is refused as if signed out.
+  const { aal, isAction } = await sessionAssurance();
+  if (isAction && mfaDecision({ role: record.role, aal, today: todayUtc(), graceUntil: graceUntilSetting() }) === "enrol") {
+    return null;
+  }
+  return record;
 });
