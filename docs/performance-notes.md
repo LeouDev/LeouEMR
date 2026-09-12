@@ -324,6 +324,24 @@ from every environment this project gets worked on in.
   if the relay still says "already exists" (a factor written between
   the list and the enrol). The admin Reset on the Users page was never
   affected: it lists through the admin API, which returns every factor.
+- **201 file: search, filters, and twenty rows at a time (feature branch,
+  13 Sep).** The page used to render every registered report in one
+  table. It now hands the whole scope (registered or not, with the
+  employee's standing) to a client component, `PersonnelTable`
+  (`201-file/personnel-table.tsx`), which filters in the browser as you
+  type — nothing goes back to the server. Rules in
+  `src/lib/201-file/filter.ts` (tested): the search matches every term
+  against the roster name, the profile name, EID, MSID, email, phone and
+  position, folding case, accents and punctuation; selects for team
+  leader and site appear only when the scope has more than one; Standing
+  (active, on leave, separated); and Show (Registered — the default and
+  what the page always showed — Not yet registered, Everyone), so a
+  leader can finally list who has not signed up. `PAGE_SIZE` (20) rows
+  render first; an IntersectionObserver on a footer sentinel adds twenty
+  more as the reader nears the end, with a "Show N more" button as the
+  fallback. Any filter change starts the list over at twenty. An
+  unregistered row shows the roster name and EID and one italic note
+  across the other columns.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager
