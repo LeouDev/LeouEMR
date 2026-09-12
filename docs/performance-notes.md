@@ -212,6 +212,26 @@ from every environment this project gets worked on in.
   statements for the whole batch, inside the commit transaction), and
   marks anyone it lists again after an earlier closure `active`. People on
   leave are left on leave.
+- **The leave calendar shows the team as it stood in the viewed month.**
+  `ptoViewIds(user, view, period)`, `hasCluster(user, period)` and
+  `leaderAccountsOver(ids, period)` in `src/lib/pto/scope.ts` all take the
+  calendar's month and resolve people through the structure of record
+  (`reportingScopeIds`, `periodOwnerSubquery`), the same rule as the
+  dashboard's period cards. A team leader whose team has since moved on
+  still sees June's leave on June's calendar, and the "My team / My
+  cluster" switch follows the month's team. Who a leader may *decide* for
+  (`decidableIds`, `decidableLeaderIds`) stays on the current structure —
+  a wider or older view never widens authority. Agents and admins keep
+  their current-team calendar.
+- **A manager's leave calendar has three views.** `/pto?view=` for a
+  manager is `everyone` (default), `agents` (the span's agents only) or
+  `leaders` (the team leaders' own leave only); a supervisor keeps `team`
+  and `cluster`. `calendarViewFor(role, requested)` in
+  `src/lib/pto/scope.ts` is the one resolver, and `ViewPicker` takes its
+  tabs (`MANAGER_TABS` / `SUPERVISOR_TABS`). The split is done on the
+  calendar read only: `agentIds` is emptied for the leaders view and
+  `leaderVisibleIds` reduced to the viewer for the agents view; the
+  pending queue below is unchanged.
 - **Time Off cluster view uses the majority manager.** The "My team / My
   cluster" switch on `/pto` is offered to a supervisor whose reports mostly
   sit under one manager (`clusterManagerFor` → `majorityName` in

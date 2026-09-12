@@ -3,6 +3,14 @@ import { db } from "@/lib/db/client";
 import { employeeAssignments, employees, users } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { resolveScopedIds } from "@/lib/queries/performance";
+import {
+  type DateRange,
+  joinPeriodOwner,
+  managerOfRecord,
+  periodOwnerSubquery,
+  reportingScopeIds,
+  supervisorEidOfRecord,
+} from "@/lib/queries/org-history";
 
 /**
  * Who a viewer can see leave for.
@@ -152,70 +160,109 @@ export function majorityName(names: Array<string | null | undefined>): string | 
 }
 
 /**
- * The manager whose cluster a supervisor belongs to, for the calendar: the
- * manager most of their reports sit under.
+ * The manager whose cluster a supervisor belongs to, for the calendar of one
+ * month: the manager most of the supervisor's reports for that month sat
+ * under, by the structure of record (see periodOwnerSubquery).
  *
  * Looser than `managerNameFor` on purpose. That one decides who may approve
  * the supervisor's own leave, where a team split across two managers rightly
  * has no single approver. This only decides which people the supervisor may
- * *see* out, and one current report whose row names another manager — a
- * roster miss, a name written two ways — should not take the whole cluster
- * view away. A genuine even split still resolves to nobody.
+ * *see* out, and one report whose row names another manager — a roster
+ * miss, a name written two ways — should not take the whole cluster view
+ * away. A genuine even split still resolves to nobody.
  */
-async function clusterManagerFor(user: CurrentUser): Promise<string | null> {
-  if (!user.employeeEid) return null;
+async function clusterManagerFor(user: CurrentUser, period: DateRange): Promise<string | null> {
+  const team = await reportingScopeIds(user, period);
+  if (team.length === 0) return null;
 
+  const owner = periodOwnerSubquery(period);
   const rows = await db
-    .select({ manager: employees.managerName, n: sql<number>`count(*)::int` })
+    .select({ manager: managerOfRecord(owner) })
     .from(employees)
-    .where(and(eq(employees.supervisorEid, user.employeeEid), currentlyAssigned))
-    .groupBy(employees.managerName);
-
-  return majorityName(rows.flatMap((r) => Array<string | null>(r.n).fill(r.manager)));
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .where(inArray(employees.id, team));
+  return majorityName(rows.map((r) => r.manager));
 }
 
 /** Which slice of the organization a leave calendar is showing. */
 export type PtoView = "team" | "cluster";
 
 /**
- * Whether this user has a cluster distinct from their own team.
+ * Every calendar view, across roles. A supervisor chooses between their
+ * direct reports and their manager's whole cluster; a manager, whose span
+ * already is the cluster, chooses instead between everyone in it, the agents
+ * alone, or the team leaders alone — the two kinds of leave they decide are
+ * read differently (cover for a floor, cover for a team), so each gets a
+ * calendar of its own.
+ */
+export type CalendarView = PtoView | "everyone" | "agents" | "leaders";
+
+const MANAGER_VIEWS: readonly CalendarView[] = ["everyone", "agents", "leaders"];
+const SUPERVISOR_VIEWS: readonly CalendarView[] = ["team", "cluster"];
+
+/** The view a role may ask for, falling back to its default for anything else. */
+export function calendarViewFor(role: CurrentUser["role"], requested: string | undefined): CalendarView {
+  const allowed: readonly CalendarView[] =
+    role === "manager" ? MANAGER_VIEWS : role === "supervisor" ? SUPERVISOR_VIEWS : ["team"];
+  return allowed.includes(requested as CalendarView) ? (requested as CalendarView) : allowed[0];
+}
+
+/**
+ * Whether this user has a cluster distinct from their own team for the
+ * month being viewed.
  *
  * Only supervisors do: their team is their direct reports, their cluster is
  * everyone under the same manager. A manager's team already *is* the cluster,
  * and an agent is deliberately kept to their own team.
  */
-export async function hasCluster(user: CurrentUser): Promise<boolean> {
-  return user.role === "supervisor" && (await clusterManagerFor(user)) !== null;
+export async function hasCluster(user: CurrentUser, period: DateRange): Promise<boolean> {
+  return user.role === "supervisor" && (await clusterManagerFor(user, period)) !== null;
 }
 
-/** Employee ids visible in the chosen view, defaulting to the user's own team. */
-export async function ptoViewIds(user: CurrentUser, view: PtoView): Promise<string[]> {
-  if (view === "team" || user.role !== "supervisor") return ptoScopeIds(user);
+/**
+ * Employee ids visible on the calendar for one month, in the chosen view.
+ *
+ * A leader's calendar for a month shows the team as it stood that month, by
+ * the structure of record — the same rule the dashboard follows — not who
+ * reports to them today. A team leader whose team has since moved on still
+ * sees June's leave on June's calendar; one whose team arrived in September
+ * does not see them on June's. Who a leader may *decide* for is a separate
+ * question and stays on the current structure. An agent's calendar is their
+ * team now, since that is who they arrange cover with.
+ */
+export async function ptoViewIds(user: CurrentUser, view: PtoView, period: DateRange): Promise<string[]> {
+  if (user.role === "agent" || user.role === "admin") return ptoScopeIds(user);
+  if (view === "team" || user.role !== "supervisor") return reportingScopeIds(user, period);
 
-  const manager = await clusterManagerFor(user);
-  if (manager === null) return ptoScopeIds(user);
+  const manager = await clusterManagerFor(user, period);
+  if (manager === null) return reportingScopeIds(user, period);
 
+  const owner = periodOwnerSubquery(period);
   const rows = await db
     .select({ id: employees.id })
     .from(employees)
-    .where(eq(employees.managerName, manager));
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .where(eq(managerOfRecord(owner), manager));
   return rows.map((r) => r.id);
 }
 
 /**
- * Accounts belonging to the supervisors of a set of employees.
+ * Accounts belonging to the supervisors of a set of employees, as of one
+ * month — whoever led them then, by the structure of record.
  *
  * A supervisor has no employee row, so their own leave would otherwise be
  * invisible on the calendar of the team it affects — which is exactly the
  * team that needs to know their supervisor is out.
  */
-export async function leaderAccountsOver(employeeIds: string[]): Promise<string[]> {
+export async function leaderAccountsOver(employeeIds: string[], period: DateRange): Promise<string[]> {
   if (employeeIds.length === 0) return [];
 
+  const owner = periodOwnerSubquery(period);
   const rows = await db
     .selectDistinct({ id: users.id })
-    .from(users)
-    .innerJoin(employees, eq(employees.supervisorEid, users.employeeEid))
+    .from(employees)
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .innerJoin(users, eq(users.employeeEid, supervisorEidOfRecord(owner)))
     .where(inArray(employees.id, employeeIds));
   return rows.map((r) => r.id);
 }

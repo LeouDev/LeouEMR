@@ -1,21 +1,45 @@
 import { NavLink } from "@/components/nav-link";
+import type { CalendarView } from "@/lib/pto/scope";
 
-const TABS = [
+export interface ViewTab {
+  key: CalendarView;
+  label: string;
+}
+
+/** A supervisor's choice: their own reports, or the whole cluster under their manager. */
+export const SUPERVISOR_TABS: readonly ViewTab[] = [
   { key: "team", label: "My team" },
   { key: "cluster", label: "My cluster" },
-] as const;
+];
 
 /**
- * Switches the calendar between a supervisor's own reports and the whole
- * cluster under their manager.
- *
- * Only rendered when the two differ — a manager's team already is the
- * cluster, so offering the choice there would just be two identical views.
+ * A manager's choice. Their span already is the cluster, so the split that
+ * helps them is by kind of person: the agents' leave (cover for a floor) and
+ * the team leaders' own leave (cover for a team) read differently.
  */
-export function ViewPicker({ month, view }: { month: string; view: "team" | "cluster" }) {
+export const MANAGER_TABS: readonly ViewTab[] = [
+  { key: "everyone", label: "Everyone" },
+  { key: "agents", label: "Agents" },
+  { key: "leaders", label: "Team leaders" },
+];
+
+/**
+ * Switches the calendar between the views a role has. Only rendered when
+ * there is more than one — an agent's team is all they have, and a
+ * supervisor without a resolvable cluster has only their team.
+ */
+export function ViewPicker({
+  month,
+  view,
+  tabs,
+}: {
+  month: string;
+  view: CalendarView;
+  tabs: readonly ViewTab[];
+}) {
   return (
     <div className="flex border-2 border-ink">
-      {TABS.map((tab, i) => (
+      {tabs.map((tab, i) => (
         <NavLink
           key={tab.key}
           href={`/pto?${new URLSearchParams({ month, view: tab.key })}`}

@@ -6,6 +6,7 @@ import { db } from "@/lib/db/client";
 import { employees, ptoRequests, users } from "@/lib/db/schema";
 import { resolveScopedIds } from "@/lib/queries/performance";
 import {
+  calendarViewFor,
   canSeeLeaveType,
   decidableLeaderIds,
   hasCluster,
@@ -15,7 +16,7 @@ import {
 import { separatedBefore } from "@/lib/queries/eligibility";
 import { countDays, daysIn } from "@/lib/pto/rules";
 import { CancelButton, DecisionButtons, RequestForm } from "./pto-forms";
-import { ViewPicker } from "./view-picker";
+import { MANAGER_TABS, SUPERVISOR_TABS, ViewPicker } from "./view-picker";
 import { PtoCalendar } from "./calendar";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -63,7 +64,7 @@ export default async function PtoPage({
   const params = await searchParams;
   const canDecide = user.role !== "agent";
   const showType = canSeeLeaveType(user);
-  const view = params.view === "cluster" ? "cluster" : "team";
+  const view = calendarViewFor(user.role, params.view);
 
   // Calendar month, defaulting to the current one.
   const today = new Date().toISOString().slice(0, 10);
@@ -88,11 +89,16 @@ export default async function PtoPage({
   // the pending queue, then your history), most of which never depended on
   // the one before. Nothing here fans out beyond a handful of small
   // queries at once, well inside the db client's pool.
+  // The calendar shows the team as it stood in the month being viewed, by
+  // the structure of record — the same rule the dashboard follows. Who the
+  // viewer may decide for (decidableIds, leaderIds) stays on the current
+  // structure: a wider or older view must never widen authority.
+  const monthPeriod = { start: monthStart, end: monthEnd };
   const [viewIds, decidableIds, leaderIds, clusterAvailable, [ownEmployee], gone] = await Promise.all([
-    ptoViewIds(user, view),
+    ptoViewIds(user, view === "cluster" ? "cluster" : "team", monthPeriod),
     canDecide ? resolveScopedIds(user) : Promise.resolve([]),
     canDecide ? decidableLeaderIds(user) : Promise.resolve([]),
-    hasCluster(user),
+    hasCluster(user, monthPeriod),
     user.employeeEid
       ? db.select({ id: employees.id }).from(employees).where(eq(employees.eid, user.employeeEid)).limit(1)
       : Promise.resolve([undefined] as [undefined]),
@@ -158,12 +164,16 @@ export default async function PtoPage({
     .limit(50);
 
   const [leadersOver, pending, mine] = await Promise.all([
-    leaderAccountsOver(calendarIds),
+    leaderAccountsOver(calendarIds, monthPeriod),
     pendingQuery,
     mineQuery,
   ]);
-  // Your own account always counts, so your own request shows on your calendar.
-  const leaderVisibleIds = [...new Set([user.id, ...leadersOver])];
+  // A manager's split views: the agents' leave alone, or the team leaders'
+  // own leave alone. Everyone else's calendar carries both — a team's
+  // calendar needs to show its own leader out. Your own account always
+  // counts, so your own request shows on your calendar whichever view.
+  const agentIds = view === "leaders" ? [] : calendarIds;
+  const leaderVisibleIds = view === "agents" ? [user.id] : [...new Set([user.id, ...leadersOver])];
 
   // Everything overlapping the visible month, for the calendar.
   const inMonth = calendarIds.length
@@ -175,7 +185,7 @@ export default async function PtoPage({
         .where(
           and(
             or(
-              inArray(ptoRequests.employeeId, calendarIds),
+              agentIds.length ? inArray(ptoRequests.employeeId, agentIds) : undefined,
               // Leaders appear on the calendar of the people they lead. The
               // null employee id is what makes this a leader's *own* request
               // rather than anything else their account touched.
@@ -240,10 +250,20 @@ export default async function PtoPage({
                     ? "Approved and pending leave across your manager's whole cluster"
                     : "Approved and pending leave for your direct reports"
                   : user.role === "manager"
-                    ? "Approved and pending leave across your span"
+                    ? view === "agents"
+                      ? "Approved and pending leave for the agents in your span"
+                      : view === "leaders"
+                        ? "Approved and pending leave for your team leaders"
+                        : "Approved and pending leave across your span"
                     : "Approved and pending leave, organization-wide"
             }
-            action={clusterAvailable ? <ViewPicker month={month} view={view} /> : undefined}
+            action={
+              user.role === "manager" ? (
+                <ViewPicker month={month} view={view} tabs={MANAGER_TABS} />
+              ) : clusterAvailable ? (
+                <ViewPicker month={month} view={view} tabs={SUPERVISOR_TABS} />
+              ) : undefined
+            }
           />
           <PtoCalendar month={month} byDay={byDay} />
         </Card>
