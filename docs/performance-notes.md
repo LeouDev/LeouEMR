@@ -229,7 +229,14 @@ from every environment this project gets worked on in.
   `issue.closed_on_separation` audit row. The EWS hook now closes whether
   or not the status changed just then (a masterlist may have marked them
   first) and as of the tag's date, and the masterlist closes work for
-  everyone it closes, not only the newly marked.
+  everyone it closes, not only the newly marked. Found on 12 Sep through
+  one agent under a team leader: tagged Black in July before the hook
+  existed, then closed by a September roster committed before the
+  masterlist change, status still `active`, one item open since
+  February. The administrator ran the one-person version of the sweep
+  by hand in the SQL editor (issue and item COMPLETED, resolved week
+  2026-07-18, audit row); the rest of the backlog closes at the next
+  weekly import.
 - **The leave calendar shows the team as it stood in the viewed month.**
   `ptoViewIds(user, view, period)`, `hasCluster(user, period)` and
   `leaderAccountsOver(ids, period)` in `src/lib/pto/scope.ts` all take the
