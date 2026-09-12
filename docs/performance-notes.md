@@ -258,9 +258,17 @@ from every environment this project gets worked on in.
   Done 13 Sep (Manila time): the role created (30 tables readable),
   production `DATABASE_URL` switched to `emr_app` and redeployed, the
   first dump taken (21 MB), and the Monday 06:00 cron installed on the
-  administrator's Mac mini with the PATH line for Homebrew's libpq. A
-  copy of the backups folder off that machine was recommended, not yet
-  confirmed. Incident the same morning: the placeholder in app-role.sql
+  administrator's Mac mini with the PATH line for Homebrew's libpq. The
+  off-machine copy is an external SSD mounted as `/Volumes/Mac Storage`:
+  `rsync -av ~/EMR-backups/ "/Volumes/Mac Storage/EMR-backups/"`, run by
+  hand (first copy confirmed 13 Sep 06:35 Manila, one 20 MB dump); it
+  adds files and never deletes, so the SSD keeps what the Mac mini
+  trims. A second cron line, 06:15 Monday, runs the same copy when the
+  drive is mounted (`[ -d "/Volumes/Mac Storage" ] && rsync -a …`),
+  installed 13 Sep. macOS may block a cron job from a removable volume
+  until Terminal has been allowed once, so if a Monday dump is on the
+  Mac mini but not the SSD, run the rsync by hand once. Incident the same
+  morning: the placeholder in app-role.sql
   was replaced with the real password through GitHub's web editor and
   committed to main (two "Update app-role.sql" commits), so the file was
   restored to the placeholder with a warning comment and the role's
