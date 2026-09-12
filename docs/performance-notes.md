@@ -267,7 +267,13 @@ from every environment this project gets worked on in.
   console). Mailbox, Supabase Auth settings (password length,
   leaked-password check, MFA), a limited database role and backups are
   operator steps outside the code; the domain lists stay unset until the
-  administrator names the company domains.
+  administrator names the company domains. Done on 12 Sep after the merge
+  (production 19:44 UTC): a dedicated Gmail account is the sender for
+  both the end-of-day report (Vercel `EOD_SMTP_*`) and Supabase Auth's
+  own emails (custom SMTP on, send limit raised to 30/h; sign-in and
+  token-refresh limits raised for a floor that shares one IP). Still
+  open: password length and leaked-password protection in Supabase Auth,
+  MFA, the limited database role, the weekly backup.
 - **An episode's opening week counts as a recorded failure, row or no
   row.** The Sep 10 fix (`loadFoldedResults`) stopped a re-import from
   opening a second episode for a failure a closed episode had recorded,
