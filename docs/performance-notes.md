@@ -281,6 +281,10 @@ from every environment this project gets worked on in.
   ledger rows written before this for an employee-week that carried two
   spellings of one skill stay as computed until those weeks are
   re-imported; period figures rebuild from the facts on the next read.
+  Checked on 12 Sep: only Fax was affected, 21 employee-weeks in the
+  weeks of 28 Mar to 25 Apr 2026. The administrator chose not to
+  re-import those weeks — their weekly PAR, Fax and case-rate rows stand
+  as first computed, and nothing else needs doing.
 - **The employee page's skill breakdown is one row per configured skill.**
   `getEmployeeSkillBreakdown` used to group `skill_facts` by the raw label
   and only then resolve each group to its reference, so a source file that
