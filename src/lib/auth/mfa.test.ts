@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { graceUntilSetting, mfaDecision, mfaExempt, mfaRequiredFor } from "./mfa";
+import { graceUntilSetting, mfaDecision, mfaExempt, mfaRequiredFor, totpFactors } from "./mfa";
 
 describe("mfaRequiredFor", () => {
   it("covers everyone who sees a whole team, and not agents", () => {
@@ -57,5 +57,33 @@ describe("graceUntilSetting", () => {
     expect(graceUntilSetting()).toBeNull();
     delete process.env.MFA_GRACE_UNTIL;
     expect(graceUntilSetting()).toBeNull();
+  });
+});
+
+describe("totpFactors", () => {
+  const factor = (id: string, status: "verified" | "unverified", factor_type = "totp") => ({ id, status, factor_type });
+
+  it("finds the authenticator in use", () => {
+    expect(totpFactors([factor("a", "verified")])).toEqual({ verified: factor("a", "verified"), stale: [] });
+  });
+
+  it("lists every unfinished enrolment as stale, so it can be cleared before a new one", () => {
+    const { verified, stale } = totpFactors([factor("old", "unverified"), factor("older", "unverified")]);
+    expect(verified).toBeNull();
+    expect(stale.map((f) => f.id)).toEqual(["old", "older"]);
+  });
+
+  it("keeps a stale enrolment separate from the verified one and ignores other factor types", () => {
+    const { verified, stale } = totpFactors([
+      factor("phone", "verified", "phone"),
+      factor("half", "unverified"),
+      factor("live", "verified"),
+    ]);
+    expect(verified?.id).toBe("live");
+    expect(stale.map((f) => f.id)).toEqual(["half"]);
+  });
+
+  it("has nothing for an account that never started", () => {
+    expect(totpFactors([])).toEqual({ verified: null, stale: [] });
   });
 });

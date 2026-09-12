@@ -54,3 +54,28 @@ export function graceUntilSetting(): string | null {
 export function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+/** The shape of a factor as Supabase's `listFactors` reports it. */
+export interface MfaFactor {
+  id: string;
+  factor_type: string;
+  status: "verified" | "unverified";
+}
+
+/**
+ * An account's authenticator factors, sorted into the one in use and the
+ * leftovers of enrolments that never reached their first code.
+ *
+ * Read this from `listFactors().data.all`, not `.totp`: Supabase fills the
+ * per-type lists with verified factors only, so an unverified one — the
+ * page closed before the code was entered — appears nowhere but `all`,
+ * and enrolling again under the same friendly name is refused until it
+ * is removed.
+ */
+export function totpFactors(all: readonly MfaFactor[]): { verified: MfaFactor | null; stale: MfaFactor[] } {
+  const totp = all.filter((f) => f.factor_type === "totp");
+  return {
+    verified: totp.find((f) => f.status === "verified") ?? null,
+    stale: totp.filter((f) => f.status !== "verified"),
+  };
+}

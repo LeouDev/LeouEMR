@@ -303,6 +303,19 @@ from every environment this project gets worked on in.
   Brevo counts recipients, so each report now costs two of the free
   relay's 300 daily sends; the card subtitle says a copy goes to the
   sender's inbox.
+- **A half-finished authenticator enrolment no longer blocks `/mfa`
+  (13 Sep).** Reported on a test agent account: "A factor with the
+  friendly name 'Authenticator app' for this user already exists." The
+  form meant to clear unverified factors before enrolling, but read them
+  from `listFactors().data.totp`, and Supabase fills the per-type lists
+  with *verified* factors only — an unverified one (page closed before
+  the first code) is in `data.all` and nowhere else — so the cleanup
+  never ran. `totpFactors(all)` in `src/lib/auth/mfa.ts` (tested) sorts
+  an account's TOTP factors into the verified one and the stale ones; the
+  form reads `all`, unenrols the stale, and retries the enrolment once
+  if the relay still says "already exists" (a factor written between
+  the list and the enrol). The admin Reset on the Users page was never
+  affected: it lists through the admin API, which returns every factor.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { totpFactors } from "@/lib/auth/mfa";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { fieldClass, labelClass } from "../login/signup-fields";
 
@@ -32,20 +33,28 @@ export function MfaForm({ required, next }: { required: boolean; next: string })
         setPhase({ kind: "failed", message: listError.message });
         return;
       }
-      const verified = factors?.totp.find((f) => f.status === "verified");
+      // `all`, not `totp`: Supabase lists only verified factors per type.
+      const { verified, stale } = totpFactors(factors?.all ?? []);
       if (verified) {
         setPhase(level?.currentLevel === "aal2" ? { kind: "done" } : { kind: "verify", factorId: verified.id });
         return;
       }
       // A half-finished enrolment (the page was closed before the first
-      // code) would block a fresh one under the same name; clear it.
-      for (const stale of factors?.totp.filter((f) => f.status !== "verified") ?? []) {
-        await supabase.auth.mfa.unenroll({ factorId: stale.id });
+      // code) blocks a fresh one under the same name; clear it first.
+      for (const factor of stale) {
+        await supabase.auth.mfa.unenroll({ factorId: factor.id });
       }
-      const { data: enrolment, error: enrolError } = await supabase.auth.mfa.enroll({
-        factorType: "totp",
-        friendlyName: FRIENDLY_NAME,
-      });
+      const enrol = () => supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: FRIENDLY_NAME });
+      let { data: enrolment, error: enrolError } = await enrol();
+      // One more attempt if a leftover slipped past the list above — an
+      // enrolment that was still being written when the list was read.
+      if (enrolError && /already exists/i.test(enrolError.message)) {
+        const { data: again } = await supabase.auth.mfa.listFactors();
+        for (const factor of totpFactors(again?.all ?? []).stale) {
+          await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        }
+        ({ data: enrolment, error: enrolError } = await enrol());
+      }
       if (cancelled) return;
       if (enrolError || !enrolment) {
         setPhase({
