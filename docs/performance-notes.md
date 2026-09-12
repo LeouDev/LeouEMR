@@ -223,7 +223,9 @@ from every environment this project gets worked on in.
   team leaders under the same manager (their own leave), never the other
   teams' agents — the page empties `agentIds` for it, as for a manager's
   "Team leaders" view, while the cluster's agent ids still decide which
-  leaders are found. Who a leader may *decide* for
+  leaders are found. A team leader with no team in the viewed month still
+  gets a cluster: `lastKnownManagerFor` takes the manager of their latest
+  stint in the history, so the switch stays while they are between teams. Who a leader may *decide* for
   (`decidableIds`, `decidableLeaderIds`) stays on the current structure —
   a wider or older view never widens authority. Agents and admins keep
   their current-team calendar.

@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employeeAssignments, employees, users } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
@@ -173,7 +173,10 @@ export function majorityName(names: Array<string | null | undefined>): string | 
  */
 async function clusterManagerFor(user: CurrentUser, period: DateRange): Promise<string | null> {
   const team = await reportingScopeIds(user, period);
-  if (team.length === 0) return null;
+  // No team this month — between teams, or one not yet on the roster —
+  // does not mean no cluster: they still sit under the manager their
+  // reports last did.
+  if (team.length === 0) return lastKnownManagerFor(user);
 
   const owner = periodOwnerSubquery(period);
   const rows = await db
@@ -182,6 +185,24 @@ async function clusterManagerFor(user: CurrentUser, period: DateRange): Promise<
     .leftJoin(owner, joinPeriodOwner(owner))
     .where(inArray(employees.id, team));
   return majorityName(rows.map((r) => r.manager));
+}
+
+/**
+ * The manager a supervisor's reports most recently sat under, from the whole
+ * assignment history: the cluster a team leader still belongs to in a month
+ * they have no team in. The manager of their latest stint, the more common
+ * one breaking a tie; null for someone whose reports never named a manager.
+ */
+async function lastKnownManagerFor(user: CurrentUser): Promise<string | null> {
+  if (!user.employeeEid) return null;
+  const [row] = await db
+    .select({ manager: employeeAssignments.managerName })
+    .from(employeeAssignments)
+    .where(and(eq(employeeAssignments.supervisorEid, user.employeeEid), isNotNull(employeeAssignments.managerName)))
+    .groupBy(employeeAssignments.managerName)
+    .orderBy(sql`max(${employeeAssignments.effectiveFrom}) desc`, sql`count(*) desc`)
+    .limit(1);
+  return row?.manager ?? null;
 }
 
 /** Which slice of the organization a leave calendar is showing. */

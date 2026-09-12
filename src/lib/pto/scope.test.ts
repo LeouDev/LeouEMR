@@ -192,9 +192,17 @@ describe("cluster view", () => {
     expect(await hasCluster(user("supervisor"), MONTH)).toBe(false);
   });
 
-  it("offers none to a supervisor with no team in that month", async () => {
-    // Nothing is queried: no team, no cluster.
+  it("falls back to the manager the reports last sat under when there is no team that month", async () => {
+    // Between teams, a team leader still belongs to a cluster. The one query
+    // made is the latest-manager read of the history.
     reporting.ids = [];
+    queue.results = [[{ manager: "Comendador, Leou" }]];
+    expect(await hasCluster(user("supervisor"), MONTH)).toBe(true);
+  });
+
+  it("offers none to a supervisor whose reports never named a manager", async () => {
+    reporting.ids = [];
+    queue.results = [[]];
     expect(await hasCluster(user("supervisor"), MONTH)).toBe(false);
   });
 
