@@ -184,8 +184,11 @@ from every environment this project gets worked on in.
   and `periodOwnerSubquery` resolves a stint's missing EID through
   `eid_by_name` — the most frequent EID that exact name string carries
   anywhere in the history — before the employee-row fallback. Historical
-  rows are repaired with the same name lookup (one UPDATE each on
-  `employee_assignments` and `employees`, see the session notes).
+  rows were repaired with the same name lookup on 2026-09-12 (one UPDATE
+  each on `employee_assignments` and `employees`): 3,129 history rows
+  had a supervisor name and no EID, org-wide — every team leader's past
+  months were short the same way. Afterwards the name-only rows are
+  gone and Lea's August resolves to 20 agents under her EID.
 - **The dashboard's period cards follow the period's team.** For a
   leader, everything about the selected period on `/dashboard` — the stat
   cards, the team trend, the by-agent comparison and its open counts —
