@@ -237,6 +237,37 @@ from every environment this project gets worked on in.
   by hand in the SQL editor (issue and item COMPLETED, resolved week
   2026-07-18, audit row); the rest of the backlog closes at the next
   weekly import.
+- **Security hardening (12 Sep, feature branch).** Four edges closed
+  after a review of the whole app. (1) The end-of-day report
+  (`my-stats/actions.ts`) relays through a mailbox the app holds
+  credentials for, so its recipient is now restricted
+  (`recipientAllowed` in `src/lib/mail/recipients.ts`): the sender's
+  current supervisor's or manager's account address always, otherwise
+  an address on `MAIL_ALLOWED_DOMAINS`, or with that unset the sender's
+  own domain — public providers (`PUBLIC_MAIL_DOMAINS`: gmail.com and
+  the like) never count as a company domain either way, since accounts
+  here may well be on Gmail; at most `EOD_DAILY_LIMIT` (10) sends per account per UTC
+  day, counted off `audit_log` rows `eod.sent` that every send now
+  writes; body, text, CSV and attachment name are size- and
+  shape-capped. (2) Sign-up: `SIGNUP_EMAIL_DOMAINS` limits new accounts
+  to company domains, enforced in `checkSignupAvailability` (the page
+  calls it before `supabase.auth.signUp`; the database trigger still
+  creates any account as pending, so a bypass gains nothing), and every
+  clash now returns one generic `SIGNUP_TAKEN_MESSAGE` so the form no
+  longer confirms which email, EID or MSID is registered. (3) The login
+  page follows its `next` parameter only to a same-site path
+  (`safeReturnPath`). (4) `next.config.ts` sends a Content-Security-Policy
+  and the usual headers on production builds only; the policy allows
+  inline scripts and styles (Next renders them without nonces) but pins
+  script, worker and connect sources to this site, Supabase, and the two
+  hosts the OCR engine needs (`cdn.jsdelivr.net` for the script, worker
+  and wasm, `tessdata.projectnaptha.com` for language data); preview
+  deployments also allow Vercel's toolbar. If a feature ever loads from
+  a new host, add it there or the browser blocks it silently (check the
+  console). Mailbox, Supabase Auth settings (password length,
+  leaked-password check, MFA), a limited database role and backups are
+  operator steps outside the code; the domain lists stay unset until the
+  administrator names the company domains.
 - **An episode's opening week counts as a recorded failure, row or no
   row.** The Sep 10 fix (`loadFoldedResults`) stopped a re-import from
   opening a second episode for a failure a closed episode had recorded,

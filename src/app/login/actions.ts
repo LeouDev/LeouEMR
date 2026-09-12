@@ -4,7 +4,8 @@ import { eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db/client";
 import { employeeProfiles, users } from "@/lib/db/schema";
-import { signupConflict } from "@/lib/auth/signup-availability";
+import { signupConflict, signupDomainAllowed, signupDomainMessage } from "@/lib/auth/signup-availability";
+import { parseDomainList } from "@/lib/mail/recipients";
 
 const schema = z.object({
   email: z.string().trim().email(),
@@ -31,6 +32,11 @@ export async function checkSignupAvailability(input: unknown): Promise<SignupAva
   if (!parsed.success) return { ok: true }; // the form's own validation reports these
 
   const { email, employeeEid, msid } = parsed.data;
+
+  // Company addresses only, when the deployment names them. Checked here
+  // before any lookup, so the page can say so at once.
+  const domains = parseDomainList(process.env.SIGNUP_EMAIL_DOMAINS);
+  if (!signupDomainAllowed(email, domains)) return { ok: false, error: signupDomainMessage(domains) };
 
   const [accounts, profiles] = await Promise.all([
     db
