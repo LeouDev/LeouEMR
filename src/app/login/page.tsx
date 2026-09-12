@@ -8,6 +8,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { describeSignupError } from "@/lib/auth/signup-availability";
 import { checkSignupAvailability } from "./actions";
 import { EMPTY_SIGNUP, SignupFields, fieldClass, labelClass, type SignupDetails } from "./signup-fields";
+import { safeReturnPath } from "@/lib/auth/return-path";
 
 type Mode = "signin" | "signup";
 
@@ -113,8 +114,8 @@ function LoginForm() {
     // that lands on the same route this component never unmounts, and the
     // loading scene stays up forever with no way out. Asking the browser for
     // a fresh document guarantees the cookie travels with the request.
-    const next = searchParams.get("next") ?? "/dashboard";
-    window.location.assign(next);
+    // Only a path on this site is followed — see safeReturnPath.
+    window.location.assign(safeReturnPath(searchParams.get("next")));
 
     // If the navigation has not taken effect after a while, something is
     // wrong — surface it rather than leaving the scene spinning. 20s rather
