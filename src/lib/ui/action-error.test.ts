@@ -18,6 +18,13 @@ describe("describeActionError", () => {
     expect(text).toMatch(/try again/);
   });
 
+  it("lets an action that is not a save say what its own throw means", () => {
+    const fallback = "The send did not finish.";
+    expect(describeActionError(new Error("Digest: 987"), fallback)).toBe(fallback);
+    // The connection wording still wins: it is more specific than any fallback.
+    expect(describeActionError(new TypeError("Failed to fetch"), fallback)).toMatch(/connection/);
+  });
+
   it("copes with a non-Error throw", () => {
     expect(describeActionError(undefined)).toMatch(/try again/);
     expect(describeActionError("boom")).toMatch(/try again/);

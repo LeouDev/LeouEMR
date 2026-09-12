@@ -7,6 +7,7 @@ import { getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, users } from "@/lib/db/schema";
 import { EOD_DAILY_LIMIT, RECIPIENT_REFUSED, parseDomainList, recipientAllowed } from "@/lib/mail/recipients";
+import { describeSmtpFailure, type SmtpTarget } from "@/lib/mail/smtp-error";
 
 /**
  * Sends the end-of-day report by SMTP, on a server that holds the mailbox
@@ -73,24 +74,55 @@ async function sentToday(userId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-let cachedTransport: ReturnType<typeof nodemailer.createTransport> | null = null;
+type Transport = {
+  client: ReturnType<typeof nodemailer.createTransport>;
+  target: SmtpTarget;
+  /** The mailbox the relay authenticated, and the sender unless EOD_SMTP_FROM says otherwise. */
+  login: string;
+};
+
+let cachedTransport: Transport | null = null;
+
+/**
+ * How long a send may spend on each stage before it is called off. The
+ * library's own defaults (two minutes to connect, ten of silence before
+ * giving up) are sized for a mail queue, not a request someone is
+ * watching: a relay that stops answering used to hold the action until
+ * the platform killed the function, which reached the sender as a
+ * sending screen that never ended and no word on why.
+ */
+const SMTP_TIMEOUTS = {
+  dnsTimeout: 10_000,
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 30_000,
+} as const;
 
 /** One transport per server instance, not one per send. */
-function transport() {
+function transport(): Transport | null {
   if (cachedTransport) return cachedTransport;
 
-  const host = process.env.EOD_SMTP_HOST;
-  const port = process.env.EOD_SMTP_PORT;
-  const user = process.env.EOD_SMTP_USER;
-  const pass = process.env.EOD_SMTP_PASS;
+  const host = process.env.EOD_SMTP_HOST?.trim();
+  const port = Number(process.env.EOD_SMTP_PORT?.trim());
+  const user = process.env.EOD_SMTP_USER?.trim();
+  const pass = process.env.EOD_SMTP_PASS?.trim();
   if (!host || !port || !user || !pass) return null;
 
-  cachedTransport = nodemailer.createTransport({
-    host,
-    port: Number(port),
-    secure: Number(port) === 465,
-    auth: { user, pass },
-  });
+  cachedTransport = {
+    client: nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      // On the STARTTLS port the credentials go only over an upgraded
+      // connection: a relay (or anything between) that drops the upgrade
+      // gets a refusal, not the password in the clear.
+      requireTLS: port !== 465,
+      auth: { user, pass },
+      ...SMTP_TIMEOUTS,
+    }),
+    target: { host, port },
+    login: user,
+  };
   return cachedTransport;
 }
 
@@ -103,8 +135,8 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
     return { ok: false, error: parsed.error.issues[0]?.message ?? "That report could not be sent" };
   }
 
-  const client = transport();
-  if (!client) {
+  const smtp = transport();
+  if (!smtp) {
     return {
       ok: false,
       error: "Email sending isn't configured yet — an admin needs to set the EOD_SMTP_* environment variables.",
@@ -129,10 +161,10 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
   // agent's own name only decorates the display name. Reply-To is the
   // agent's real address so "Reply" in the team lead's inbox goes to them,
   // not to the shared mailbox this is relayed through.
-  const mailbox = process.env.EOD_SMTP_FROM || process.env.EOD_SMTP_USER!;
+  const mailbox = process.env.EOD_SMTP_FROM?.trim() || smtp.login;
 
   try {
-    await client.sendMail({
+    await smtp.client.sendMail({
       from: `"${user.name} (via OptumRx EMR)" <${mailbox}>`,
       replyTo: user.email,
       to: parsed.data.tlEmail,
@@ -143,8 +175,18 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
         ? [{ filename: parsed.data.csvFilename || "case_log.csv", content: parsed.data.csv }]
         : [],
     });
-  } catch {
-    return { ok: false, error: "The mail server rejected that send. Check the SMTP settings and try again." };
+  } catch (cause) {
+    // The platform log is where an administrator looks when a sender
+    // reports a failure; the sender gets the same reason, minus the stack.
+    const error = (cause && typeof cause === "object" ? cause : {}) as Record<string, unknown>;
+    console.error("[eod] send failed", {
+      code: error.code,
+      command: error.command,
+      responseCode: error.responseCode,
+      response: error.response,
+      message: cause instanceof Error ? cause.message : String(cause),
+    });
+    return { ok: false, error: describeSmtpFailure(cause, smtp.target) };
   }
 
   // Every send on the record: who, to whom, and what — the daily limit

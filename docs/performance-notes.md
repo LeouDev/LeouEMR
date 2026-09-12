@@ -268,6 +268,32 @@ from every environment this project gets worked on in.
   Vercel. The old value remains in history and is dead; the history was
   not rewritten. Rule: the password is typed into the SQL editor, never
   into the file.
+- **An EOD send that stalls now ends with a reason instead of a screen
+  that never finishes (13 Sep).** Reported after the Brevo switch: the
+  sending scene reached its last check and stayed there. Two faults.
+  The transport in `my-stats/actions.ts` had nodemailer's defaults (two
+  minutes to connect, ten of silence before giving up), so a relay that
+  stopped answering held the action until the platform killed the
+  function; and `sendEod` in `case-tracker.tsx` awaited the action
+  without a catch, so a request that ended in a throw (function time
+  limit, dropped connection, deploy rollover) left `eodPhase` on
+  "sending" for good. Now `SMTP_TIMEOUTS` caps DNS, connect and greeting
+  at 10 s and inactivity at 30 s, `requireTLS` is set on any port but
+  465 so the login never goes over a plain connection, environment
+  values are trimmed, and a failed send returns
+  `describeSmtpFailure(cause, {host, port})` (`src/lib/mail/smtp-error.ts`,
+  tested): the nodemailer `code` picks the sentence (EAUTH → check
+  EOD_SMTP_USER/PASS, ETIMEDOUT/ECONNECTION → host and port, EENVELOPE
+  → addresses, EMESSAGE → message) and the relay's own response line
+  is quoted, so a 535 or a 550 reads as such on the page. The same
+  fields go to `console.error("[eod] send failed", …)` for the Vercel
+  Logs page. The tracker catches a throw and shows
+  `describeActionError(cause, fallback)` — the helper now takes the
+  fallback sentence, because unlike a save, a send that did not report
+  back may still have gone through and the message says to check with
+  the team lead before resending. The cause of that night's stall was
+  not established from the code alone; with this in place the next
+  attempt names it.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager

@@ -5,8 +5,9 @@ import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { EodSendingOverlay } from "@/components/eod-sending-overlay";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
 import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "@/lib/case-tracker/report";
-import { sendEodEmail } from "./actions";
+import { sendEodEmail, type SendEodResult } from "./actions";
 import { resolveTargets, stageFor, STANDARD, type TargetSkill } from "@/lib/case-tracker/targets";
+import { describeActionError } from "@/lib/ui/action-error";
 import {
   localDateString,
   progressPercent,
@@ -254,7 +255,24 @@ export function CaseTracker({
     const animationDone = new Promise<void>((resolve) => {
       eodAnimationDone.current = resolve;
     });
-    const [result] = await Promise.all([request, animationDone]);
+    let result: SendEodResult;
+    try {
+      [result] = await Promise.all([request, animationDone]);
+    } catch (cause) {
+      // The action itself never throws — a throw here is the request not
+      // completing (the connection dropped, the function hit its time
+      // limit, a deploy rolled over mid-send). Without this the scene
+      // stayed on its last check for good. Unlike a save, a send that
+      // did not report back may still have gone through, so say so.
+      result = {
+        ok: false,
+        error: describeActionError(
+          cause,
+          "The send did not finish — the request timed out or the connection dropped. " +
+            "If your team lead has not received the report, send it again.",
+        ),
+      };
+    }
 
     if (result.ok) {
       setEodPhase("sent");

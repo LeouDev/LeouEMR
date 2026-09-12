@@ -16,8 +16,9 @@ const currentUser = vi.hoisted(() => ({ value: null as CurrentUser | null }));
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => currentUser.value }));
 
 const sendMail = vi.hoisted(() => vi.fn((opts: Record<string, unknown>) => Promise.resolve(opts)));
+const createTransport = vi.hoisted(() => vi.fn(() => ({ sendMail })));
 vi.mock("nodemailer", () => ({
-  default: { createTransport: vi.fn(() => ({ sendMail })) },
+  default: { createTransport },
 }));
 
 // The action reads three things before a send — the sender's employee row,
@@ -167,6 +168,53 @@ describe("sendEodEmail — configured", () => {
     const result = await sendEodEmail(REPORT);
     expect(result.ok).toBe(false);
     expect(queue.inserted).toEqual([]);
+  });
+
+  it("tells the sender what the relay said and where it was reached, and logs the same", async () => {
+    const refusal = Object.assign(new Error("Invalid login"), {
+      code: "EAUTH",
+      response: "535 5.7.8 Authentication failed: bad username",
+      responseCode: 535,
+      command: "AUTH PLAIN",
+    });
+    sendMail.mockRejectedValueOnce(refusal);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.resetModules();
+    const { sendEodEmail } = await import("./actions");
+    const result = await sendEodEmail(REPORT);
+    expect(result).toMatchObject({ ok: false });
+    expect((result as { error: string }).error).toContain("535 5.7.8 Authentication failed");
+    expect((result as { error: string }).error).toContain("EOD_SMTP_PASS");
+    expect(logged).toHaveBeenCalledWith(
+      "[eod] send failed",
+      expect.objectContaining({ code: "EAUTH", responseCode: 535, command: "AUTH PLAIN" }),
+    );
+    logged.mockRestore();
+  });
+
+  it("gives every stage of the relay conversation a deadline and never sends credentials in the clear", async () => {
+    process.env.EOD_SMTP_HOST = " smtp-relay.brevo.com ";
+    process.env.EOD_SMTP_PORT = "587";
+    createTransport.mockClear();
+    vi.resetModules();
+    const { sendEodEmail } = await import("./actions");
+    await sendEodEmail(REPORT);
+    expect(createTransport).toHaveBeenCalledTimes(1);
+    const options = (createTransport.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(options).toMatchObject({ host: "smtp-relay.brevo.com", port: 587, secure: false, requireTLS: true });
+    for (const key of ["dnsTimeout", "connectionTimeout", "greetingTimeout", "socketTimeout"]) {
+      expect(options[key]).toBeTypeOf("number");
+      expect(options[key] as number).toBeLessThanOrEqual(30_000);
+    }
+  });
+
+  it("uses implicit TLS on port 465 rather than STARTTLS", async () => {
+    createTransport.mockClear();
+    vi.resetModules();
+    const { sendEodEmail } = await import("./actions");
+    await sendEodEmail(REPORT);
+    const options = (createTransport.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
+    expect(options).toMatchObject({ port: 465, secure: true, requireTLS: false });
   });
 
   it("records every send on the audit trail", async () => {

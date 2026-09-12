@@ -12,12 +12,15 @@
  * "Saving…" forever with nothing to say why, which reads as the app having
  * hung rather than as something to retry.
  */
-export function describeActionError(cause: unknown): string {
+export function describeActionError(
+  cause: unknown,
+  fallback = "Something went wrong saving that. Nothing was changed — please try again in a moment.",
+): string {
   const message = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   // Fetch's own wording for a connection that never completed, in the
   // browsers this runs in.
   if (/failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
     return "Could not reach the server — check your connection and try again.";
   }
-  return "Something went wrong saving that. Nothing was changed — please try again in a moment.";
+  return fallback;
 }
