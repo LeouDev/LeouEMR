@@ -260,7 +260,14 @@ from every environment this project gets worked on in.
   first dump taken (21 MB), and the Monday 06:00 cron installed on the
   administrator's Mac mini with the PATH line for Homebrew's libpq. A
   copy of the backups folder off that machine was recommended, not yet
-  confirmed.
+  confirmed. Incident the same morning: the placeholder in app-role.sql
+  was replaced with the real password through GitHub's web editor and
+  committed to main (two "Update app-role.sql" commits), so the file was
+  restored to the placeholder with a warning comment and the role's
+  password rotated (`alter role emr_app password`) and re-entered in
+  Vercel. The old value remains in history and is dead; the history was
+  not rewritten. Rule: the password is typed into the SQL editor, never
+  into the file.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager
