@@ -3,6 +3,7 @@ import { canAuditQuality } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { employees, ptoRequests, qaAuditResults, qaAudits, qaForms, users } from "@/lib/db/schema";
+import type { AgentOption } from "@/lib/quality/agent-search";
 import type { AnalysisWindow, AuditSummary, FailSummary } from "@/lib/quality/analysis";
 import type { ExportAudit } from "@/lib/quality/csv";
 import { qaFormFromRow, type QaForm } from "@/lib/quality/forms";
@@ -140,12 +141,18 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
 export async function getQaAgentOptions(
   user: CurrentUser,
   week: AuditWeek = auditWeekOf(new Date().toISOString().slice(0, 10)),
-): Promise<Array<{ id: string; name: string }>> {
+): Promise<AgentOption[]> {
   const ids = await scopeIds(user);
   if (ids.length === 0) return [];
   const [rows, separated] = await Promise.all([
     db
-      .select({ id: employees.id, name: employees.name, status: employees.status })
+      .select({
+        id: employees.id,
+        name: employees.name,
+        eid: employees.eid,
+        supervisorName: employees.supervisorName,
+        status: employees.status,
+      })
       .from(employees)
       .where(inArray(employees.id, ids))
       .orderBy(asc(employees.name)),
@@ -153,7 +160,7 @@ export async function getQaAgentOptions(
   ]);
   return rows
     .filter((r) => standingFor({ status: r.status, separatedOn: separated.get(r.id) ?? null, leave: [] }, week) !== "separated")
-    .map((r) => ({ id: r.id, name: r.name }));
+    .map((r) => ({ id: r.id, name: r.name, eid: r.eid, supervisorName: r.supervisorName }));
 }
 
 export interface QaHistoryRow {

@@ -3,6 +3,7 @@
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { useNavigation } from "@/components/navigation-progress";
 import { Card } from "@/components/ui";
+import type { AgentOption } from "@/lib/quality/agent-search";
 import type { QaForm } from "@/lib/quality/forms";
 import {
   OUTCOME_LABELS,
@@ -25,6 +26,7 @@ import {
 import { describeActionError } from "@/lib/ui/action-error";
 import { submitAudit } from "../actions";
 import { Tag } from "../quality-tabs";
+import { AgentSearch } from "./agent-search";
 import { TimeMotionPanel } from "./time-motion-panel";
 
 const control = "w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition disabled:bg-cream disabled:text-muted";
@@ -67,7 +69,7 @@ export function AuditForm({
   initialAgentId,
   today,
 }: {
-  agents: Array<{ id: string; name: string }>;
+  agents: AgentOption[];
   forms: QaForm[];
   evaluatorName: string;
   initialAgentId: string;
@@ -181,17 +183,7 @@ export function AuditForm({
         <div className="p-6">
           <h2 className="text-lg font-bold text-ink">Set up audit</h2>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <label>
-              <span className={label}>Agent</span>
-              <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className={control}>
-                <option value="">Select agent…</option>
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <AgentSearch agents={agents} value={agentId} onChange={setAgentId} classes={{ label, control }} />
             <label>
               <span className={label}>Form</span>
               <select value={formKey} onChange={(e) => chooseForm(e.target.value)} className={control}>

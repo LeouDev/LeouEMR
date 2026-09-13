@@ -556,6 +556,21 @@ from every environment this project gets worked on in.
   `updateUser` schema, the implied-role map and
   `scripts/set-user-role.mts` accept them; the authorization tests for
   `/quality`, `/my-quality-scores` and the admin pages cover both roles.
+- **New Audit: the agent picker is a search box (feature branch, 13
+  Sep).** Asked for from the New Audit screen; a dropdown of the whole
+  floor is unusable for a trainer or SME, and a scroll for a team leader.
+  `quality/new/agent-search.tsx` is a combobox over the same
+  `getQaAgentOptions` list (which now carries `eid` and `supervisorName`
+  too): type part of a name, employee ID or team leader; arrows, Enter,
+  Escape and click work; the chosen name stays in the box with the EID
+  and team leader under it, and typing over it or the × starts a new
+  search. `?agent=<id>` from the roster still preselects. Matching is
+  pure and tested (`src/lib/quality/agent-search.ts`: every term must
+  appear, case/accents/punctuation folded, names beginning with the query
+  rank first, eight shown with a "showing 8 of n" line, an empty query
+  shows the first eight so a short team needs no typing). Options use
+  mousedown rather than click because the input's blur fires between the
+  two and would close the list first.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent
