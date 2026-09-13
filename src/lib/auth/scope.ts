@@ -60,6 +60,15 @@ export function canViewRecords(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
 }
 
+/**
+ * Quality audits are a leader's work: conducting them, the weekly
+ * requirement and the team analysis. An agent is the subject of an audit,
+ * never its reader here — fails closed for any role not listed.
+ */
+export function canAuditQuality(user: CurrentUser): boolean {
+  return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
+}
+
 /** True when the user may act on (not just view) an employee's action items. */
 export function canManageActionItems(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "supervisor";
