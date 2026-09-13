@@ -834,6 +834,24 @@ export const auditLog = pgTable("audit_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A person's own profile picture, uploaded from the profile panel. Kept in
+ * its own table rather than on users: users is read on every request and
+ * a picture is tens of kilobytes that only the header's avatar route
+ * needs. Stored as base64 of a 256px image the browser already resized,
+ * and served back by /profile/avatar with the row's timestamp as the
+ * cache-busting version.
+ */
+export const userAvatars = pgTable("user_avatars", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  contentType: text("content_type").notNull(),
+  /** Base64 image bytes, no data: prefix. */
+  image: text("image").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
   recipientId: uuid("recipient_id").notNull().references(() => users.id),

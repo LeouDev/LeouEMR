@@ -5,7 +5,7 @@ import { HeaderScene } from "@/components/header-scene";
 import { NavTabs } from "@/components/nav-tabs";
 import { ProfilePanel } from "@/components/profile-panel";
 import { db } from "@/lib/db/client";
-import { employeeProfiles, employees, notifications } from "@/lib/db/schema";
+import { employeeProfiles, employees, notifications, userAvatars } from "@/lib/db/schema";
 import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { formFromProfile } from "@/lib/profile/panel";
@@ -108,7 +108,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   // the person's own personnel record (the profile panel is seeded from
   // it here rather than fetched when opened) and, for a linked account,
   // the roster's team leader and manager.
-  const [[unread], [profileRow], [orgRow]] = await Promise.all([
+  const [[unread], [profileRow], [orgRow], [avatarRow]] = await Promise.all([
     db
       .select({ n: count() })
       .from(notifications)
@@ -121,6 +121,9 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
           .where(eq(employees.eid, user.employeeEid))
           .limit(1)
       : Promise.resolve([] as Array<{ supervisorName: string | null; managerName: string | null }>),
+    // Only the timestamp: it versions the picture's URL, and the route
+    // serves the bytes once, cached for good.
+    db.select({ updatedAt: userAvatars.updatedAt }).from(userAvatars).where(eq(userAvatars.userId, user.id)).limit(1),
   ]);
   const profile = profileRow
     ? { ...formFromProfile(profileRow), employeeEid: profileRow.employeeEid, position: profileRow.position }
@@ -218,6 +221,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
             profile={profile}
             org={orgRow ?? null}
             quickLinks={quickLinks}
+            avatarVersion={avatarRow ? avatarRow.updatedAt.getTime() : null}
           />
 
           <div className="flex shrink-0 items-center gap-2">
