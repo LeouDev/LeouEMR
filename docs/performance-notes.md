@@ -355,9 +355,14 @@ from every environment this project gets worked on in.
   `score_pct` numeric(5,2), `is_critical`), `qa_audit_results` (one row
   per scored attribute: category, attribute, is_compliance, pass/fail).
   The migration also grants the three tables to `emr_app` if that role
-  exists. **Deploy steps: `npm run db:migrate` from `.env.local` (postgres
-  role), then re-run `scripts/sql/app-role.sql` in the SQL editor for the
-  policies.** Scoring (`src/lib/quality/scoring.ts`, tested): a
+  exists. **Applying it: this project's migrations reach production
+  through the Supabase SQL editor as postgres, with the drizzle tracker
+  row inserted in the same paste (as 0039 and 0041 were) —
+  `drizzle/APPLY_0043_QUALITY_AUDIT.sql` is that paste, one transaction,
+  safe to run twice; then re-run `scripts/sql/app-role.sql` for the
+  policies. `npm run db:migrate` from the Mac mini reported done on 13
+  Sep but created nothing (the pages errored "relation qa_forms does not
+  exist" until the paste went in), so do not rely on it.** Scoring (`src/lib/quality/scoring.ts`, tested): a
   category-weighted form (Phone, MPA QA, Fax QA — maxima 100, 86, 29)
   forfeits a category's whole weight on any failed criterion; the flat
   AV QA form (max 100) deducts each failed item's own points; any
