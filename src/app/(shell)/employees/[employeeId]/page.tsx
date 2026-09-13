@@ -12,6 +12,7 @@ import { getEmployeeSkillBreakdown } from "@/lib/queries/skill-breakdown";
 import { EwsPanel } from "./ews-panel";
 import { ProgressMatrix } from "./progress-matrix";
 import { SkillBreakdownTable } from "./skill-breakdown-table";
+import { actionItemLinks } from "@/lib/development/item-links";
 
 export default async function EmployeePage({
   params,
@@ -128,7 +129,7 @@ export default async function EmployeePage({
             title="Development plan"
             subtitle={
               weeks.length > 0
-                ? `${weeks.length} weeks, ${formatWeek(weeks[0])} to ${formatWeek(weeks[weeks.length - 1])} — scroll sideways for the full history`
+                ? `${weeks.length} weeks, ${formatWeek(weeks[0])} to ${formatWeek(weeks[weeks.length - 1])} — scroll sideways for the full history; a dotted figure opens the action item tracking it that week`
                 : "No weeks imported"
             }
           />
@@ -141,7 +142,7 @@ export default async function EmployeePage({
               title="Skill breakdown"
               subtitle="What actually fed the KPIs above, one skill at a time — a blended figure like Cases Per Hour sums every contributing skill into one number, so this is the only place to see them apart"
             />
-            <SkillBreakdownTable rows={skillBreakdown} weeks={weeks} />
+            <SkillBreakdownTable rows={skillBreakdown} weeks={weeks} links={actionItemLinks(issues)} />
           </Card>
         )}
 

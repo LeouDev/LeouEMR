@@ -1,5 +1,7 @@
 import { formatWeek } from "@/components/ui";
+import { cellKey, type CellLink } from "@/lib/development/item-links";
 import type { SkillBreakdownRow } from "@/lib/queries/skill-breakdown";
+import { LinkedFigure } from "./progress-matrix";
 
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
 const STICKY = "sticky left-0 z-10 min-w-52 bg-surface px-6 py-2";
@@ -45,7 +47,16 @@ function formatActual(metric: SkillBreakdownRow["metric"], value: number): strin
  * re-derives each skill's own rate straight from skill_facts, which still
  * carries the skill label the blended ledger drops.
  */
-export function SkillBreakdownTable({ rows, weeks }: { rows: SkillBreakdownRow[]; weeks: string[] }) {
+export function SkillBreakdownTable({
+  rows,
+  weeks,
+  links,
+}: {
+  rows: SkillBreakdownRow[];
+  weeks: string[];
+  /** Action items by skill KPI and week (actionItemLinks); a figure with one opens it. */
+  links: ReadonlyMap<string, CellLink>;
+}) {
   if (rows.length === 0) return null;
 
   return (
@@ -82,23 +93,29 @@ export function SkillBreakdownTable({ rows, weeks }: { rows: SkillBreakdownRow[]
                     </td>
                   );
                 }
-                return (
-                  <td
-                    key={week}
-                    className={CELL}
-                    title={
-                      `${cell.cases} cases over ${cell.hours.toFixed(1)}h` +
-                      (cell.target ? ` · target ${formatActual(row.metric, cell.target)}` : "") +
-                      (cell.rating !== null ? ` · rating ${cell.rating.toFixed(2)}` : "") +
-                      (cell.judged ? "" : " · under an hour on the skill, so this week is not judged")
-                    }
-                  >
-                    <span className={toneFor(cell, row.lowerIsBetter)}>
-                      {formatActual(row.metric, cell.actual)}
-                    </span>
+                const link = links.get(cellKey(row.kpiCode, week));
+                const figure = (
+                  <>
+                    <span className={toneFor(cell, row.lowerIsBetter)}>{formatActual(row.metric, cell.actual)}</span>
                     <span className="ml-1.5 text-[11px] text-muted">
                       {cell.cases}/{cell.hours.toFixed(1)}h
                     </span>
+                  </>
+                );
+                const detail =
+                  `${cell.cases} cases over ${cell.hours.toFixed(1)}h` +
+                  (cell.target ? ` · target ${formatActual(row.metric, cell.target)}` : "") +
+                  (cell.rating !== null ? ` · rating ${cell.rating.toFixed(2)}` : "") +
+                  (cell.judged ? "" : " · under an hour on the skill, so this week is not judged");
+                return (
+                  <td key={week} className={`${CELL} ${link ? "p-0" : ""}`} title={link ? undefined : detail}>
+                    {link ? (
+                      <span className="block px-3 py-2">
+                        <LinkedFigure link={link}>{figure}</LinkedFigure>
+                      </span>
+                    ) : (
+                      figure
+                    )}
                   </td>
                 );
               })}
