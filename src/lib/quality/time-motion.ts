@@ -70,6 +70,32 @@ export function draftRows(spec: TimeMotionSpec, draft: TimeMotionDraft): DraftRo
   });
 }
 
+/** The stopwatch's starting segments: the form's, under any baseline the draft already overrides. */
+export function timerSegmentsOf(
+  spec: TimeMotionSpec,
+  draft: TimeMotionDraft,
+): Array<{ code: string; label: string; baselineSeconds: number }> {
+  return draftRows(spec, draft).map((row) => ({ code: row.label, label: row.label, baselineSeconds: row.baseline }));
+}
+
+/**
+ * The draft after the stopwatch reports: every baseline as it stands, and
+ * an actual for each segment the clock has completed — whole seconds, the
+ * way the audit stores them. A reset clears the actuals and keeps the rest.
+ */
+export function applyTimer(
+  draft: TimeMotionDraft,
+  segments: ReadonlyArray<{ label: string; baselineSeconds: number; actualSeconds: number | null }>,
+): TimeMotionDraft {
+  const baselines: Record<string, string> = {};
+  const actuals: Record<string, string> = {};
+  for (const segment of segments) {
+    baselines[segment.label] = String(segment.baselineSeconds);
+    if (segment.actualSeconds !== null) actuals[segment.label] = String(Math.round(segment.actualSeconds));
+  }
+  return { ...draft, baselines, actuals };
+}
+
 export function filledCount(spec: TimeMotionSpec, draft: TimeMotionDraft): number {
   return draftRows(spec, draft).filter((row) => row.actual !== null).length;
 }
