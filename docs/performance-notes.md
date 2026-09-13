@@ -700,6 +700,23 @@ from every environment this project gets worked on in.
   "18 of 1 with data": `total` was the week summary's count of today's
   roster while `measured` counted the period's team by assignment
   history — now both are the period's team (`teamIds.length`).
+- **Employee page: the "Development item" table is gone; figures link
+  to their action item (feature branch, 14 Sep).** Asked for as
+  redundant: the expandable per-item Pass/Fail grid under the Development
+  plan repeated what the KPI grid's red cells already said. Now any figure
+  in the Development plan grid or the Skill breakdown that an action item
+  was evaluating that week is a dotted link to `/action-items/<id>`
+  (`LinkedFigure` in `progress-matrix.tsx`; the hover text carries the
+  item code and what the week meant — opened, failed and counter reset,
+  passed n of 4, passed before acknowledgement, has a note; the note dot
+  survives). The lookup is pure and tested
+  (`src/lib/development/item-links.ts`, `actionItemLinks`: one link per
+  KPI-week in an item's history, the live episode winning over a closed
+  one that covers the same week). Skill rows carry their KPI code now
+  (`SkillBreakdownRow.kpiCode` = `skillKpiCode(ref.code)`) so an item on
+  a skill KPI is found the same way. `isDevelopmentItemStale` in
+  `performance.ts` is no longer used by the UI (its tests still pin it);
+  remove both when convenient.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

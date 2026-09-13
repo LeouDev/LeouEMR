@@ -3,7 +3,7 @@ import { db } from "@/lib/db/client";
 import { skillFacts } from "@/lib/db/schema";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
 import { loadRampTargets, loadSkillReferences, measureSkill, normalize } from "@/lib/import-pipeline/par-scoring";
-import { measureSkillWeek } from "@/lib/kpi-engine/skill-result";
+import { measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 
 export interface SkillWeekCell {
   cases: number;
@@ -23,6 +23,8 @@ export interface SkillWeekCell {
 
 export interface SkillBreakdownRow {
   skillLabel: string;
+  /** The skill's own KPI, the one an action item on it is opened against. */
+  kpiCode: string;
   metric: "cph" | "aht" | "case_rate";
   lowerIsBetter: boolean;
   /** Keyed by weekStart, same keys as the caller's `weeks` list. */
@@ -97,7 +99,7 @@ export async function getEmployeeSkillBreakdown(
       cells.set(week, { ...totals, actual, target, rating, judged });
     }
 
-    rows.push({ skillLabel: ref.name, metric: ref.metric, lowerIsBetter: ref.lowerIsBetter, cells });
+    rows.push({ skillLabel: ref.name, kpiCode: skillKpiCode(ref.code), metric: ref.metric, lowerIsBetter: ref.lowerIsBetter, cells });
   }
 
   return rows.sort((a, b) => a.skillLabel.localeCompare(b.skillLabel));
