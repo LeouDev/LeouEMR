@@ -1,5 +1,5 @@
 import { Card, CardHeader, EmptyState } from "@/components/ui";
-import { getQaHistory } from "@/lib/queries/quality";
+import { HISTORY_LIMIT, getQaHistory } from "@/lib/queries/quality";
 import { canFileAudit } from "@/lib/auth/scope";
 import { requireQualityUser } from "../access";
 import { QualityBand, QualityTabs } from "../quality-tabs";
@@ -17,7 +17,11 @@ export default async function QualityHistoryPage() {
         <Card>
           <CardHeader
             title="Audit history"
-            subtitle={`${rows.length} audit${rows.length === 1 ? "" : "s"} in your scope · click a row for the detail`}
+            subtitle={
+              rows.length >= HISTORY_LIMIT
+                ? `The latest ${HISTORY_LIMIT} audits in your scope · click a row for the detail · the CSV carries every audit`
+                : `${rows.length} audit${rows.length === 1 ? "" : "s"} in your scope · click a row for the detail`
+            }
             action={
               rows.length > 0 ? (
                 <a href="/quality/export" className="btn-secondary inline-block px-4 py-2 text-sm">

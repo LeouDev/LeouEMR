@@ -98,11 +98,15 @@ function UserRowEditor({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  // Only a manager's span or a team leader's cluster is sent and compared;
+  // for any other role the value is blank, as the server will store it —
+  // so a role change does not leave a stale link in the row's state.
+  const managerValue = role === "manager" || role === "supervisor" ? managerName : "";
   const dirty =
     role !== user.role ||
     status !== user.status ||
     eid !== (user.employeeEid ?? "") ||
-    managerName !== (user.managerName ?? "");
+    managerValue !== (user.managerName ?? "");
 
   async function save() {
     setSaving(true);
@@ -116,7 +120,7 @@ function UserRowEditor({
         role,
         status,
         employeeEid: eid,
-        managerName,
+        managerName: managerValue,
       });
     } catch (cause) {
       setError(describeActionError(cause));

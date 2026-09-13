@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDITS_PER_AGENT,
+  addDays,
   auditWeekOf,
   daysCovered,
   isAuditWeekStart,
+  isIsoDate,
   requiredFor,
   shiftWeek,
   standingFor,
@@ -23,6 +25,18 @@ describe("auditWeekOf", () => {
     expect(isAuditWeekStart("2026-09-06")).toBe(true);
     expect(isAuditWeekStart("2026-09-07")).toBe(false);
     expect(isAuditWeekStart(undefined)).toBe(false);
+  });
+
+  it("rejects a date that only looks like one, so a crafted week parameter cannot crash the page", () => {
+    expect(isIsoDate("2026-09-13")).toBe(true);
+    expect(isIsoDate("2026-13-45")).toBe(false);
+    expect(isIsoDate("2026-00-10")).toBe(false);
+    expect(isIsoDate("2026-02-30")).toBe(false);
+    expect(isIsoDate("13/09/2026")).toBe(false);
+    expect(isIsoDate(undefined)).toBe(false);
+    expect(isAuditWeekStart("2026-13-45")).toBe(false);
+    expect(addDays("2026-09-13", 1)).toBe("2026-09-14");
+    expect(addDays("2026-01-01", -1)).toBe("2025-12-31");
   });
 
   it("labels the week with the year once", () => {

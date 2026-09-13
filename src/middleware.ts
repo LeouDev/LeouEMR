@@ -1,10 +1,22 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { graceUntilSetting, mfaDecision, mfaExempt, todayUtc } from "@/lib/auth/mfa";
+import { accessTokenFromCookies, decodeJwtPayload, isPrefetchRequest } from "@/lib/auth/session-cookie";
 
 const PUBLIC_ROUTES = ["/login", "/auth"];
 
+/** Set below from this function's own verification, and never by a client. */
+const IDENTITY_HEADERS = ["x-user-id", "x-session-aal", "x-request-kind"] as const;
+
 export async function middleware(request: NextRequest) {
+  // Whatever a client sent under these names is gone before anything else
+  // happens: the pages and actions trust them (see src/lib/auth/session.ts),
+  // which is safe only because this runs on every request and always
+  // decides their values itself. The matcher must never exclude a request
+  // by something a client controls — it once skipped prefetches by header,
+  // and a request carrying that header could then name any account.
+  for (const name of IDENTITY_HEADERS) request.headers.delete(name);
+
   // Collected as Supabase's cookie callback fires, applied once to whichever
   // response actually gets returned below — a redirect needs the same
   // refreshed session cookie as the normal continuation does.
@@ -31,9 +43,10 @@ export async function middleware(request: NextRequest) {
   // Verifies the session and keeps its cookie current. Supabase refresh
   // tokens are single-use: Next.js prefetches every <Link> in the viewport,
   // so a burst of simultaneous requests each racing the same refresh can
-  // rotate the token out from under one another. The real navigation still
-  // runs this — the matcher below is what stops background prefetches from
-  // entering that race in the first place.
+  // rotate the token out from under one another. A prefetch is therefore
+  // verified on the token as it stands — signature and expiry, never a
+  // refresh — and only the real navigation refreshes. (The matcher used to
+  // skip prefetches instead, which left the identity headers unguarded.)
   //
   // getClaims(), not getUser(): the project signs its tokens with an
   // asymmetric key (ECC P-256), so the signature is checked here with the
@@ -46,7 +59,10 @@ export async function middleware(request: NextRequest) {
   // valid token until it expires (an hour at most); an account disabled in
   // THIS app is still caught on every request, because the shell layout
   // reads users.status from the database and bounces anything not active.
-  const session = await verifiedSession(supabase);
+  const prefetch = isPrefetchRequest(request.headers);
+  const session = prefetch
+    ? await prefetchSession(supabase, accessTokenFromCookies(request.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL))
+    : await verifiedSession(supabase, request);
   const userId = session?.userId ?? null;
 
   const { pathname } = request.nextUrl;
@@ -101,7 +117,9 @@ export async function middleware(request: NextRequest) {
   // The session's assurance level travels the same way, and so does whether
   // this request is a server action rather than a page: a session that owes
   // its second step may render the pages that get it there, but not act.
-  request.headers.set("x-session-aal", session?.aal ?? "");
+  // "unknown" is the rare verified-but-unreadable case (see verifiedSession);
+  // the readers treat it as this function does, by not enforcing the step.
+  request.headers.set("x-session-aal", session?.aal ?? "unknown");
   request.headers.set("x-request-kind", request.headers.has("next-action") ? "action" : "page");
 
   const response = NextResponse.next({ request });
@@ -126,13 +144,20 @@ interface VerifiedSession {
   role: string | null;
 }
 
-async function verifiedSession(supabase: ReturnType<typeof createServerClient>): Promise<VerifiedSession | null> {
+type Claims = { sub?: string; aal?: string; app_metadata?: Record<string, unknown> };
+
+function sessionFromClaims(claims: Claims): VerifiedSession | null {
+  if (!claims.sub) return null;
+  const role = claims.app_metadata?.role;
+  return { userId: claims.sub, aal: claims.aal ?? "aal1", role: typeof role === "string" ? role : null };
+}
+
+async function verifiedSession(
+  supabase: ReturnType<typeof createServerClient>,
+  request: NextRequest,
+): Promise<VerifiedSession | null> {
   const { data, error } = await supabase.auth.getClaims();
-  if (data?.claims.sub) {
-    const claims = data.claims as { sub: string; aal?: string; app_metadata?: Record<string, unknown> };
-    const role = claims.app_metadata?.role;
-    return { userId: claims.sub, aal: claims.aal ?? "aal1", role: typeof role === "string" ? role : null };
-  }
+  if (data?.claims.sub) return sessionFromClaims(data.claims as Claims);
   if (!error || error.name === "AuthInvalidJwtError" || error.name === "AuthSessionMissingError") {
     return null;
   }
@@ -140,22 +165,34 @@ async function verifiedSession(supabase: ReturnType<typeof createServerClient>):
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
+  // Verified over the network, so the token's own claims can be read for
+  // the assurance level the slower path does not report.
+  const token = accessTokenFromCookies(request.cookies.getAll(), process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const aal = token ? decodeJwtPayload(token)?.aal : undefined;
   const role = user.app_metadata?.role;
-  return { userId: user.id, aal: null, role: typeof role === "string" ? role : null };
+  return { userId: user.id, aal: aal === "aal1" || aal === "aal2" ? aal : null, role: typeof role === "string" ? role : null };
+}
+
+/**
+ * A prefetch's session: the cookie's token verified as it stands, with no
+ * refresh and no network fallback. An expired token means the prefetch
+ * renders as signed out; the click that follows is a real navigation,
+ * which refreshes and renders the page.
+ */
+async function prefetchSession(
+  supabase: ReturnType<typeof createServerClient>,
+  token: string | null,
+): Promise<VerifiedSession | null> {
+  if (!token) return null;
+  const { data } = await supabase.auth.getClaims(token);
+  return data?.claims ? sessionFromClaims(data.claims as Claims) : null;
 }
 
 export const config = {
   matcher: [
-    {
-      source: "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-      // Next.js's own documented pattern for excluding prefetch-only
-      // requests: a real navigation never carries either header, so this
-      // only skips the background loads a visible <Link> triggers on its
-      // own, never an actual click or full page load.
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
+    // Every request but static assets. No `has`/`missing` conditions, ever:
+    // a request that skipped this function would reach the pages with the
+    // identity headers exactly as the client sent them (src/middleware.test.ts).
+    { source: "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)" },
   ],
 };

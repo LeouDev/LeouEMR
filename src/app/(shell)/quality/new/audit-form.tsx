@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useNavigation } from "@/components/navigation-progress";
 import { Card } from "@/components/ui";
 import type { QaForm } from "@/lib/quality/forms";
@@ -46,6 +46,14 @@ const SCORE_COLOR: Record<QaOutcome, string> = {
 
 type StepStatus = "pending" | "clear" | "fail";
 
+const subscribeToNothing = () => () => {};
+
+/** The evaluator's own calendar date, not the server's — theirs is what an audit is dated. */
+function localToday(): string {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
 /**
  * The audit stepper: pick the agent and form, fill the header, then walk
  * one category per step marking each attribute pass or fail. Everything
@@ -68,7 +76,11 @@ export function AuditForm({
   const { navigate } = useNavigation();
   const [agentId, setAgentId] = useState(initialAgentId);
   const [formKey, setFormKey] = useState("");
-  const [auditDate, setAuditDate] = useState(today);
+  // Rendered with the server's (UTC) today, then with the browser's own
+  // once there — the way a client-only value is read without a mismatch.
+  const localDate = useSyncExternalStore(subscribeToNothing, localToday, () => today);
+  const [pickedDate, setPickedDate] = useState<string | null>(null);
+  const auditDate = pickedDate ?? localDate;
   const [headerValues, setHeaderValues] = useState<Record<string, string>>({});
   const [marks, setMarks] = useState<QaMarks>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -203,7 +215,7 @@ export function AuditForm({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label>
                   <span className={label}>Audit date</span>
-                  <input type="date" value={auditDate} max={today} onChange={(e) => setAuditDate(e.target.value)} className={`${control} font-mono`} />
+                  <input type="date" value={auditDate} max={localDate} onChange={(e) => setPickedDate(e.target.value)} className={`${control} font-mono`} />
                 </label>
                 {form.headerFields.map((field) => (
                   <label key={field.key}>

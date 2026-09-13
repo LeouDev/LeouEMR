@@ -6,11 +6,13 @@ import { z } from "zod";
 import { canAuditQuality, canFileAudit } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { auditLog, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
+import { auditLog, employees, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
 import { qaFormFromRow } from "@/lib/quality/forms";
-import { NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
+import { AGENT_LEFT, NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
 import { concatRemarks, findingRows, markKeys, scoreAudit, stepsOf, type QaMarks } from "@/lib/quality/scoring";
 import { MAX_SECONDS, timeMotionSpecOf, validateStoredTimeMotion, type StoredTimeMotion } from "@/lib/quality/time-motion";
+import { addDays, auditWeekOf, isIsoDate, standingFor } from "@/lib/quality/week";
+import { separationDates } from "@/lib/queries/eligibility";
 import { resolveScopedIds } from "@/lib/queries/performance";
 
 export type SubmitAuditResult = { ok: true; auditId: string } | { ok: false; error: string };
@@ -58,7 +60,11 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "That audit could not be saved" };
   const { agentId, formKey, auditDate } = parsed.data;
 
-  if (Number.isNaN(Date.parse(`${auditDate}T00:00:00Z`)) || auditDate > new Date().toISOString().slice(0, 10)) {
+  // A real calendar date, and not ahead of the evaluator's own today: the
+  // server's clock is UTC, and a floor east of it is already on tomorrow's
+  // date by the server's reckoning for part of every evening.
+  if (!isIsoDate(auditDate)) return { ok: false, error: "Enter the audit date." };
+  if (auditDate > addDays(new Date().toISOString().slice(0, 10), 1)) {
     return { ok: false, error: "The audit date cannot be in the future." };
   }
 
@@ -66,6 +72,17 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
   // audits their own roster and nobody else's.
   const scope = await resolveScopedIds(user);
   if (!scope.includes(agentId)) return { ok: false, error: OUT_OF_SCOPE };
+
+  // The same rule the roster applies: someone who had left before the
+  // week of the audit is not audited in it.
+  const [[agent], separated] = await Promise.all([
+    db.select({ status: employees.status }).from(employees).where(eq(employees.id, agentId)).limit(1),
+    separationDates([agentId]),
+  ]);
+  if (!agent) return { ok: false, error: OUT_OF_SCOPE };
+  if (standingFor({ status: agent.status, separatedOn: separated.get(agentId) ?? null, leave: [] }, auditWeekOf(auditDate)) === "separated") {
+    return { ok: false, error: AGENT_LEFT };
+  }
 
   const [formRow] = await db.select().from(qaForms).where(eq(qaForms.key, formKey)).limit(1);
   if (!formRow) return { ok: false, error: "Choose a form." };

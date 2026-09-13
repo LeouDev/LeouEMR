@@ -1,10 +1,23 @@
 import type { QaForm } from "./forms";
 import type { FindingRow } from "./scoring";
-import { formatDelta, type StoredTimeMotion } from "./time-motion";
+import type { StoredTimeMotion } from "./time-motion";
 
-/** Plain CSV: every cell quoted, CRLF rows, so Excel opens it as it is. */
+/**
+ * Prefixed to the file so Excel on Windows reads it as UTF-8 — without it
+ * the dashes and the minus signs the exports carry open as mojibake.
+ */
+export const CSV_BOM = "\uFEFF";
+
+/**
+ * Plain CSV: every cell quoted, CRLF rows. A text cell that starts with a
+ * character Excel reads as a formula gets a leading space, so a remark or
+ * a case number typed as "=..." or "-..." stays text.
+ */
 export function csvOf(rows: ReadonlyArray<ReadonlyArray<string | number | null | undefined>>): string {
-  const cell = (value: string | number | null | undefined) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const cell = (value: string | number | null | undefined) => {
+    const text = typeof value === "string" && /^[=+\-@\t\r]/.test(value) ? ` ${value}` : String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  };
   return rows.map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
@@ -95,7 +108,7 @@ export function allFindingsRows(audits: readonly ExportAudit[]): Array<Array<str
         audit.evaluatorName,
         "Time & Motion",
         `${seg.label} (baseline ${seg.baselineSeconds}s, actual ${seg.actualSeconds}s)`,
-        formatDelta(seg.actualSeconds - seg.baselineSeconds),
+        seg.actualSeconds - seg.baselineSeconds,
         audit.remarks ?? "",
         audit.scorePct,
         audit.isCritical ? "YES" : "NO",

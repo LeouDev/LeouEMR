@@ -170,7 +170,7 @@ export async function sendEodEmail(input: unknown): Promise<SendEodResult> {
 
   try {
     await smtp.client.sendMail({
-      from: `"${user.name} (via OptumRx EMR)" <${mailbox}>`,
+      from: { name: `${user.name} (via OptumRx EMR)`, address: mailbox },
       replyTo: user.email,
       to: parsed.data.tlEmail,
       cc: copyTo,

@@ -400,6 +400,63 @@ from every environment this project gets worked on in.
   (`quality/authorization.test.ts`). Audit filing writes
   `audit_log` action `qa.audit_filed`. Live 13 Sep: the administrator ran
   the migration and app-role.sql, then the merge (production 03:31 UTC).
+- **Incident: the middleware could be skipped by header, and the identity
+  headers were trusted (found 13 Sep in the full audit, fixed the same
+  hour).** `middleware.ts`'s matcher carried Next's documented `missing`
+  conditions to skip prefetch requests (`next-router-prefetch`, `purpose:
+  prefetch`) — added to keep viewport prefetches out of the refresh-token
+  race. But every page and action reads `x-user-id`, `x-session-aal` and
+  `x-request-kind` on the assumption the middleware always overwrites
+  them, so a request carrying a prefetch header and its own `x-user-id`
+  reached the pages unverified: any account, including admin, for reads
+  (the 201 file, exports) and for server actions (a `Next-Action` POST).
+  No sign it was used; the Vercel logs would show such requests as
+  prefetch-marked hits on data pages without a session cookie. Fix: the
+  matcher has no header conditions at all (`src/middleware.test.ts`
+  guards this), the middleware deletes the three headers before anything
+  else on every request, and a prefetch is verified on the cookie's token
+  as it stands — `accessTokenFromCookies` in `src/lib/auth/session-cookie.ts`
+  (tested) reads the SSR client's chunked, base64-prefixed session cookie
+  and `getClaims(token)` checks signature and expiry with no refresh — so
+  the race the exclusion avoided is still avoided; only a real navigation
+  refreshes. An expired token on a prefetch renders that prefetch as
+  signed out; the click that follows refreshes normally. Also from the
+  same review: the slower `getUser()` path now reports `aal` from the
+  verified token's claims, and an unreadable level ("unknown") is not
+  enforced by the layout or `getCurrentUser` either, matching the
+  middleware, so a cold-instance JWKS failure no longer loops a manager
+  between `/mfa` and the page. And `x-user-id` is deleted, not merely
+  left alone, when there is no session.
+- **Full audit, 13 Sep — what was checked and what changed.** Static:
+  typecheck, lint, 790-odd tests, production build. Structural: the
+  drizzle snapshot chain is unbroken, every journal tag has its SQL, each
+  APPLY file's recorded hash matches its migration, `drizzle-kit
+  generate` reports nothing pending. Runtime (a local production build,
+  since this sandbox cannot reach vercel.app): every route redirects to
+  `/login` when signed out, `/login` is 200, the security headers are
+  present, and the forged-identity request above is now redirected. Two
+  independent code reviews of the recent modules found, besides the
+  incident above: `?week=2026-13-45` crashed the Quality dashboard
+  (`isIsoDate` in `week.ts` now checks a real calendar date, shared with
+  `submitAudit`, which also allows one day ahead of UTC for floors east
+  of it and refuses an audit for someone who had left before that week —
+  `AGENT_LEFT` — while `getQaAgentOptions` lists exactly whom the roster
+  says owes audits, so a mid-week leaver is auditable for that week);
+  the stepper's date now defaults to and is capped at the evaluator's own
+  local today (`useSyncExternalStore`, no effect); the CSV exports carry
+  a UTF-8 BOM (`CSV_BOM`) so Excel reads the dashes, text cells that start
+  like a formula get a leading space, and the bulk file's Time & Motion
+  delta is a number; the 201 file joins personnel details through the
+  account's verified link (`users.employee_eid`), not the profile's copy
+  of the sign-up claim, so a corrected ID no longer files one person's
+  address under another's row; `decidableLeaderIds`' link branch ignores
+  reports without a manager name, as `managerNameFor` does, so a leader
+  decidable by a manager also appears in that manager's queue; a user
+  row's cluster value is blank for roles that carry none, so a role change
+  leaves no stale link; the EOD `From` header is built by nodemailer from
+  a name and address rather than by string interpolation. Left as is,
+  for a decision: the Users list orders by the status enum (disabled,
+  pending, active); if pending belongs first, say so.
 - **Time & Motion on Phone audits (feature branch, 13 Sep).** The third
   handoff (the Quality Audit design again, plus a "Time & Motion (Phone
   Form only)" section): a floating side panel on the New audit page — a

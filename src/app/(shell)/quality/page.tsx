@@ -2,7 +2,7 @@ import Link from "next/link";
 import { NavLink } from "@/components/nav-link";
 import { Card, CardHeader, EmptyState, StatCard } from "@/components/ui";
 import { canFileAudit } from "@/lib/auth/scope";
-import { STANDING_LABELS, auditWeekOf, isAuditWeekStart, shiftWeek, weekLabel } from "@/lib/quality/week";
+import { AUDITS_PER_AGENT, STANDING_LABELS, auditWeekOf, isAuditWeekStart, shiftWeek, weekLabel } from "@/lib/quality/week";
 import { getQaRoster } from "@/lib/queries/quality";
 import { requireQualityUser, todayIso } from "./access";
 import { QualityBand, QualityTabs, Tag } from "./quality-tabs";
@@ -30,7 +30,7 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Active agents" value={roster.activeAgents} hint={isThisWeek ? "This week" : `Week of ${weekLabel(week)}`} />
-          <StatCard label="Required audits" value={roster.required} hint="2 per active agent" />
+          <StatCard label="Required audits" value={roster.required} hint={`${AUDITS_PER_AGENT} per active agent`} />
           <StatCard label="Completed" value={roster.completed} tone="pass" />
           <StatCard
             label="Completion"

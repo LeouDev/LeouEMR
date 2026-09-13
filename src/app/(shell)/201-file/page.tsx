@@ -72,8 +72,12 @@ export default async function TwoOhOneFilePage() {
       email: users.email,
     })
     .from(employees)
-    .leftJoin(employeeProfiles, eq(employeeProfiles.employeeEid, employees.eid))
-    .leftJoin(users, eq(users.id, employeeProfiles.userId))
+    // Through the account's link (users.employee_eid), which an
+    // administrator verifies and corrects on the Users page — not the
+    // profile's own copy of the sign-up claim, which is never corrected
+    // and would file a mistyped ID's details under a colleague's row.
+    .leftJoin(users, eq(users.employeeEid, employees.eid))
+    .leftJoin(employeeProfiles, eq(employeeProfiles.userId, users.id))
     .where(scope === "all" ? undefined : scope)
     .orderBy(asc(employees.name));
 

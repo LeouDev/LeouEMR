@@ -2,6 +2,7 @@
 export const NOT_A_LEADER = "Only team leaders, managers and administrators can audit.";
 export const NOT_AN_EVALUATOR = "Only team leaders file audits.";
 export const OUT_OF_SCOPE = "That agent is not on your roster.";
+export const AGENT_LEFT = "That agent had left before the week of that audit.";
 
 /** Refusals on My Quality Scores. */
 export const NOT_AN_AGENT = "Only an agent acknowledges their own audits.";

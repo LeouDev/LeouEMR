@@ -38,6 +38,10 @@ describe("csvOf", () => {
   it("quotes every cell, doubles inner quotes and ends rows with CRLF", () => {
     expect(csvOf([["a", 'say "hi"', 3], [null, undefined]])).toBe('"a","say ""hi""","3"\r\n"",""\r\n');
   });
+
+  it("keeps a text cell that starts like a formula as text, and leaves numbers alone", () => {
+    expect(csvOf([["=1+1", "-5", "+12s", "@x", -5]])).toBe('" =1+1"," -5"," +12s"," @x","-5"\r\n');
+  });
 });
 
 describe("auditRawRows", () => {
@@ -77,7 +81,7 @@ describe("Time & Motion in the exports", () => {
     const rows = allFindingsRows([PHONE_AUDIT]);
     const timing = rows.filter((r) => r[5] === "Time & Motion");
     expect(timing).toHaveLength(2);
-    expect(timing[1].slice(5, 8)).toEqual(["Time & Motion", "Account lookup (baseline 60s, actual 75s)", "+15s"]);
+    expect(timing[1].slice(5, 8)).toEqual(["Time & Motion", "Account lookup (baseline 60s, actual 75s)", 15]);
     expect(rows).toHaveLength(1 + PHONE_AUDIT.findings.length + 2);
   });
 });

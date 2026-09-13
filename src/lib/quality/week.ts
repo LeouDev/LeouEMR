@@ -39,8 +39,21 @@ export function shiftWeek(week: AuditWeek, weeks: number): AuditWeek {
   return auditWeekOf(iso(d));
 }
 
+/** A real calendar date in ISO form — "2026-02-30" and "2026-13-01" are not. */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = utc(value);
+  return !Number.isNaN(d.getTime()) && iso(d) === value;
+}
+
+export function addDays(date: string, days: number): string {
+  const d = utc(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return iso(d);
+}
+
 export function isAuditWeekStart(date: string | undefined): date is string {
-  return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && auditWeekOf(date).start === date;
+  return isIsoDate(date) && auditWeekOf(date).start === date;
 }
 
 /** "Sep 7 – Sep 13, 2026" */

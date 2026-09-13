@@ -53,8 +53,13 @@ export interface CurrentUser {
  * another's render.
  */
 export interface SessionAssurance {
-  /** What the session has proved: a password alone, or a password and an authenticator code. */
-  aal: AssuranceLevel;
+  /**
+   * What the session has proved: a password alone, or a password and an
+   * authenticator code. Null when the middleware verified the session but
+   * could not read the level (its slower network path); the step is then
+   * not enforced, as the middleware itself does not enforce it.
+   */
+  aal: AssuranceLevel | null;
   /** Whether this request is a server action rather than a page render. */
   isAction: boolean;
 }
@@ -62,8 +67,9 @@ export interface SessionAssurance {
 /** What the middleware verified about this request's session — see middleware.ts. */
 export const sessionAssurance = cache(async function sessionAssurance(): Promise<SessionAssurance> {
   const headerList = await headers();
+  const aal = headerList.get("x-session-aal");
   return {
-    aal: headerList.get("x-session-aal") === "aal2" ? "aal2" : "aal1",
+    aal: aal === "aal2" || aal === "aal1" ? aal : null,
     isAction: headerList.get("x-request-kind") === "action",
   };
 });
@@ -81,7 +87,11 @@ export const getCurrentUser = cache(async function getCurrentUser(): Promise<Cur
   // server action starts here, so a password-only session calling one
   // directly is refused as if signed out.
   const { aal, isAction } = await sessionAssurance();
-  if (isAction && mfaDecision({ role: record.role, aal, today: todayUtc(), graceUntil: graceUntilSetting() }) === "enrol") {
+  if (
+    isAction &&
+    aal !== null &&
+    mfaDecision({ role: record.role, aal, today: todayUtc(), graceUntil: graceUntilSetting() }) === "enrol"
+  ) {
     return null;
   }
   return record;

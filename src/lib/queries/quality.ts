@@ -9,7 +9,7 @@ import { qaFormFromRow, type QaForm } from "@/lib/quality/forms";
 import type { MyAudit, MyResult } from "@/lib/quality/my-scores";
 import type { FindingRow } from "@/lib/quality/scoring";
 import { storedTimeMotionFromRow, type StoredTimeMotion } from "@/lib/quality/time-motion";
-import { requiredFor, standingFor, type AgentWeekStanding, type AuditWeek } from "@/lib/quality/week";
+import { auditWeekOf, requiredFor, standingFor, type AgentWeekStanding, type AuditWeek } from "@/lib/quality/week";
 import { separationDates } from "@/lib/queries/eligibility";
 import { resolveScopedIds } from "@/lib/queries/performance";
 
@@ -123,8 +123,15 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
   };
 }
 
-/** The agents an evaluator may pick: in scope and still on the roster. */
-export async function getQaAgentOptions(user: CurrentUser): Promise<Array<{ id: string; name: string }>> {
+/**
+ * The agents an evaluator may pick: in scope and not gone before the week
+ * being audited — the roster's own rule, so someone who left mid-week is
+ * still auditable for that week, as the dashboard says they are.
+ */
+export async function getQaAgentOptions(
+  user: CurrentUser,
+  week: AuditWeek = auditWeekOf(new Date().toISOString().slice(0, 10)),
+): Promise<Array<{ id: string; name: string }>> {
   const ids = await scopeIds(user);
   if (ids.length === 0) return [];
   const [rows, separated] = await Promise.all([
@@ -135,7 +142,9 @@ export async function getQaAgentOptions(user: CurrentUser): Promise<Array<{ id: 
       .orderBy(asc(employees.name)),
     separationDates(ids),
   ]);
-  return rows.filter((r) => r.status !== "separated" && !separated.has(r.id)).map((r) => ({ id: r.id, name: r.name }));
+  return rows
+    .filter((r) => standingFor({ status: r.status, separatedOn: separated.get(r.id) ?? null, leave: [] }, week) !== "separated")
+    .map((r) => ({ id: r.id, name: r.name }));
 }
 
 export interface QaHistoryRow {
@@ -156,7 +165,7 @@ export interface QaHistoryRow {
   timeMotion: StoredTimeMotion | null;
 }
 
-const HISTORY_LIMIT = 500;
+export const HISTORY_LIMIT = 500;
 
 /** Past audits in scope, newest first. */
 export async function getQaHistory(user: CurrentUser): Promise<QaHistoryRow[]> {

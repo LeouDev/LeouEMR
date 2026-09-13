@@ -159,10 +159,13 @@ export async function decidableLeaderIds(user: CurrentUser): Promise<string[]> {
           eq(users.role, "supervisor"),
           ne(users.id, user.id),
           eq(users.managerName, name),
+          // Reports without a manager name do not count, exactly as
+          // managerNameFor drops them: otherwise a leader whose rows all
+          // lack the name would be decidable there and absent here.
           sql`not exists (
             select 1 from ${employees} as e
             join ${employeeAssignments} as a on a.employee_id = e.id and a.effective_to is null
-            where e.supervisor_eid = ${users.employeeEid}
+            where e.supervisor_eid = ${users.employeeEid} and e.manager_name is not null
           )`,
         ),
       ),

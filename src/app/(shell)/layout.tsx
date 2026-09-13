@@ -25,7 +25,10 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   // session whose token predates the role being recorded in it.
   const graceUntil = graceUntilSetting();
   const { aal } = await sessionAssurance();
-  const mfa = mfaDecision({ role: user.role, aal, today: todayUtc(), graceUntil });
+  // An unreadable level (null) is not enforced here either, matching the
+  // middleware — otherwise the two would bounce a verified session between
+  // /mfa and the page until the level could be read again.
+  const mfa = aal === null ? "ok" : mfaDecision({ role: user.role, aal, today: todayUtc(), graceUntil });
   if (mfa === "enrol") redirect("/mfa");
 
   return (

@@ -132,8 +132,7 @@ describe("sendEodEmail — configured", () => {
     expect(result).toEqual({ ok: true });
     expect(sendMail).toHaveBeenCalledTimes(1);
     const call = sendMail.mock.calls[0][0];
-    expect(call.from).toContain("sender@gmail.com");
-    expect(call.from).toContain("Reyes, Kristian");
+    expect(call.from).toEqual({ name: "Reyes, Kristian (via OptumRx EMR)", address: "sender@gmail.com" });
     expect(call.replyTo).toBe("kristian.reyes@example.test");
     expect(call.to).toBe("lead@example.test");
     expect(call.html).toBe(REPORT.html);
@@ -161,7 +160,7 @@ describe("sendEodEmail — configured", () => {
     vi.resetModules();
     const { sendEodEmail } = await import("./actions");
     await sendEodEmail(REPORT);
-    expect(sendMail.mock.calls[0][0].from).toContain("eod-reports@gmail.com");
+    expect(sendMail.mock.calls[0][0].from).toMatchObject({ address: "eod-reports@gmail.com" });
   });
 
   it("attaches the case log only when one was given", async () => {

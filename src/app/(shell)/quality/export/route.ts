@@ -1,6 +1,6 @@
 import { canAuditQuality } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
-import { allFindingsRows, auditRawRows, csvOf, safeFilename } from "@/lib/quality/csv";
+import { CSV_BOM, allFindingsRows, auditRawRows, csvOf, safeFilename } from "@/lib/quality/csv";
 import { getQaExport } from "@/lib/queries/quality";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,7 +31,7 @@ export async function GET(request: Request): Promise<Response> {
       : `qa-findings-all-${today}.csv`;
   const rows = auditId !== null ? auditRawRows(audits[0]) : allFindingsRows(audits);
 
-  return new Response(csvOf(rows), {
+  return new Response(CSV_BOM + csvOf(rows), {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${filename}"`,
