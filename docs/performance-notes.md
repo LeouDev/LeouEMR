@@ -388,10 +388,15 @@ from every environment this project gets worked on in.
   weeks / 12 months by grain, each compared with the equal span before
   it; score trend against the 90% line, score by team leader or manager,
   outcome donut, error categories, critical-error trend, top findings).
-  Access: `canAuditQuality` (admin/manager/supervisor) in scope.ts; every
-  query and the action go through `resolveScopedIds`, so a supervisor
-  audits their team, a manager their span, an admin everyone; an agent
-  reaches no query (`quality/authorization.test.ts`). Audit filing writes
+  Access: `canAuditQuality` (admin/manager/supervisor) in scope.ts reads
+  the module; `canFileAudit` (supervisor only, asked for on 13 Sep once
+  the page was live — "they don't need to audit") files: the New audit
+  tab and the roster's Audit button are drawn only for a team leader,
+  `/quality/new` sends anyone else to the dashboard, and `submitAudit`
+  refuses them (`NOT_AN_EVALUATOR`). Every query and the action go
+  through `resolveScopedIds`, so a supervisor audits their team, a
+  manager reads their span, an admin everyone; an agent reaches no query
+  (`quality/authorization.test.ts`). Audit filing writes
   `audit_log` action `qa.audit_filed`. Live 13 Sep: the administrator ran
   the migration and app-role.sql, then the merge (production 03:31 UTC).
 - **A team leader's account row can be saved again (13 Sep).** Setting

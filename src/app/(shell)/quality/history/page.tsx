@@ -1,5 +1,6 @@
 import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { getQaHistory } from "@/lib/queries/quality";
+import { canFileAudit } from "@/lib/auth/scope";
 import { requireQualityUser } from "../access";
 import { QualityBand, QualityTabs } from "../quality-tabs";
 import { HistoryTable } from "./history-table";
@@ -12,7 +13,7 @@ export default async function QualityHistoryPage() {
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="history" />
+        <QualityTabs active="history" canFile={canFileAudit(user)} />
         <Card>
           <CardHeader
             title="Audit history"

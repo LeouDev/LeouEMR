@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { NavLink } from "@/components/nav-link";
 import { Card, CardHeader, EmptyState, StatCard } from "@/components/ui";
+import { canFileAudit } from "@/lib/auth/scope";
 import { STANDING_LABELS, auditWeekOf, isAuditWeekStart, shiftWeek, weekLabel } from "@/lib/quality/week";
 import { getQaRoster } from "@/lib/queries/quality";
 import { requireQualityUser, todayIso } from "./access";
@@ -19,12 +20,13 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
 
   const isThisWeek = week.start === thisWeek.start;
   const showLeader = user.role !== "supervisor";
+  const canFile = canFileAudit(user);
 
   return (
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="dashboard" />
+        <QualityTabs active="dashboard" canFile={canFile} />
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Active agents" value={roster.activeAgents} hint={isThisWeek ? "This week" : `Week of ${weekLabel(week)}`} />
@@ -73,7 +75,7 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
                     <th className="px-3 py-2.5 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase">Required</th>
                     <th className="px-3 py-2.5 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase">Completed</th>
                     <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Progress</th>
-                    <th className="px-6 py-2.5" />
+                    {canFile && <th className="px-6 py-2.5" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -104,13 +106,15 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
                             <span className="text-xs text-muted">Not required</span>
                           )}
                         </td>
-                        <td className="px-6 py-2 text-right">
-                          {active && (
-                            <NavLink href={`/quality/new?agent=${row.id}`} prefetch={false} className="btn-secondary inline-block px-3 py-1.5 text-xs">
-                              Audit
-                            </NavLink>
-                          )}
-                        </td>
+                        {canFile && (
+                          <td className="px-6 py-2 text-right">
+                            {active && (
+                              <NavLink href={`/quality/new?agent=${row.id}`} prefetch={false} className="btn-secondary inline-block px-3 py-1.5 text-xs">
+                                Audit
+                              </NavLink>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

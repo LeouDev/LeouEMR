@@ -69,6 +69,15 @@ export function canAuditQuality(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
 }
 
+/**
+ * Filing an audit is a team leader's job: they listen to their own
+ * agents' calls and cases. A manager and an administrator read the
+ * dashboard, the history and the analysis, and do not file.
+ */
+export function canFileAudit(user: CurrentUser): boolean {
+  return user.role === "supervisor";
+}
+
 /** True when the user may act on (not just view) an employee's action items. */
 export function canManageActionItems(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "supervisor";
