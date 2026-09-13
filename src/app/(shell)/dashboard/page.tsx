@@ -28,6 +28,7 @@ import { resolveScopedIds } from "@/lib/queries/performance";
 import { reportingScopeIds } from "@/lib/queries/org-history";
 import { getFactDateRange, getPeriodMetrics, withoutSkills } from "@/lib/queries/period-metrics";
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
+import { focusAgents } from "@/lib/dashboard/focus";
 import { getEmployeeKpiTrend } from "@/lib/queries/trend";
 import { getTeamKpiTrend } from "@/lib/queries/team-trend";
 import { parseGranularity, periodContaining, periodsBetween, previousPeriod } from "@/lib/queries/period";
@@ -451,11 +452,21 @@ export default async function DashboardPage({
                 kpis={teamKpis}
                 series={teamSeries}
                 periodLabel={period?.label ?? "this period"}
+                // The agents furthest from target this period, named from the
+                // comparison's rows (the people who counted for the period).
+                focus={
+                  comparison
+                    ? focusAgents(periodMetrics, new Map(comparison.rows.map((r) => [r.employeeId, { name: r.name, eid: r.eid }])))
+                    : []
+                }
                 stats={{
                   failing: periodFailing,
                   atRisk: periodAtRisk,
                   measured: periodMeasured,
-                  total: summary.totalEmployees,
+                  // The period's team, like every other number on this card —
+                  // the week's summary counts today's roster, which read as
+                  // "18 of 1 with data" for a leader whose team had moved.
+                  total: teamIds.length,
                   parPassing,
                   parScored: parMetrics.length,
                   mboPassing,
