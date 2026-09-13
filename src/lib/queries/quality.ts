@@ -170,6 +170,8 @@ export interface QaHistoryRow {
   formKey: string;
   formLabel: string;
   auditDate: string;
+  /** The date of the call, case or fax; null on audits filed before it was asked for. */
+  transactionDate: string | null;
   evaluatorName: string;
   scorePct: number;
   isCritical: boolean;
@@ -198,6 +200,7 @@ export async function getQaHistory(user: CurrentUser): Promise<QaHistoryRow[]> {
       formLabel: qaForms.label,
       headerFields: qaForms.headerFields,
       auditDate: qaAudits.auditDate,
+      transactionDate: qaAudits.transactionDate,
       evaluatorName: users.name,
       scorePct: qaAudits.scorePct,
       isCritical: qaAudits.isCritical,
@@ -235,6 +238,7 @@ export async function getQaExport(user: CurrentUser, auditId: string | null): Pr
       agentEid: employees.eid,
       form: qaForms,
       auditDate: qaAudits.auditDate,
+      transactionDate: qaAudits.transactionDate,
       evaluatorName: users.name,
       headerValues: qaAudits.headerValues,
       remarks: qaAudits.remarks,
@@ -275,6 +279,7 @@ export async function getQaExport(user: CurrentUser, auditId: string | null): Pr
     agentEid: a.agentEid,
     form: qaFormFromRow(a.form),
     auditDate: a.auditDate,
+    transactionDate: a.transactionDate,
     evaluatorName: a.evaluatorName,
     headerValues: (a.headerValues ?? {}) as Record<string, string>,
     remarks: a.remarks,
@@ -341,6 +346,7 @@ export async function getMyQualityScores(
       id: qaAudits.id,
       formLabel: qaForms.label,
       auditDate: qaAudits.auditDate,
+      transactionDate: qaAudits.transactionDate,
       evaluatorName: users.name,
       scorePct: qaAudits.scorePct,
       isCritical: qaAudits.isCritical,
@@ -380,6 +386,7 @@ export async function getMyQualityScores(
       id: row.id,
       formLabel: row.formLabel,
       auditDate: row.auditDate,
+      transactionDate: row.transactionDate,
       evaluatorName: row.evaluatorName,
       scorePct: Number(row.scorePct),
       isCritical: row.isCritical,

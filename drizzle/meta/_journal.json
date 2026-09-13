@@ -330,6 +330,13 @@
       "when": 1789278836111,
       "tag": "0047_qa_time_motion_segments",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789279597629,
+      "tag": "0048_transaction_date",
+      "breakpoints": true
     }
   ]
 }

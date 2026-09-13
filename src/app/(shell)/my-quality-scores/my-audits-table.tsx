@@ -121,7 +121,8 @@ export function MyAuditsTable({ audits }: { audits: MyAudit[] }) {
               <div>
                 <p className="font-bold text-ink">{open.formLabel}</p>
                 <p className="text-xs text-muted">
-                  {formatDate(open.auditDate)} · Evaluator {open.evaluatorName}
+                  Audited {formatDate(open.auditDate)}
+                  {open.transactionDate && ` · Transaction ${formatDate(open.transactionDate)}`} · Evaluator {open.evaluatorName}
                 </p>
               </div>
               <button type="button" onClick={() => setOpenId(null)} aria-label="Close" className="btn-secondary px-2.5 py-1 text-sm">

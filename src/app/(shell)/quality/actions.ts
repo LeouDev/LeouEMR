@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
 import { qaFormFromRow } from "@/lib/quality/forms";
-import { AGENT_LEFT, NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
+import { AGENT_LEFT, AUDIT_DATE_NOT_TODAY, NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE, TRANSACTION_DATE_AFTER_AUDIT, TRANSACTION_DATE_MISSING } from "@/lib/quality/messages";
 import { concatRemarks, findingRows, markKeys, scoreAudit, stepsOf, type QaMarks } from "@/lib/quality/scoring";
 import { MAX_SECONDS, timeMotionSpecOf, validateStoredTimeMotion, type StoredTimeMotion } from "@/lib/quality/time-motion";
 import { addDays, auditWeekOf, isIsoDate, standingFor } from "@/lib/quality/week";
@@ -23,6 +23,7 @@ const submitSchema = z.object({
   agentId: z.string().uuid(),
   formKey: z.string().trim().min(1).max(40),
   auditDate: z.string().regex(ISO_DATE, "Enter the audit date"),
+  transactionDate: z.string().regex(ISO_DATE, TRANSACTION_DATE_MISSING),
   headerValues: z.record(z.string().max(64), z.string().trim().max(500)).default({}),
   marks: z.record(z.string().max(200), z.enum(["pass", "fail"])).default({}),
   remarks: z.record(z.string().max(200), z.string().trim().max(2000)).default({}),
@@ -58,15 +59,19 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
 
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "That audit could not be saved" };
-  const { agentId, formKey, auditDate } = parsed.data;
+  const { agentId, formKey, auditDate, transactionDate } = parsed.data;
 
-  // A real calendar date, and not ahead of the evaluator's own today: the
-  // server's clock is UTC, and a floor east of it is already on tomorrow's
-  // date by the server's reckoning for part of every evening.
-  if (!isIsoDate(auditDate)) return { ok: false, error: "Enter the audit date." };
-  if (auditDate > addDays(new Date().toISOString().slice(0, 10), 1)) {
-    return { ok: false, error: "The audit date cannot be in the future." };
+  // An audit is dated the day it is filed, by the evaluator's own calendar:
+  // the server's clock is UTC, and a floor east of it is already on
+  // tomorrow's date by the server's reckoning for part of every evening —
+  // so "today" is the server's today give or take a day, and nothing else.
+  const utcToday = new Date().toISOString().slice(0, 10);
+  if (!isIsoDate(auditDate) || auditDate < addDays(utcToday, -1) || auditDate > addDays(utcToday, 1)) {
+    return { ok: false, error: AUDIT_DATE_NOT_TODAY };
   }
+  // The transaction — the call, case or fax — happened on or before the day it is audited.
+  if (!isIsoDate(transactionDate)) return { ok: false, error: TRANSACTION_DATE_MISSING };
+  if (transactionDate > auditDate) return { ok: false, error: TRANSACTION_DATE_AFTER_AUDIT };
 
   // Scope before anything is read about the agent or written: a leader
   // audits their own roster and nobody else's.
@@ -127,6 +132,7 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
         formKey: form.key,
         evaluatorId: user.id,
         auditDate,
+        transactionDate,
         headerValues,
         remarks: remarksText,
         earnedPoints: score.earned,
@@ -152,7 +158,7 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
       action: "qa.audit_filed",
       entityType: "qa_audit",
       entityId: audit.id,
-      after: { agentId, formKey: form.key, auditDate, scorePct: score.scorePct, isCritical: score.isCritical },
+      after: { agentId, formKey: form.key, auditDate, transactionDate, scorePct: score.scorePct, isCritical: score.isCritical },
     });
     return audit.id;
   });

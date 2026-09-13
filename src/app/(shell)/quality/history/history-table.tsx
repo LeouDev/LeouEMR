@@ -47,7 +47,8 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
             <tr className="border-b-2 border-ink bg-cream">
               <th className="px-6 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Agent</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Form</th>
-              <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Date</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Audited</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Transaction</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Evaluator</th>
               <th className="px-3 py-2.5 text-right text-xs font-semibold tracking-[0.08em] text-ink uppercase">Score</th>
               <th className="px-6 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">Result</th>
@@ -65,6 +66,7 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
                   <td className="px-6 py-2 font-semibold text-ink">{row.agentName}</td>
                   <td className="px-3 py-2 text-ink">{row.formLabel}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted">{formatDate(row.auditDate)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted">{row.transactionDate ? formatDate(row.transactionDate) : "—"}</td>
                   <td className="px-3 py-2 text-xs text-muted">
                     {row.evaluatorName}
                     {!row.countsForRequirement && <span className="ml-1.5 text-[10px] font-bold tracking-[0.06em] uppercase">· support</span>}
@@ -94,7 +96,8 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
                   {open.agentName}
                 </Link>
                 <p className="text-xs text-muted">
-                  {open.formLabel} · {formatDate(open.auditDate)}
+                  {open.formLabel} · Audited {formatDate(open.auditDate)}
+                  {open.transactionDate && ` · Transaction ${formatDate(open.transactionDate)}`}
                 </p>
               </div>
               <button type="button" onClick={() => setOpenId(null)} aria-label="Close" className="btn-secondary px-2.5 py-1 text-sm">

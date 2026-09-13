@@ -10,6 +10,7 @@ const AUDIT: ExportAudit = {
   agentEid: "001895123",
   form: faxForm,
   auditDate: "2026-09-10",
+  transactionDate: "2026-09-08",
   evaluatorName: "Lopez, Ana",
   headerValues: { caseNo: "FX-40213", callReason: "New PA Initiation" },
   remarks: 'Documentation: said "will call back"',
@@ -47,16 +48,17 @@ describe("csvOf", () => {
 describe("auditRawRows", () => {
   it("leads with the header block, then one row per attribute, then remarks and score", () => {
     const rows = auditRawRows(AUDIT);
-    expect(rows.slice(0, 7)).toEqual([
+    expect(rows.slice(0, 8)).toEqual([
       ["Agent", "Reyes, Kristian"],
       ["Employee ID", "001895123"],
       ["Form", "Fax QA Form"],
       ["Date", "2026-09-10"],
+      ["Transaction date", "2026-09-08"],
       ["Evaluator", "Lopez, Ana"],
       ["Case #", "FX-40213"],
       ["Call Reason", "New PA Initiation"],
     ]);
-    expect(rows[8]).toEqual(["Category", "Attribute", "Result"]);
+    expect(rows[9]).toEqual(["Category", "Attribute", "Result"]);
     expect(rows).toContainEqual(["Documentation", "b. Did not document whom they spoke to", "FAIL"]);
     expect(rows).toContainEqual(["Compliance", "Wrong member selected", "PASS"]);
     expect(rows[rows.length - 3]).toEqual(["Remarks", 'Documentation: said "will call back"']);
@@ -79,9 +81,9 @@ describe("Time & Motion in the exports", () => {
 
   it("adds one row per segment to the bulk export under its own category", () => {
     const rows = allFindingsRows([PHONE_AUDIT]);
-    const timing = rows.filter((r) => r[5] === "Time & Motion");
+    const timing = rows.filter((r) => r[6] === "Time & Motion");
     expect(timing).toHaveLength(2);
-    expect(timing[1].slice(5, 8)).toEqual(["Time & Motion", "Account lookup (baseline 60s, actual 75s)", 15]);
+    expect(timing[1].slice(6, 9)).toEqual(["Time & Motion", "Account lookup (baseline 60s, actual 75s)", 15]);
     expect(rows).toHaveLength(1 + PHONE_AUDIT.findings.length + 2);
   });
 });
@@ -89,10 +91,10 @@ describe("Time & Motion in the exports", () => {
 describe("allFindingsRows", () => {
   it("flattens every audit to one row per finding under a single header", () => {
     const rows = allFindingsRows([AUDIT, { ...AUDIT, agentName: "Santos, Maria", findings: AUDIT.findings.slice(0, 2) }]);
-    expect(rows[0][5]).toBe("Category");
+    expect(rows[0][6]).toBe("Category");
     expect(rows).toHaveLength(1 + AUDIT.findings.length + 2);
     expect(rows[rows.length - 1].slice(0, 3)).toEqual(["Santos, Maria", "001895123", "Fax QA Form"]);
-    expect(rows[1].slice(5, 8)).toEqual(["Provider Information", "a. Incorrect provider selected", "PASS"]);
+    expect(rows[1].slice(6, 9)).toEqual(["Provider Information", "a. Incorrect provider selected", "PASS"]);
   });
 });
 

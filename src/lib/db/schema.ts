@@ -960,6 +960,8 @@ export const qaAudits = pgTable(
       .references(() => users.id),
     /** The day the audit is counted on — the evaluator's date, not the server's clock. */
     auditDate: date("audit_date").notNull(),
+    /** The date of the call, case or fax being audited; the audit date is the day it was filed. */
+    transactionDate: date("transaction_date"),
     headerValues: jsonb("header_values").notNull().default({}),
     /** Per-category notes, concatenated "Category: note | Category: note". */
     remarks: text("remarks"),

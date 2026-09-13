@@ -31,12 +31,13 @@ vi.mock("@/lib/db/client", () => ({
 }));
 
 const { submitAudit } = await import("./actions");
-const { NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } = await import("@/lib/quality/messages");
+const { AUDIT_DATE_NOT_TODAY, NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE, TRANSACTION_DATE_AFTER_AUDIT, TRANSACTION_DATE_MISSING } =
+  await import("@/lib/quality/messages");
 const { GET } = await import("./export/route");
 const { getQaAgentOptions, getQaAnalysisInput, getQaExport, getQaHistory, getQaRoster } = await import(
   "@/lib/queries/quality"
 );
-const { auditWeekOf } = await import("@/lib/quality/week");
+const { addDays, auditWeekOf } = await import("@/lib/quality/week");
 const { windowFor } = await import("@/lib/quality/analysis");
 
 function signedInAs(role: UserRole): CurrentUser {
@@ -56,7 +57,8 @@ const OTHER_AGENT_ID = "33333333-3333-4333-8333-333333333333";
 const week = auditWeekOf("2026-09-09");
 const window = windowFor("daily", "2026-09-13");
 
-const filing = () => ({ agentId: AGENT_ID, formKey: "phone", auditDate: "2026-09-09", marks: {}, remarks: {}, headerValues: {} });
+const today = new Date().toISOString().slice(0, 10);
+const filing = () => ({ agentId: AGENT_ID, formKey: "phone", auditDate: today, transactionDate: today, marks: {}, remarks: {}, headerValues: {} });
 
 beforeEach(() => {
   currentUser.value = null;
@@ -104,10 +106,14 @@ describe("a team leader", () => {
     expect(await submitAudit({ ...filing(), agentId: OTHER_AGENT_ID })).toEqual({ ok: false, error: OUT_OF_SCOPE });
   });
 
-  it("cannot file an audit dated in the future", async () => {
-    expect(await submitAudit({ ...filing(), auditDate: "2999-01-01" })).toEqual({
+  it("files an audit dated today only, with a transaction date no later than it", async () => {
+    expect(await submitAudit({ ...filing(), auditDate: "2999-01-01" })).toEqual({ ok: false, error: AUDIT_DATE_NOT_TODAY });
+    expect(await submitAudit({ ...filing(), auditDate: addDays(today, -2) })).toEqual({ ok: false, error: AUDIT_DATE_NOT_TODAY });
+    expect(await submitAudit({ ...filing(), transactionDate: "" })).toEqual({ ok: false, error: TRANSACTION_DATE_MISSING });
+    expect(await submitAudit({ ...filing(), transactionDate: "2026-02-30" })).toEqual({ ok: false, error: TRANSACTION_DATE_MISSING });
+    expect(await submitAudit({ ...filing(), transactionDate: addDays(today, 2) })).toEqual({
       ok: false,
-      error: "The audit date cannot be in the future.",
+      error: TRANSACTION_DATE_AFTER_AUDIT,
     });
   });
 });
