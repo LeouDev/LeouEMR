@@ -58,7 +58,10 @@ const LEADER_ONLY_NAV = [
 const SUPERVISOR_ONLY_NAV = [{ href: "/adherence", label: "Adherence" }];
 
 /** Only roles with direct reports; an agent's own details are not a 201 file. */
-const LEADER_NAV = [{ href: "/201-file", label: "201 File" }];
+const LEADER_NAV = [
+  { href: "/quality", label: "Quality Audit" },
+  { href: "/201-file", label: "201 File" },
+];
 
 /**
  * An administrator's day-to-day question is "where is the org struggling,"

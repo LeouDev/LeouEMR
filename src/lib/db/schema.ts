@@ -911,3 +911,85 @@ export const ptoRequests = pgTable(
     index("pto_requests_range_idx").on(table.startDate, table.endDate),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Quality audits
+// ---------------------------------------------------------------------------
+
+export const qaResultEnum = pgEnum("qa_result", ["pass", "fail"]);
+
+/**
+ * An audit form: the header fields it asks for and its scoring definition
+ * (see src/lib/quality/forms.ts for the shape and the seed). Read at
+ * runtime, so a form can change without a deploy; the audits already
+ * scored keep their own stored results and score.
+ */
+export const qaForms = pgTable("qa_forms", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  headerFields: jsonb("header_fields").notNull().default([]),
+  definition: jsonb("definition").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One completed audit of one agent on one form. The score is stored as
+ * computed at the time (src/lib/quality/scoring.ts), never recomputed from
+ * the form later; the per-attribute marks are in qa_audit_results.
+ */
+export const qaAudits = pgTable(
+  "qa_audits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    agentId: uuid("agent_id")
+      .notNull()
+      .references(() => employees.id),
+    formKey: text("form_key")
+      .notNull()
+      .references(() => qaForms.key),
+    evaluatorId: uuid("evaluator_id")
+      .notNull()
+      .references(() => users.id),
+    /** The day the audit is counted on — the evaluator's date, not the server's clock. */
+    auditDate: date("audit_date").notNull(),
+    headerValues: jsonb("header_values").notNull().default({}),
+    /** Per-category notes, concatenated "Category: note | Category: note". */
+    remarks: text("remarks"),
+    earnedPoints: integer("earned_points").notNull(),
+    maxPoints: integer("max_points").notNull(),
+    scorePct: numeric("score_pct", { precision: 5, scale: 2 }).notNull(),
+    /** A compliance item failed: the score is zero whatever the rest earned. */
+    isCritical: boolean("is_critical").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The weekly requirement counts an agent's audits by date; the
+    // analysis reads a scope's audits by date.
+    index("qa_audits_agent_date_idx").on(table.agentId, table.auditDate),
+    index("qa_audits_date_idx").on(table.auditDate),
+    index("qa_audits_evaluator_idx").on(table.evaluatorId),
+  ],
+);
+
+/** One row per scored attribute of an audit, in form order — the raw data. */
+export const qaAuditResults = pgTable(
+  "qa_audit_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    auditId: uuid("audit_id")
+      .notNull()
+      .references(() => qaAudits.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    category: text("category").notNull(),
+    attribute: text("attribute").notNull(),
+    isCompliance: boolean("is_compliance").notNull().default(false),
+    result: qaResultEnum("result").notNull(),
+  },
+  (table) => [
+    index("qa_audit_results_audit_idx").on(table.auditId, table.position),
+    // The error-category and recurring-finding charts read failures only.
+    index("qa_audit_results_result_idx").on(table.result, table.category),
+  ],
+);

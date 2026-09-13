@@ -342,6 +342,52 @@ from every environment this project gets worked on in.
   fallback. Any filter change starts the list over at twenty. An
   unregistered row shows the roster name and EID and one italic note
   across the other columns.
+- **Quality Audit module (feature branch, 13 Sep).** From the handoff
+  (`Quality Audit.dc.html` + README): leaders audit agents against the
+  four QA forms and track a weekly requirement. Tables (migration
+  `0043_quality_audit`, numbered after `0042_skill_kpis` — the generator
+  wanted `0042_` again and overwrote `meta/0042_snapshot.json`, restored
+  from git; the new snapshot is `0043_snapshot.json`): `qa_forms` (key,
+  label, `header_fields` jsonb, `definition` jsonb, sort order; seeded by
+  the migration from `QA_FORM_SEED` in `src/lib/quality/forms.ts`,
+  `on conflict do nothing`), `qa_audits` (agent, form, evaluator,
+  `audit_date`, header values, concatenated remarks, earned/max points,
+  `score_pct` numeric(5,2), `is_critical`), `qa_audit_results` (one row
+  per scored attribute: category, attribute, is_compliance, pass/fail).
+  The migration also grants the three tables to `emr_app` if that role
+  exists. **Deploy steps: `npm run db:migrate` from `.env.local` (postgres
+  role), then re-run `scripts/sql/app-role.sql` in the SQL editor for the
+  policies.** Scoring (`src/lib/quality/scoring.ts`, tested): a
+  category-weighted form (Phone, MPA QA, Fax QA — maxima 100, 86, 29)
+  forfeits a category's whole weight on any failed criterion; the flat
+  AV QA form (max 100) deducts each failed item's own points; any
+  compliance failure zeroes the score and marks the audit critical;
+  outcome Pass ≥ 90, Monitor ≥ 70, else Fail. Unmarked attributes are
+  passes. The server rescored from the stored form on submit and never
+  trusts the page's score. Weekly requirement (`week.ts`): audit weeks run
+  **Sunday–Saturday** (the handoff's rule; unlike the Sat–Fri reporting
+  week), 2 audits per active agent; an agent is out for the week when
+  separated before it, on leave of absence, or on approved leave covering
+  all seven days (`pto_requests`). Pages under `/quality` (tab strip:
+  Dashboard, New audit, History, Team QA analysis; nav tab for
+  admin/manager/supervisor via `LEADER_NAV`): the dashboard's roster with
+  Previous/This week/Next; the New audit stepper (`new/audit-form.tsx`:
+  agent + form + audit date + the form's header fields — Evaluator is the
+  signed-in user, and the workbook's "Tech Name"/"Agent Name" header
+  fields are dropped since the agent select is that; one category per
+  step, Pass/Fail per attribute, Pass all/Fail all, per-category remarks,
+  live score, compliance last); History with a detail drawer and CSV
+  downloads (`/quality/export` route handler: `?audit=<id>` for one
+  audit's raw rows, none for every finding in scope — the only bulk
+  export); Team QA Analysis (`analysis.ts`, tested: last 14 days / 12
+  weeks / 12 months by grain, each compared with the equal span before
+  it; score trend against the 90% line, score by team leader or manager,
+  outcome donut, error categories, critical-error trend, top findings).
+  Access: `canAuditQuality` (admin/manager/supervisor) in scope.ts; every
+  query and the action go through `resolveScopedIds`, so a supervisor
+  audits their team, a manager their span, an admin everyone; an agent
+  reaches no query (`quality/authorization.test.ts`). Audit filing writes
+  `audit_log` action `qa.audit_filed`.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent
