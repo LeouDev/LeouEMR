@@ -626,6 +626,37 @@ from every environment this project gets worked on in.
   The authorization tests date their filing `today` (UTC) with a
   transaction date of the same day, since the date rules run before the
   scope check.
+- **Profile panel behind the name in the header (feature branch, 13
+  Sep).** From the handoff (`Profile Panel Mockup.dc.html` + README): the
+  identity block in `AppHeader` is a button (`ProfilePanel` in
+  `src/components/profile-panel.tsx`, a client component that owns the
+  button and the panel) opening a 420px panel from the right edge over a
+  backdrop — navy header with initials, name, role and email; Profile
+  (first/last/middle name editable; Employee ID, Position, Team leader,
+  Manager read-only from the roster, with the "ask an administrator"
+  line); Contact; Emergency contact; Security (link to `/mfa`); Quick
+  links (agent: My Tools + My Quality Scores; team leader: My Tools =
+  `/skills`; other roles: section hidden); footer with "Saved" (2s),
+  "Unsaved changes", Cancel (discards) and Save changes (disabled until
+  something changed). Escape, the backdrop, × and Cancel all close and
+  reset to the last saved values. The panel is seeded server-side: the
+  header's one round trip now also reads the caller's `employee_profiles`
+  row and the linked employee's `supervisor_name`/`manager_name`
+  (`Promise.all`, so no added latency). `updateMyProfile`
+  (`(shell)/profile/actions.ts`) finds the row by the account, never by
+  an id from the page, writes only the twelve editable columns (never
+  `employee_eid`, `msid` or `position`), refuses when nothing changed,
+  and logs `profile.updated` with just the changed fields; checks live in
+  `src/lib/profile/panel.ts` (`validateProfileForm`: names required,
+  phone numbers 7–15 digits with the usual punctuation, zipcode 3–10
+  letters/digits, every field ≤ 200 chars) and run on the page and in the
+  action alike. An account with no profile row (created from the
+  Supabase dashboard, or pre-dating profiles) sees the note and the
+  read-only fields only. Decision: the account name (`users.name`) is not
+  edited here — it is what every evaluator/leader/audit label shows and
+  what an unlinked manager's scope falls back to — so the panel header
+  shows the account name while the Profile section edits the personnel
+  record; flagged to the user. No migration.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent
