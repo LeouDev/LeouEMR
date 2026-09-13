@@ -1,6 +1,7 @@
 import { asc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { PageBand } from "@/components/ui";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { skillReferences } from "@/lib/db/schema";
@@ -15,7 +16,7 @@ export default async function SkillsPage() {
   // Matches its LEADER_ONLY_NAV siblings (/mbo, /ews, /ramp): an agent's own
   // slot is My Stats, not the scoring policy table itself — a hidden nav
   // link is not a permission check, so this page has to say so too.
-  if (user.role === "agent") redirect("/dashboard");
+  if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
   const rows = await db
     .select()

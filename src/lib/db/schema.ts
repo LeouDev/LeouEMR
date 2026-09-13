@@ -18,7 +18,13 @@ import {
 // Enums
 // ---------------------------------------------------------------------------
 
-export const userRoleEnum = pgEnum("user_role", ["admin", "manager", "supervisor", "agent"]);
+/**
+ * Application roles. Trainer and SME are the support roles: they read every
+ * employee like an administrator does, work like a team leader does
+ * (action items, audits), and have no roster, no leave calendar and none of
+ * the team-leader tooling (EWS, Ramp, Adherence, the calculators).
+ */
+export const userRoleEnum = pgEnum("user_role", ["admin", "manager", "supervisor", "agent", "trainer", "sme"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "pending", "disabled"]);
 export const employeeStatusEnum = pgEnum("employee_status", ["active", "on_leave", "separated"]);
 
@@ -962,6 +968,13 @@ export const qaAudits = pgTable(
     scorePct: numeric("score_pct", { precision: 5, scale: 2 }).notNull(),
     /** A compliance item failed: the score is zero whatever the rest earned. */
     isCritical: boolean("is_critical").notNull().default(false),
+    /**
+     * Whether this audit counts toward the weekly requirement — true when
+     * a team leader filed it, false for a support role's (trainer, SME)
+     * audit, which is a real audit on the record but not the team lead's
+     * two for the week. Fixed at filing from the evaluator's role then.
+     */
+    countsForRequirement: boolean("counts_for_requirement").notNull().default(true),
     /**
      * Time & Motion, on forms that log it (the Phone form): call reference
      * and one entry per segment with the baseline used and the actual

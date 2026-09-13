@@ -1,5 +1,6 @@
 "use server";
 
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { parseAdherencePdf, type AdherenceAgentDay } from "@/lib/adherence/parse-pdf";
 
@@ -18,7 +19,7 @@ export type AdherenceUploadResponse =
 export async function parseAdherenceUpload(formData: FormData): Promise<AdherenceUploadResponse> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
-  if (user.role === "agent") {
+  if (user.role === "agent" || isSupportRole(user)) {
     return { ok: false, error: "Only team leads and above can use this tool" };
   }
 

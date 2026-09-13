@@ -11,7 +11,7 @@ export interface UserRow {
   id: string;
   name: string;
   email: string;
-  role: "admin" | "manager" | "supervisor" | "agent";
+  role: (typeof ROLES)[number];
   status: "active" | "pending" | "disabled";
   employeeEid: string | null;
   managerName: string | null;
@@ -22,7 +22,15 @@ export interface UserRow {
   mfaEnrolled: boolean | null;
 }
 
-const ROLES = ["admin", "manager", "supervisor", "agent"] as const;
+const ROLES = ["admin", "manager", "supervisor", "agent", "trainer", "sme"] as const;
+const ROLE_LABELS: Record<(typeof ROLES)[number], string> = {
+  admin: "admin",
+  manager: "manager",
+  supervisor: "supervisor",
+  agent: "agent",
+  trainer: "trainer",
+  sme: "SME",
+};
 
 /**
  * The role a sign-up position implies.
@@ -35,6 +43,8 @@ const ROLES = ["admin", "manager", "supervisor", "agent"] as const;
 const IMPLIED_ROLE: Record<string, string> = {
   Manager: "manager",
   Supervisor: "supervisor",
+  Trainer: "trainer",
+  SME: "sme",
 };
 const STATUSES = ["active", "pending", "disabled"] as const;
 
@@ -154,7 +164,7 @@ function UserRowEditor({
         >
           {ROLES.map((option) => (
             <option key={option} value={option}>
-              {option}
+              {ROLE_LABELS[option]}
             </option>
           ))}
         </select>

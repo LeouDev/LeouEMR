@@ -78,7 +78,7 @@ export const PROBLEM_MESSAGES: Record<RequestProblem, string> = {
  * one — so it is recorded as approved on submission and drawn on the
  * calendar straight away. Everyone else's waits for the leader over them.
  */
-export function approvedOnSubmission(role: "admin" | "manager" | "supervisor" | "agent"): boolean {
+export function approvedOnSubmission(role: string): boolean {
   return role === "manager";
 }
 

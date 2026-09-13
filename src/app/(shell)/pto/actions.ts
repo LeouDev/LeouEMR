@@ -3,6 +3,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, ptoRequests, users } from "@/lib/db/schema";
@@ -11,6 +12,9 @@ import { approvedOnSubmission, PROBLEM_MESSAGES, canCancel, canDecide, validateR
 import { canDecideForLeader } from "@/lib/pto/scope";
 
 export type PtoResult = { ok: true; approved?: boolean } | { ok: false; error: string };
+
+/** The support roles have no leave on this calendar. */
+const NO_TIME_OFF = "Time off is not filed here for a trainer or SME account.";
 
 const requestSchema = z.object({
   startDate: z.string().trim().min(1),
@@ -46,6 +50,7 @@ async function nextCode(): Promise<string> {
 export async function requestPto(input: unknown): Promise<PtoResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (isSupportRole(user)) return { ok: false, error: NO_TIME_OFF };
   if (!user.employeeEid) {
     return { ok: false, error: "Your account is not linked to an employee record yet" };
   }
@@ -143,7 +148,7 @@ const decisionSchema = z.object({
 export async function decidePto(input: unknown): Promise<PtoResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
-  if (user.role === "agent") {
+  if (user.role === "agent" || isSupportRole(user)) {
     return { ok: false, error: "Only a supervisor, manager or administrator can decide leave" };
   }
 
@@ -219,6 +224,7 @@ export async function decidePto(input: unknown): Promise<PtoResult> {
 export async function cancelPto(requestId: string): Promise<PtoResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (isSupportRole(user)) return { ok: false, error: NO_TIME_OFF };
 
   const [request] = await db
     .select()

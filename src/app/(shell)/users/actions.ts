@@ -12,7 +12,7 @@ export type UserActionResult = { ok: true } | { ok: false; error: string };
 
 const updateSchema = z.object({
   userId: z.string().uuid(),
-  role: z.enum(["admin", "manager", "supervisor", "agent"]),
+  role: z.enum(["admin", "manager", "supervisor", "agent", "trainer", "sme"]),
   status: z.enum(["active", "pending", "disabled"]),
   employeeEid: z.string().trim().max(64).optional(),
   managerName: z.string().trim().max(200).optional(),

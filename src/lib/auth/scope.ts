@@ -17,6 +17,9 @@ import type { CurrentUser } from "./session";
 export function employeeScope(user: CurrentUser): SQL | null | "all" {
   switch (user.role) {
     case "admin":
+    // The support roles have no roster of their own: they read everyone.
+    case "trainer":
+    case "sme":
       return "all";
 
     case "manager": {
@@ -51,13 +54,22 @@ export function withScope(user: CurrentUser, condition?: SQL): SQL | null | unde
 }
 
 /**
+ * Trainer and SME: the support group. They see every employee, work an
+ * agent's items and audits like a team leader, and have no roster, no leave
+ * calendar and none of the team-leader tooling.
+ */
+export function isSupportRole(user: CurrentUser): boolean {
+  return user.role === "trainer" || user.role === "sme";
+}
+
+/**
  * The Records archive — what has been written against action items, read-only
  * and printable — is a leader's view. An agent reads their own items on the
  * action-item pages; the archive is never theirs, so this fails closed for
  * any role not listed rather than for "agent" alone.
  */
 export function canViewRecords(user: CurrentUser): boolean {
-  return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
+  return user.role === "admin" || user.role === "manager" || user.role === "supervisor" || isSupportRole(user);
 }
 
 /**
@@ -66,20 +78,39 @@ export function canViewRecords(user: CurrentUser): boolean {
  * never its reader here — fails closed for any role not listed.
  */
 export function canAuditQuality(user: CurrentUser): boolean {
-  return user.role === "admin" || user.role === "manager" || user.role === "supervisor";
+  return user.role === "admin" || user.role === "manager" || user.role === "supervisor" || isSupportRole(user);
 }
 
 /**
- * Filing an audit is a team leader's job: they listen to their own
- * agents' calls and cases. A manager and an administrator read the
- * dashboard, the history and the analysis, and do not file.
+ * Filing an audit: a team leader on their own agents, and the support
+ * roles on anyone. A manager and an administrator read the dashboard, the
+ * history and the analysis, and do not file.
  */
 export function canFileAudit(user: CurrentUser): boolean {
+  return user.role === "supervisor" || isSupportRole(user);
+}
+
+/**
+ * Whether an audit this user files counts toward the weekly requirement.
+ * The requirement is the team leader's own — two of their audits per active
+ * agent — so a support role's audit is recorded but does not complete it.
+ */
+export function countsForRequirement(user: CurrentUser): boolean {
   return user.role === "supervisor";
 }
 
 /** True when the user may act on (not just view) an employee's action items. */
 export function canManageActionItems(user: CurrentUser): boolean {
+  return user.role === "admin" || user.role === "supervisor" || isSupportRole(user);
+}
+
+/**
+ * Early-warning assessments and ramp schedules are the team leader's own
+ * programs, run from the EWS and Ramp tabs a support role does not have —
+ * so a trainer or SME neither records an assessment nor sets a ramp, even
+ * though they work an agent's action items like a team leader.
+ */
+export function canRunTeamPrograms(user: CurrentUser): boolean {
   return user.role === "admin" || user.role === "supervisor";
 }
 

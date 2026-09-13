@@ -9,7 +9,7 @@
  * before any page or action; everyone else may enrol if they like.
  */
 
-export const MFA_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "supervisor"]);
+export const MFA_ROLES: ReadonlySet<string> = new Set(["admin", "manager", "supervisor", "trainer", "sme"]);
 
 export type AssuranceLevel = "aal1" | "aal2";
 

@@ -6,6 +6,8 @@ describe("mfaRequiredFor", () => {
     expect(mfaRequiredFor("admin")).toBe(true);
     expect(mfaRequiredFor("manager")).toBe(true);
     expect(mfaRequiredFor("supervisor")).toBe(true);
+    expect(mfaRequiredFor("trainer")).toBe(true);
+    expect(mfaRequiredFor("sme")).toBe(true);
     expect(mfaRequiredFor("agent")).toBe(false);
   });
 });

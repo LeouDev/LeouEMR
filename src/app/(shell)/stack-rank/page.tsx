@@ -34,7 +34,7 @@ export default async function StackRankPage({
   // page. Reviewed and accepted alongside the org-wide ranking itself (see
   // the module doc comment above); this line exists so that acceptance is
   // legible in the code, not just in this comment.
-  const ALLOWED_ROLES: UserRole[] = ["admin", "manager", "supervisor", "agent"];
+  const ALLOWED_ROLES: UserRole[] = ["admin", "manager", "supervisor", "agent", "trainer", "sme"];
   if (!ALLOWED_ROLES.includes(user.role)) redirect("/dashboard");
 
   const [params, range, employee, cookieStore] = await Promise.all([

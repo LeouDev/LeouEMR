@@ -31,7 +31,7 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Active agents" value={roster.activeAgents} hint={isThisWeek ? "This week" : `Week of ${weekLabel(week)}`} />
           <StatCard label="Required audits" value={roster.required} hint={`${AUDITS_PER_AGENT} per active agent`} />
-          <StatCard label="Completed" value={roster.completed} tone="pass" />
+          <StatCard label="Completed" value={roster.completed} tone="pass" hint="By the agent's team lead" />
           <StatCard
             label="Completion"
             value={`${roster.completionPct}%`}

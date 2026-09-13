@@ -123,7 +123,18 @@ describe.each<UserRole>(["manager", "admin"])("a %s", (role) => {
   });
 });
 
-describe.each<UserRole>(["supervisor", "manager", "admin"])("a %s", (role) => {
+describe.each<UserRole>(["trainer", "sme"])("a %s", (role) => {
+  beforeEach(() => {
+    currentUser.value = signedInAs(role);
+    scope.ids = [AGENT_ID];
+  });
+
+  it("may file, but not for an agent outside the scope handed to them — refused before any read or write", async () => {
+    expect(await submitAudit({ ...filing(), agentId: OTHER_AGENT_ID })).toEqual({ ok: false, error: OUT_OF_SCOPE });
+  });
+});
+
+describe.each<UserRole>(["supervisor", "manager", "admin", "trainer", "sme"])("a %s", (role) => {
   beforeEach(() => {
     currentUser.value = signedInAs(role);
     scope.ids = [AGENT_ID];

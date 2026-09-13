@@ -21,7 +21,7 @@
 import postgres from "postgres";
 
 const [email, role, employeeEid, managerName] = process.argv.slice(2);
-const ROLES = ["admin", "manager", "supervisor", "agent"];
+const ROLES = ["admin", "manager", "supervisor", "agent", "trainer", "sme"];
 
 if (!email || !ROLES.includes(role)) {
   console.error(

@@ -5,7 +5,7 @@ import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { graceUntilSetting, mfaDecision, todayUtc, type AssuranceLevel } from "./mfa";
 
-export type UserRole = "admin" | "manager" | "supervisor" | "agent";
+export type UserRole = "admin" | "manager" | "supervisor" | "agent" | "trainer" | "sme";
 export type UserStatus = "active" | "pending" | "disabled";
 
 export interface CurrentUser {
