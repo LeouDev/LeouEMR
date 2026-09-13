@@ -50,14 +50,14 @@ async function squareDataUrl(file: File): Promise<string> {
   }
 }
 
-/** The picture, or the initials while there is none. Grayscale like every photo in the app. */
+/** The picture, or the initials while there is none. In colour: the one image in the app that is (data-keep-color). */
 function Avatar({ name, version, className }: { name: string; version: number | null; className: string }) {
   if (version !== null) {
     // A plain img on purpose: the picture is a private 256px route of the
     // caller's own, already resized by the browser that uploaded it —
     // next/image's optimizer would add a hop and nothing else.
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={avatarUrl(version)} alt="" className={`${className} object-cover`} />;
+    return <img src={avatarUrl(version)} alt="" data-keep-color className={`${className} object-cover`} />;
   }
   return (
     <span aria-hidden className={`${className} flex items-center justify-center font-bold text-cream`}>

@@ -677,8 +677,9 @@ from every environment this project gets worked on in.
   passes the row's timestamp as `?v=`, so a new upload is a new URL and
   the old one can be cached for good. The header's `Promise.all` gained
   the timestamp read (nothing else). The picture shows in the header
-  button (32px) and the panel (56px), grayscale like every image in the
-  app (`img:not([data-keep-color])` in globals.css). "Add/Change photo"
+  button (32px) and the panel (56px), in colour — the one image that
+  is: `data-keep-color` opts it out of the grayscale rule
+  (`img:not([data-keep-color])` in globals.css), as asked. "Add/Change photo"
   and "Remove" sit under the name in the panel header; status and
   refusals show right there. Accepts PNG, JPEG, WebP — not HEIC, which
   browsers cannot decode; an iPhone set to "Most compatible" sends JPEG.
