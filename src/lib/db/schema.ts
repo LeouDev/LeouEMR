@@ -962,6 +962,13 @@ export const qaAudits = pgTable(
     scorePct: numeric("score_pct", { precision: 5, scale: 2 }).notNull(),
     /** A compliance item failed: the score is zero whatever the rest earned. */
     isCritical: boolean("is_critical").notNull().default(false),
+    /**
+     * When the agent acknowledged the review on My Quality Scores; null
+     * until they do. Kept here rather than in `acknowledgements`, which is
+     * keyed to an action item and belongs to the coaching workflow.
+     */
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

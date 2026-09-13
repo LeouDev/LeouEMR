@@ -400,6 +400,34 @@ from every environment this project gets worked on in.
   (`quality/authorization.test.ts`). Audit filing writes
   `audit_log` action `qa.audit_filed`. Live 13 Sep: the administrator ran
   the migration and app-role.sql, then the merge (production 03:31 UTC).
+- **My Quality Scores, the agent-facing page (feature branch, 13 Sep).**
+  From the second handoff (`My Quality Scores.dc.html` + README):
+  `/my-quality-scores` for the agent role (nav tab in `AGENT_NAV`; any
+  other role is sent to `/quality`), reading the same `qa_audits` /
+  `qa_audit_results` / `qa_forms` — no second data model. Scope is the
+  employee row the account is linked to (`getMyQualityScores`: agent role
+  + `employeeEid` → `employees.eid`; anything else returns null before a
+  query). Content: the four KPIs (audits received, average, pass rate on
+  the leaders' rule, latest), a score trend with the 90% line and red
+  points where any attribute failed (`score-trend.tsx`), "Areas to focus
+  on" (their own most frequent failed attributes, "No recurring findings
+  — nice work" when none), and the audit table with a drawer: findings
+  or "No findings — clean audit", the team lead's remarks, "View full
+  audit form" (every attribute with its Pass/Fail tag), and Acknowledge
+  review. Acknowledgement is two columns on `qa_audits`
+  (`acknowledged_at`, `acknowledged_by`; migration `0044_qa_acknowledgement`,
+  apply with `drizzle/APPLY_0044_QA_ACKNOWLEDGEMENT.sql` in the SQL
+  editor, nothing to re-grant) rather than the `acknowledgements` table,
+  which is keyed to an action item and belongs to the coaching workflow
+  the handoff said not to touch. `acknowledgeAudit` updates only where
+  the audit's `agent_id` is the caller's own employee row and it is not
+  yet acknowledged, and writes `audit_log` `qa.audit_acknowledged`; the
+  leaders' History drawer shows "Acknowledged <date>" or "Not yet". Pure
+  summary in `src/lib/quality/my-scores.ts` (tested); role and link gates
+  in `my-quality-scores/authorization.test.ts`. The migration generator
+  again named the file `0043_` (it numbers by journal index, one behind
+  this repo's names) and overwrote `meta/0043_snapshot.json`; renumbered
+  to 0044 and the snapshot restored from git, as for 0043.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

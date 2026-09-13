@@ -128,6 +128,14 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
                     <p className="text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase">Remarks</p>
                     <p className="mt-1 text-sm whitespace-pre-wrap text-ink">{open.remarks || "—"}</p>
                   </div>
+                  <div>
+                    <p className="text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase">Agent acknowledgement</p>
+                    <p className={`mt-1 text-sm ${open.acknowledgedAt ? "text-pass" : "text-muted"}`}>
+                      {open.acknowledgedAt
+                        ? `Acknowledged ${new Date(open.acknowledgedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                        : "Not yet acknowledged"}
+                    </p>
+                  </div>
                   <a href={`/quality/export?audit=${open.id}`} className="btn-secondary inline-block px-4 py-2 text-center text-sm">
                     Download raw data (CSV)
                   </a>
