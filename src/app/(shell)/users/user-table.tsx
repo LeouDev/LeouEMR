@@ -195,7 +195,7 @@ function UserRowEditor({
         {/* Only shown for the untouched, already-saved value — the save
             action itself is what validates whatever is typed next. */}
         {eid === (user.employeeEid ?? "") && eid !== "" && user.eidMatches === false && (
-          <p className="mt-1 text-[10px] font-bold text-fail">No matching employee</p>
+          <p className="mt-1 text-[10px] font-bold text-fail">Not on the roster</p>
         )}
       </td>
       <td className="px-3 py-2">

@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { auditLog, employees, users } from "@/lib/db/schema";
+import { auditLog, employeeAssignments, employees, users } from "@/lib/db/schema";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type UserActionResult = { ok: true } | { ok: false; error: string };
@@ -17,6 +17,25 @@ const updateSchema = z.object({
   employeeEid: z.string().trim().max(64).optional(),
   managerName: z.string().trim().max(200).optional(),
 });
+
+/**
+ * Whether the roster knows an employee ID: an agent's own row, or a team
+ * leader's — who has no row of their own, since the imported workbook
+ * lists agents only, and exists in the data solely as the supervisor EID
+ * on their reports' rows, on the current roster or in its history.
+ */
+async function eidKnownToRoster(eid: string): Promise<boolean> {
+  const [own, leads, led] = await Promise.all([
+    db.select({ id: employees.id }).from(employees).where(eq(employees.eid, eid)).limit(1),
+    db.select({ id: employees.id }).from(employees).where(eq(employees.supervisorEid, eid)).limit(1),
+    db
+      .select({ id: employeeAssignments.id })
+      .from(employeeAssignments)
+      .where(eq(employeeAssignments.supervisorEid, eid))
+      .limit(1),
+  ]);
+  return own.length > 0 || leads.length > 0 || led.length > 0;
+}
 
 /**
  * Updates another account's role, status and data linkage.
@@ -49,18 +68,22 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
       ? parsed.data.managerName?.trim() || null
       : null;
 
-  if (employeeEid) {
+  // Only a *changed* ID is checked. Re-checking one that was not touched
+  // made every other edit to the row — a role, a status, a team leader's
+  // cluster — fail on a field the administrator never went near, and did
+  // so for every team leader, whose ID the old check (agent rows only)
+  // never recognised.
+  if (employeeEid && employeeEid !== before.employeeEid) {
     // The claim at sign-up is never trusted on its own — same reasoning as
     // the role hint above, applied to the one field here that actually has
     // a ground truth to check against. An EID that matches nobody in the
     // roster is never a legitimate link: it's a typo, or someone guessing,
     // and saving it anyway is what let 5 accounts drift out of sync with
     // the roster before this check existed.
-    const [match] = await db.select({ id: employees.id }).from(employees).where(eq(employees.eid, employeeEid)).limit(1);
-    if (!match) {
+    if (!(await eidKnownToRoster(employeeEid))) {
       return {
         ok: false,
-        error: `No employee found with ID ${employeeEid} — check for a typo, or confirm they're in the imported roster.`,
+        error: `No employee or team leader found with ID ${employeeEid} — check for a typo, or confirm they're in the imported roster.`,
       };
     }
 

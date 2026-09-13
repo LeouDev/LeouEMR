@@ -48,7 +48,13 @@ export default async function UsersPage({
       // check it against: null when unlinked (nothing to flag), true when
       // it resolves to a real roster row, false when it does not — a link
       // set before this check existed, or a typo that slipped through.
-      eidMatches: sql<boolean | null>`case when ${users.employeeEid} is null then null else ${employees.id} is not null end`,
+      // A team leader has no employee row of their own — they are on the
+      // roster as the supervisor EID of their reports — so that counts too.
+      eidMatches: sql<boolean | null>`case when ${users.employeeEid} is null then null else (
+        ${employees.id} is not null
+        or exists (select 1 from employees as led where led.supervisor_eid = ${users.employeeEid})
+        or exists (select 1 from employee_assignments as past where past.supervisor_eid = ${users.employeeEid})
+      ) end`,
     })
     .from(users)
     .leftJoin(employeeProfiles, eq(employeeProfiles.userId, users.id))

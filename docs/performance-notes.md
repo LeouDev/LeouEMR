@@ -342,6 +342,21 @@ from every environment this project gets worked on in.
   fallback. Any filter change starts the list over at twenty. An
   unregistered row shows the roster name and EID and one italic note
   across the other columns.
+- **A team leader's account row can be saved again (13 Sep).** Setting
+  Lea's cluster link on the Users page was refused with "No employee
+  found with ID …": `updateUser` re-checked the employee ID against agent
+  rows on every save, whether or not the ID had changed, and a team
+  leader's ID is never an agent row — the workbook lists agents only, so
+  a leader exists in the data solely as the `supervisor_eid` on their
+  reports' rows. Every row edit for every team leader failed the same
+  way. Now only a *changed* ID is checked, and the check
+  (`eidKnownToRoster`) accepts an agent's own row, a current
+  `employees.supervisor_eid`, or one in `employee_assignments`. The
+  page's red hint follows the same rule and reads "Not on the roster".
+  Found while diagnosing Lea's empty November cluster: her account had no
+  link and no rostered team, so the cluster fell back to her last-known
+  manager (Tuting) while Archiene's team sits under Comendador — the
+  data, not the code; the link is the remedy until her team is rostered.
 - **Second step at sign-in (authenticator app), feature branch 12 Sep.**
   Supabase Auth TOTP (free plan; must be enabled under Authentication >
   Multi-Factor). Rules in `src/lib/auth/mfa.ts` (tested): admin, manager

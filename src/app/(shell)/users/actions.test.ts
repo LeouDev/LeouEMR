@@ -30,6 +30,7 @@ const tableName = (t: unknown) => (t as Record<symbol, string>)[Symbol.for("driz
 
 let usersRows: Array<Record<string, unknown>> = [];
 let employeesRows: Array<Record<string, unknown>> = [];
+let assignmentsRows: Array<Record<string, unknown>> = [];
 const auditRows: Array<Record<string, unknown>> = [];
 
 vi.mock("@/lib/db/client", () => ({
@@ -38,8 +39,14 @@ vi.mock("@/lib/db/client", () => ({
       from: (table: unknown) => ({
         where: (pred: (row: Record<string, unknown>) => boolean) => ({
           limit: () => {
-            const rows = tableName(table) === "employees" ? employeesRows : usersRows;
-            return Promise.resolve(rows.filter(pred));
+            const name = tableName(table);
+            const rows = name === "employees" ? employeesRows : name === "employee_assignments" ? assignmentsRows : usersRows;
+            // Real Drizzle hands rows back under the schema's camelCase
+            // names; the fake rows are keyed the way the predicates read
+            // them, so the two columns the action reads back are mapped.
+            return Promise.resolve(
+              rows.filter(pred).map((row) => ({ ...row, employeeEid: row.employee_eid, managerName: row.manager_name })),
+            );
           },
         }),
       }),
@@ -77,6 +84,8 @@ const { updateUser } = await import("./actions");
 const ADMIN_ID = "11111111-1111-4111-8111-111111111111";
 const TARGET_ID = "22222222-2222-4222-8222-222222222222";
 const REAL_EID = "001895123";
+/** A team leader's ID: on the roster only as the supervisor of an agent row. */
+const LEADER_EID = "001305110";
 
 beforeEach(() => {
   currentUser.value = {
@@ -92,7 +101,8 @@ beforeEach(() => {
     { id: ADMIN_ID, name: "Test Admin", employee_eid: null, role: "admin", status: "active", manager_name: null },
     { id: TARGET_ID, name: "Pending Agent", employee_eid: null, role: "agent", status: "pending", manager_name: null },
   ];
-  employeesRows = [{ id: "employee-1", eid: REAL_EID }];
+  employeesRows = [{ id: "employee-1", eid: REAL_EID, supervisor_eid: LEADER_EID }];
+  assignmentsRows = [];
   auditRows.length = 0;
 });
 
@@ -109,7 +119,8 @@ describe("linking an account to an employee ID", () => {
     const result = await updateUser(input({ employeeEid: "999999999" }));
     expect(result).toEqual({
       ok: false,
-      error: "No employee found with ID 999999999 — check for a typo, or confirm they're in the imported roster.",
+      error:
+        "No employee or team leader found with ID 999999999 — check for a typo, or confirm they're in the imported roster.",
     });
     expect(usersRows.find((r) => r.id === TARGET_ID)?.employee_eid).toBeNull();
   });
@@ -131,6 +142,29 @@ describe("linking an account to an employee ID", () => {
     });
     const result = await updateUser(input({ employeeEid: REAL_EID }));
     expect(result).toEqual({ ok: false, error: `Employee ID ${REAL_EID} is already linked to Already Linked` });
+  });
+
+  it("accepts a team leader's ID, which is on the roster only as their reports' supervisor", async () => {
+    const result = await updateUser(input({ role: "supervisor", employeeEid: LEADER_EID }));
+    expect(result).toEqual({ ok: true });
+    expect(usersRows.find((r) => r.id === TARGET_ID)?.employee_eid).toBe(LEADER_EID);
+  });
+
+  it("accepts a leader's ID known only from the roster's history", async () => {
+    employeesRows = [{ id: "employee-1", eid: REAL_EID, supervisor_eid: "somebody-else" }];
+    assignmentsRows = [{ id: "stint-1", supervisor_eid: LEADER_EID }];
+    const result = await updateUser(input({ role: "supervisor", employeeEid: LEADER_EID }));
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("does not re-check an ID the administrator did not change, so the rest of the row can still be saved", async () => {
+    // A link set before the check existed, matching nothing today.
+    usersRows = usersRows.map((r) => (r.id === TARGET_ID ? { ...r, role: "supervisor", employee_eid: "000000001" } : r));
+    const result = await updateUser(
+      input({ role: "supervisor", employeeEid: "000000001", managerName: "Leou Alven Narito Comendador" }),
+    );
+    expect(result).toEqual({ ok: true });
+    expect(usersRows.find((r) => r.id === TARGET_ID)?.manager_name).toBe("Leou Alven Narito Comendador");
   });
 
   it("leaves an empty EID alone — nothing to validate against the roster", async () => {
