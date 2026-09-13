@@ -179,7 +179,8 @@ export function AuditForm({
 
   return (
     <div className="space-y-5">
-      <Card>
+      {/* Overflow stays visible here: the agent search's match list hangs below its box, past the card's edge. */}
+      <Card className="overflow-visible!">
         <div className="p-6">
           <h2 className="text-lg font-bold text-ink">Set up audit</h2>
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

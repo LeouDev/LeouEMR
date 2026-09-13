@@ -570,7 +570,12 @@ from every environment this project gets worked on in.
   rank first, eight shown with a "showing 8 of n" line, an empty query
   shows the first eight so a short team needs no typing). Options use
   mousedown rather than click because the input's blur fires between the
-  two and would close the list first.
+  two and would close the list first. Live 13 Sep, and the first look
+  showed the list cut off at the card's edge: `Card` is
+  `overflow-hidden`, so the "Set up audit" card gets `overflow-visible!`
+  (Tailwind v4's important suffix — plain `overflow-visible` cannot be
+  relied on to win over the base class). Any other floating list inside a
+  `Card` needs the same.
 - **Phone audit Time & Motion runs the action item's stopwatch (feature
   branch, 13 Sep).** The QA panel had its own five segments (Greeting /
   verification … Wrap-up, 480s) and typed-in seconds; the action item's
