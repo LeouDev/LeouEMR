@@ -400,6 +400,31 @@ from every environment this project gets worked on in.
   (`quality/authorization.test.ts`). Audit filing writes
   `audit_log` action `qa.audit_filed`. Live 13 Sep: the administrator ran
   the migration and app-role.sql, then the merge (production 03:31 UTC).
+- **Time & Motion on Phone audits (feature branch, 13 Sep).** The third
+  handoff (the Quality Audit design again, plus a "Time & Motion (Phone
+  Form only)" section): a floating side panel on the New audit page — a
+  bottom-right toggle reading "Time & Motion · filled/total", a panel
+  with a call reference and, per segment, an editable baseline (seconds,
+  pre-filled from the form) and the actual, with the delta and totals —
+  logged alongside the scoring and never part of the score. Required in
+  full: Submit with any actual blank opens the panel and shows "Complete
+  Time & Motion (all segments) before submitting." beside the button,
+  clearing itself once every segment has a value; `submitAudit` refuses
+  the same way server-side (`validateStoredTimeMotion`). Storage is one
+  jsonb column, `qa_audits.time_motion` `{callReference, segments:
+  [{label, baselineSeconds, actualSeconds}]}` (migration
+  `0045_qa_time_motion`, apply with `drizzle/APPLY_0045_QA_TIME_MOTION.sql`;
+  it also writes the five segments into the Phone form's stored
+  definition as `definition.timeMotion` — Greeting / verification 30,
+  Account lookup 60, Issue discussion 240, Resolution / hold 90, Wrap-up
+  60 — the same values `QA_FORM_SEED` carries). Pure helpers in
+  `src/lib/quality/time-motion.ts` (tested). Both CSV exports carry it:
+  the per-audit file gets a call-reference line and a Segment / Baseline
+  / Actual / Delta block between the header and the attributes; the bulk
+  file gets one row per segment under category "Time & Motion" with the
+  signed delta in the result column. The leaders' History drawer lists
+  the segments. Only forms whose definition carries `timeMotion` show the
+  panel or require it; the other three do not.
 - **My Quality Scores, the agent-facing page (feature branch, 13 Sep).**
   From the second handoff (`My Quality Scores.dc.html` + README):
   `/my-quality-scores` for the agent role (nav tab in `AGENT_NAV`; any

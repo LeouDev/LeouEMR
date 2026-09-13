@@ -963,6 +963,12 @@ export const qaAudits = pgTable(
     /** A compliance item failed: the score is zero whatever the rest earned. */
     isCritical: boolean("is_critical").notNull().default(false),
     /**
+     * Time & Motion, on forms that log it (the Phone form): call reference
+     * and one entry per segment with the baseline used and the actual
+     * seconds. Never part of the score. Null on forms without it.
+     */
+    timeMotion: jsonb("time_motion"),
+    /**
      * When the agent acknowledged the review on My Quality Scores; null
      * until they do. Kept here rather than in `acknowledgements`, which is
      * keyed to an action item and belongs to the coaching workflow.

@@ -27,9 +27,18 @@ export interface QaGroup {
   items: QaPricedItem[];
 }
 
+/**
+ * Time & Motion segments, on the forms that log call timings alongside the
+ * scoring (the Phone form). Baselines are defaults the evaluator may
+ * override per audit; see src/lib/quality/time-motion.ts.
+ */
+export interface QaTimeMotionSpec {
+  segments: Array<{ label: string; baseline: number }>;
+}
+
 export type QaDefinition =
-  | { type: "A"; sections: QaSection[]; compliance: string[] }
-  | { type: "B"; groups: QaGroup[]; compliance: string[] };
+  | { type: "A"; sections: QaSection[]; compliance: string[]; timeMotion?: QaTimeMotionSpec }
+  | { type: "B"; groups: QaGroup[]; compliance: string[]; timeMotion?: QaTimeMotionSpec };
 
 export interface QaHeaderField {
   key: string;
@@ -177,6 +186,15 @@ export const QA_FORM_SEED: QaForm[] = [
         { name: "Call Control", weight: 1, items: ["Did not keep call on track"] },
       ],
       compliance: ["Incorrect case priority", "Invalid cancellation", "Case worked for incorrect member", "Unprofessional/profane language"],
+      timeMotion: {
+        segments: [
+          { label: "Greeting / verification", baseline: 30 },
+          { label: "Account lookup", baseline: 60 },
+          { label: "Issue discussion", baseline: 240 },
+          { label: "Resolution / hold", baseline: 90 },
+          { label: "Wrap-up", baseline: 60 },
+        ],
+      },
     },
   },
   {
