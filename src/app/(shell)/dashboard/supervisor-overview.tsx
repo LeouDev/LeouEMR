@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import { formatMetric } from "@/components/ui";
+import type { FocusAgent } from "@/lib/dashboard/focus";
 import type { TeamTrendSeries } from "@/lib/queries/team-trend";
 import {
   ActionItemsSummary,
@@ -47,18 +48,68 @@ export interface TeamSummaryStats {
  */
 const ACHIEVED_BAR = 2 / 3;
 
+/**
+ * "Focus Tech": the agents furthest from target this period, worst first,
+ * each with the measure to look at — the summary column's answer to "who
+ * do I sit with this week".
+ */
+function FocusTech({ agents, periodLabel }: { agents: FocusAgent[]; periodLabel: string }) {
+  return (
+    <div className="border-t border-line pt-3.5">
+      <h6 className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">Focus Tech</h6>
+      <p className="mt-0.5 text-[11px] text-muted">Furthest from target · {periodLabel}</p>
+      {agents.length === 0 ? (
+        <p className="mt-2 text-[13px] text-muted">No outliers — everyone is on target.</p>
+      ) : (
+        <ol className="mt-2 flex flex-col gap-2">
+          {agents.map((agent, index) => (
+            <li key={agent.employeeId} className="grid grid-cols-[auto_1fr] gap-x-3 text-[13px]">
+              <strong className="font-mono text-muted tabular-nums">{index + 1}</strong>
+              <div className="min-w-0">
+                <Link
+                  href={`/employees/${agent.employeeId}`}
+                  prefetch={false}
+                  className="font-semibold text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                >
+                  {agent.name}
+                </Link>
+                <p className="text-xs text-muted">
+                  {agent.below > 0 ? (
+                    <span className="font-semibold text-fail">
+                      {agent.below} below target
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-warn">{agent.atRisk} at risk</span>
+                  )}
+                  {agent.below > 0 && agent.atRisk > 0 && ` · ${agent.atRisk} at risk`}
+                  {agent.worst &&
+                    ` · ${agent.worst.name} ${formatMetric(agent.worst.actual, agent.worst.code)}${
+                      agent.worst.target === null ? "" : ` vs ${formatMetric(agent.worst.target, agent.worst.code)}`
+                    }`}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 export function SupervisorOverview({
   kpis,
   series,
   actionItems,
   stats,
   periodLabel,
+  focus,
 }: {
   kpis: TeamKpi[];
   series: TeamTrendSeries[];
   actionItems: ShellActionItems;
   stats: TeamSummaryStats;
   periodLabel: string;
+  focus: FocusAgent[];
 }) {
   const byCode = useMemo(() => new Map(kpis.map((k) => [k.code, k])), [kpis]);
 
@@ -152,6 +203,8 @@ export function SupervisorOverview({
       </div>
 
       <ActionItemsSummary items={actionItems} />
+
+      <FocusTech agents={focus} periodLabel={periodLabel} />
     </>
   );
 

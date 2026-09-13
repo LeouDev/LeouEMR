@@ -685,6 +685,21 @@ from every environment this project gets worked on in.
   and "Remove" sit under the name in the panel header; status and
   refusals show right there. Accepts PNG, JPEG, WebP — not HEIC, which
   browsers cannot decode; an iPhone set to "Most compatible" sends JPEG.
+- **"Focus Tech" on the team leader's dashboard (feature branch, 13
+  Sep).** Under the Action Items block in the summary column: the five
+  agents furthest from target this period, worst first, each linking to
+  their page with "n below target · m at risk · <worst KPI> actual vs
+  target". Pure and tested in `src/lib/dashboard/focus.ts`
+  (`focusAgents`): rank by KPIs below target, then at risk, then the
+  relative size of the worst miss (direction-aware; range/boolean KPIs
+  count as no gap), then name; the "worst" measure is a failing one when
+  any fails, the largest relative miss among those. Built on the page
+  from `periodMetrics` (already fetched, skills excluded) and named from
+  the comparison's rows, so it costs no query; support roles get it over
+  the floor since they share the layout. Same change fixed the card's
+  "18 of 1 with data": `total` was the week summary's count of today's
+  roster while `measured` counted the period's team by assignment
+  history — now both are the period's team (`teamIds.length`).
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent
