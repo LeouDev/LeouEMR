@@ -3,10 +3,12 @@ import Link from "next/link";
 import { BrandMark, BrandWordmark } from "@/components/brand";
 import { HeaderScene } from "@/components/header-scene";
 import { NavTabs } from "@/components/nav-tabs";
+import { ProfilePanel } from "@/components/profile-panel";
 import { db } from "@/lib/db/client";
-import { notifications } from "@/lib/db/schema";
+import { employeeProfiles, employees, notifications } from "@/lib/db/schema";
 import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
+import { formFromProfile } from "@/lib/profile/panel";
 import { SignOutButton } from "@/components/sign-out-button";
 
 /** Kept short: a wrapping role label was the widest thing in the header. */
@@ -102,10 +104,32 @@ const ADMIN_NAV = [
  * and is never recreated by navigating.
  */
 export async function AppHeader({ user }: { user: CurrentUser }) {
-  const [unread] = await db
-    .select({ n: count() })
-    .from(notifications)
-    .where(and(eq(notifications.recipientId, user.id), isNull(notifications.readAt)));
+  // One round trip for everything the header carries: the unread count,
+  // the person's own personnel record (the profile panel is seeded from
+  // it here rather than fetched when opened) and, for a linked account,
+  // the roster's team leader and manager.
+  const [[unread], [profileRow], [orgRow]] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(notifications)
+      .where(and(eq(notifications.recipientId, user.id), isNull(notifications.readAt))),
+    db.select().from(employeeProfiles).where(eq(employeeProfiles.userId, user.id)).limit(1),
+    user.employeeEid
+      ? db
+          .select({ supervisorName: employees.supervisorName, managerName: employees.managerName })
+          .from(employees)
+          .where(eq(employees.eid, user.employeeEid))
+          .limit(1)
+      : Promise.resolve([] as Array<{ supervisorName: string | null; managerName: string | null }>),
+  ]);
+  const profile = profileRow
+    ? { ...formFromProfile(profileRow), employeeEid: profileRow.employeeEid, position: profileRow.position }
+    : null;
+  // Shortcuts to the person's own pages: an agent's tools and scores, a
+  // team leader's calculators. Nothing for the other roles, whose own
+  // pages are all in the nav already.
+  const quickLinks =
+    user.role === "agent" ? AGENT_NAV : user.role === "supervisor" ? [{ href: "/skills", label: "My Tools" }] : [];
 
   // A supervisor's /skills tab has no configuration to reference — just the
   // rating and quality calculators — so it reads as "My Tools" for them
@@ -189,12 +213,12 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
               sit between Inbox and Sign out, reading as if it belonged to
               neither. One line each, never wrapped: this block was three
               lines tall before. */}
-          <div className="hidden text-right leading-tight sm:block">
-            <p className="text-sm font-semibold whitespace-nowrap text-cream">{user.name}</p>
-            <p className="text-[10px] font-bold tracking-[0.12em] whitespace-nowrap text-orange-brand uppercase">
-              {ROLE_LABELS[user.role] ?? user.role}
-            </p>
-          </div>
+          <ProfilePanel
+            account={{ name: user.name, email: user.email, roleLabel: ROLE_LABELS[user.role] ?? user.role, employeeEid: user.employeeEid }}
+            profile={profile}
+            org={orgRow ?? null}
+            quickLinks={quickLinks}
+          />
 
           <div className="flex shrink-0 items-center gap-2">
             <Link

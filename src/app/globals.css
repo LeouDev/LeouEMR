@@ -212,6 +212,17 @@ img:not([data-keep-color]) {
   animation: fadeUp 0.4s ease-out both;
 }
 
+/* The profile panel: in from the right edge, over a backdrop that fades in. */
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /**
  * The auth scene: an astronaut injects the earth, orange filling the navy
  * globe as loading progresses. Every timeline is expressed as a percentage
