@@ -652,7 +652,9 @@ from every environment this project gets worked on in.
   letters/digits, every field ≤ 200 chars) and run on the page and in the
   action alike. An account with no profile row (created from the
   Supabase dashboard, or pre-dating profiles) sees the note and the
-  read-only fields only. Decision: the account name (`users.name`) is not
+  read-only fields only. The header's "Security" box went once the panel
+  carried "Manage security & MFA" (asked for, 13 Sep); `/mfa` stays
+  reachable from the panel and by URL. Decision: the account name (`users.name`) is not
   edited here — it is what every evaluator/leader/audit label shows and
   what an unlinked manager's scope falls back to — so the panel header
   shows the account name while the Profile section edits the personnel
