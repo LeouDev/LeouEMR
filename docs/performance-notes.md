@@ -440,6 +440,10 @@ from every environment this project gets worked on in.
   Security → Authorized IPs restriction deactivated for SMTP keys (525
   "Unauthorized IP address" otherwise). The Gmail address is the
   verified Brevo sender. First successful reset email 12 Sep 20:39 UTC.
+  The administrator's personal Gmail, which carried the first EOD sends
+  through an app password, is out of the picture: that app password was
+  revoked 13 Sep, so no credential of a personal account remains in
+  Vercel, Supabase or Brevo.
   Supabase Auth: minimum password 12 with letters and digits
   (leaked-password protection is Pro-only). Still open: MFA, the
   limited database role, the weekly backup.
