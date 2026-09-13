@@ -717,6 +717,24 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Age-out counts from the last failure, not the opening week (main,
+  14 Sep).** Found by a functionality audit of the Development plan.
+  `shouldAgeOut` measured the 60 days from `openedWeek` and only asked
+  whether the latest week passed, so an item older than 60 days that had
+  just relapsed closed as "recovered and past age threshold" after one
+  passing week, and the next failing week opened a second item for the
+  same problem (reproduced with the engine: opened June, reopened
+  10 Aug, one pass, closed). The engine now takes `lastFailedWeek` (the
+  pair's most recent failing weekly result; `ageOutRecoveredIssues`
+  tracks it in the same scan as `latestResult`) and measures from the
+  later of that and the opening week; the age-out audit entry records it.
+  Pinned in `engine.test.ts`.
+- **Acknowledging an item no longer notifies every supervisor (main,
+  14 Sep).** Same audit: `acknowledge` built its recipient filter as
+  `and(role = supervisor, supervisorEid ? eq(...) : undefined)`, so for
+  an employee with no supervisor EID on record the second clause fell
+  away and the whole supervisor role was notified. Now nobody is when no
+  supervisor is linked.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

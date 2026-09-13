@@ -250,8 +250,13 @@ export function replayEmployeeKpiHistory(
  * measured on it leaves an issue open forever. Age closes those.
  *
  * Two conditions, both required. The issue must be older than the threshold,
- * measured in reporting days from the week it opened — not wall-clock time,
- * so a database restored or imported late does not age everything out at once.
+ * measured in reporting days from its most recent failure — the week it
+ * opened, or the latest failing week since — not wall-clock time, so a
+ * database restored or imported late does not age everything out at once.
+ * Counting from the opening week alone closed an item that had relapsed a
+ * week earlier: once it was past the threshold, a single passing week after
+ * the relapse read as "recovered", the item closed on age, and the next
+ * failure opened a second item for the same problem.
  * And its KPI must have recovered: the most recent result on record is not a
  * failure. An issue still failing is never aged out however old it is, because
  * closing it would delete the only standing record that someone needs help.
@@ -264,6 +269,8 @@ export function shouldAgeOut(
   issue: {
     status: IssueStatus;
     openedWeek: string;
+    /** The most recent failing week on record for this employee and KPI, when there is one. */
+    lastFailedWeek?: string | null;
     /** Status of the most recent weekly result for this employee and KPI. */
     latestResult: "pass" | "warning" | "fail" | null;
   },
@@ -274,11 +281,17 @@ export function shouldAgeOut(
   if (issue.status === "COMPLETED") return false;
   if (issue.latestResult === null || issue.latestResult === "fail") return false;
 
-  const opened = Date.parse(`${issue.openedWeek}T00:00:00Z`);
+  // The clock starts at the last failure. A relapse restarts it; a failing
+  // week recorded before the item opened (an earlier episode's) does not.
+  const since =
+    issue.lastFailedWeek && issue.lastFailedWeek > issue.openedWeek
+      ? issue.lastFailedWeek
+      : issue.openedWeek;
+  const failed = Date.parse(`${since}T00:00:00Z`);
   const now = Date.parse(`${asOf}T00:00:00Z`);
-  if (Number.isNaN(opened) || Number.isNaN(now)) return false;
+  if (Number.isNaN(failed) || Number.isNaN(now)) return false;
 
-  const days = (now - opened) / 86_400_000;
+  const days = (now - failed) / 86_400_000;
   return days >= config.ageOutAfterDays;
 }
 

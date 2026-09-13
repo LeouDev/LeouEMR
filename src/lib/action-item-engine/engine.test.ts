@@ -314,6 +314,24 @@ describe("shouldAgeOut", () => {
     ).toBe(false);
   });
 
+  it("measures age from the most recent failure, not the week the item opened", () => {
+    // Opened in June, relapsed on 10 August, passed the week after: 83 days
+    // old by the opening week, 13 by the relapse. One passing week after a
+    // relapse is not a recovery.
+    const relapsed = { ...recovered, status: "REOPENED" as const, lastFailedWeek: "2026-08-10" };
+    expect(shouldAgeOut(relapsed, "2026-08-23")).toBe(false);
+    expect(shouldAgeOut(relapsed, "2026-10-12")).toBe(true); // 63 days after the relapse
+  });
+
+  it("ignores a failing week older than the opening week — an earlier episode's, not this one's", () => {
+    expect(shouldAgeOut({ ...recovered, lastFailedWeek: "2026-01-05" }, "2026-08-07")).toBe(true);
+  });
+
+  it("treats no failure on record the same as the opening week", () => {
+    expect(shouldAgeOut({ ...recovered, lastFailedWeek: null }, "2026-08-07")).toBe(true);
+    expect(shouldAgeOut({ ...recovered, lastFailedWeek: null }, "2026-07-05")).toBe(false);
+  });
+
   it("honours a different threshold", () => {
     expect(
       shouldAgeOut(recovered, "2026-06-20", {

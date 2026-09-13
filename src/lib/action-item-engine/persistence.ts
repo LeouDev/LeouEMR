@@ -471,10 +471,14 @@ async function ageOutRecoveredIssues(
     .orderBy(asc(weeklyMetricResults.weekStart));
 
   // Last write wins, and the rows arrive oldest first, so this ends up
-  // holding each pair's most recent result.
+  // holding each pair's most recent result — and, separately, its most
+  // recent failure, which is where the age is measured from.
   const lastByPair = new Map<string, "pass" | "warning" | "fail">();
+  const lastFailByPair = new Map<string, string>();
   for (const row of latest) {
-    lastByPair.set(`${row.employeeId}|${row.kpiId}`, row.status);
+    const key = `${row.employeeId}|${row.kpiId}`;
+    lastByPair.set(key, row.status);
+    if (row.status === "fail") lastFailByPair.set(key, row.week);
   }
 
   const closing = issues.filter((issue) =>
@@ -482,6 +486,7 @@ async function ageOutRecoveredIssues(
       {
         status: issue.state.status,
         openedWeek: issue.state.openedWeek,
+        lastFailedWeek: lastFailByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
         latestResult: lastByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
       },
       asOfWeek,
@@ -508,7 +513,11 @@ async function ageOutRecoveredIssues(
         action: "issue.aged_out",
         entityType: "performance_issue",
         entityId: issue.id,
-        before: { status: issue.state.status, openedWeek: issue.state.openedWeek },
+        before: {
+          status: issue.state.status,
+          openedWeek: issue.state.openedWeek,
+          lastFailedWeek: lastFailByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
+        },
         after: { status: "COMPLETED", resolvedWeek: asOfWeek, reason: "recovered and past age threshold" },
       })),
     );

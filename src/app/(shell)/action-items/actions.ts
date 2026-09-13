@@ -261,16 +261,17 @@ export async function acknowledge(actionItemId: string): Promise<ActionResult> {
     after: { status: next.issue.status },
   });
 
-  // Notify whoever supervises this employee.
-  const supervisorIds = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(
-      and(
-        eq(users.role, "supervisor"),
-        scoped.employee.supervisorEid ? eq(users.employeeEid, scoped.employee.supervisorEid) : undefined,
-      ),
-    );
+  // Notify whoever supervises this employee — and nobody when no supervisor
+  // is linked. With the EID missing the filter used to fall away, leaving
+  // only the role, so every supervisor in the org was told.
+  const supervisorIds = scoped.employee.supervisorEid
+    ? await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(eq(users.role, "supervisor"), eq(users.employeeEid, scoped.employee.supervisorEid)),
+        )
+    : [];
 
   if (supervisorIds.length > 0) {
     await db.insert(notifications).values(
