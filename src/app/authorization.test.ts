@@ -50,7 +50,7 @@ function signedInAs(role: UserRole): CurrentUser {
 }
 
 /** The roles that must never be able to change configuration or accounts. */
-const NON_ADMIN: UserRole[] = ["manager", "supervisor", "agent"];
+const NON_ADMIN: UserRole[] = ["manager", "supervisor", "agent", "trainer", "sme"];
 
 beforeEach(() => {
   currentUser.value = null;

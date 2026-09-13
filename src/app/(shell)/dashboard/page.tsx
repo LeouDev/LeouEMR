@@ -14,6 +14,7 @@ import { ManagerOverview } from "./manager-overview";
 import { AgentPerformance, type AgentKpi } from "./agent-performance";
 import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
 import { TeamAgentTable } from "./team-agent-table";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   getAttentionRows,
@@ -42,6 +43,8 @@ const ROLE_HEADLINE: Record<string, string> = {
   manager: "My organization",
   supervisor: "My team",
   agent: "My performance",
+  trainer: "All teams",
+  sme: "All teams",
 };
 
 export default async function DashboardPage({
@@ -249,7 +252,7 @@ export default async function DashboardPage({
   const comparison =
     showsComparison && period ? await getTeamPeriodComparison(comparisonIds, period) : null;
 
-  const unscoped = !user.employeeEid && user.role !== "manager";
+  const unscoped = !user.employeeEid && user.role !== "manager" && !isSupportRole(user);
 
   // An agent's own row from the comparison above, so each KPI can carry its
   // change without a second query. Case rate rides in on the same row: it is
@@ -303,7 +306,9 @@ export default async function DashboardPage({
       ? await getEmployeeKpiTrend(scopedIds[0], weeks.slice(0, 12))
       : [];
 
-  const isSupervisor = user.role === "supervisor";
+  // The team view: a team leader over their own agents, and a support
+  // role over everyone — their "team" is the whole floor.
+  const isSupervisor = user.role === "supervisor" || isSupportRole(user);
 
   // The team's own figures, one row per KPI: the mean of the agents scored on
   // it, and how many of them were below target. The mean alone hides the

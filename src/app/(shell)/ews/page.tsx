@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, EwsRiskBadge, PageBand, StatCard, formatWeek } from "@/components/ui";
 import { AwayTable } from "./away-table";
 import { EWS_RISK_GUIDANCE } from "@/lib/ews/engine";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getEwsBoard } from "@/lib/queries/ews";
 
@@ -34,7 +35,7 @@ export default async function EwsPage() {
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
   // A hidden tab is not a permission check; every restricted page re-checks.
-  if (user.role === "agent") redirect("/dashboard");
+  if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
   const board = await getEwsBoard(user);
   const { totals } = board;

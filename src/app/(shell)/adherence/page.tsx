@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageBand } from "@/components/ui";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { AdherenceUploader } from "./adherence-uploader";
 
@@ -20,7 +21,7 @@ export default async function AdherencePage() {
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
   // A hidden tab is not a permission check; every restricted page re-checks.
-  if (user.role === "agent") redirect("/dashboard");
+  if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
   return (
     <>

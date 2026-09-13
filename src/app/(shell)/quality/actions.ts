@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canAuditQuality, canFileAudit } from "@/lib/auth/scope";
+import { canAuditQuality, canFileAudit, countsForRequirement } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
@@ -133,6 +133,7 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
         maxPoints: score.max,
         scorePct: score.scorePct.toFixed(2),
         isCritical: score.isCritical,
+        countsForRequirement: countsForRequirement(user),
         timeMotion,
       })
       .returning({ id: qaAudits.id });

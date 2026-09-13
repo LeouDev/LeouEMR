@@ -5,6 +5,7 @@ import { HeaderScene } from "@/components/header-scene";
 import { NavTabs } from "@/components/nav-tabs";
 import { db } from "@/lib/db/client";
 import { notifications } from "@/lib/db/schema";
+import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { SignOutButton } from "@/components/sign-out-button";
 
@@ -14,6 +15,8 @@ const ROLE_LABELS: Record<string, string> = {
   manager: "Manager",
   supervisor: "Team Leader",
   agent: "Agent",
+  trainer: "Trainer",
+  sme: "SME",
 };
 
 const NAV = [
@@ -107,6 +110,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   // A supervisor's /skills tab has no configuration to reference — just the
   // rating and quality calculators — so it reads as "My Tools" for them
   // specifically, while a manager or admin still sees "Skills".
+  const support = isSupportRole(user);
   const leaderNav = LEADER_ONLY_NAV.map((item) =>
     item.href === "/skills" && user.role === "supervisor"
       ? { ...item, label: "My Tools" }
@@ -130,13 +134,19 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
     // every link that already points at a specific employee.
     ...NAV.slice(1)
       .filter((item) => item.href !== "/employees" || (user.role !== "agent" && user.role !== "admin"))
+      // No leave calendar for a support role: nobody reports to them, and
+      // their own leave is not filed here.
+      .filter((item) => item.href !== "/pto" || !support)
       .flatMap((item) =>
         item.href === "/action-items" && user.role !== "agent" ? [item, RECORDS_NAV] : [item],
       ),
     ...(user.role === "agent"
       ? AGENT_NAV
       : [
-          ...leaderNav,
+          // A support role (trainer, SME) has no team-leader tooling: no
+          // calculators, EWS or Ramp, and no Adherence — MBO, the audits
+          // and the 201 file are what they work with.
+          ...(support ? leaderNav.filter((item) => item.href === "/mbo") : leaderNav),
           ...(user.role === "supervisor" ? SUPERVISOR_ONLY_NAV : []),
           ...LEADER_NAV,
         ]),

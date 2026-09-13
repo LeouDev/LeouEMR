@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getRampBoard } from "@/lib/queries/ramp";
 import { LAST_STAGE } from "@/lib/ramp/engine";
@@ -29,7 +30,7 @@ export default async function RampPage() {
   if (user.status !== "active") redirect("/pending");
   // A hidden tab is not a permission check; this is a leader tool with
   // nothing in it for an agent to see about themselves or anyone else.
-  if (user.role === "agent") redirect("/dashboard");
+  if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
   const canEdit = canManageActionItems(user);
   const board = await getRampBoard(user, todayIso());

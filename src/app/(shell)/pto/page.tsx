@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
+import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { employees, ptoRequests, users } from "@/lib/db/schema";
@@ -62,6 +63,10 @@ export default async function PtoPage({
   if (user.status !== "active") redirect("/pending");
 
   const params = await searchParams;
+  // The support roles have no roster to cover for and no leave to file
+  // here; the tab is not shown to them, and the page says so too.
+  if (isSupportRole(user)) redirect("/dashboard");
+
   const canDecide = user.role !== "agent";
   const showType = canSeeLeaveType(user);
   const view = calendarViewFor(user.role, params.view);

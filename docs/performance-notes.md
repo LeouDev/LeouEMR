@@ -516,6 +516,46 @@ from every environment this project gets worked on in.
   to 0044 and the snapshot restored from git, as for 0043. Live 13 Sep:
   the administrator ran the 0044 paste, then the merge (production 03:55
   UTC).
+- **Trainer and SME, the support roles (feature branch, 13 Sep).** Two
+  new `user_role` values plus `qa_audits.counts_for_requirement`
+  (migration `0046_support_roles`; apply with
+  `drizzle/APPLY_0046_SUPPORT_ROLES.sql` in the SQL editor — enum values
+  and column are added `IF NOT EXISTS`, nothing to re-grant; rehearsed
+  twice on a scratch database, second run a no-op). The request: a team
+  leader's view over the whole floor, minus the team leader's own
+  tooling, and their audits never complete a team leader's requirement.
+  The role table is `src/lib/auth/scope.ts`, pinned by `scope.test.ts`:
+  `isSupportRole`; `employeeScope` is `"all"` for them with or without an
+  employee link (so the dashboard, Employees, Action Items, Records,
+  Development Hub, Stack Rank, Quality Audit and the 201 file are
+  floor-wide — the 201 file includes everyone's personal details, as
+  asked; reverse in `LEADER_NAV` and `201-file/page.tsx` if that is too
+  much); `canFileAudit` on anyone; `canManageActionItems` like a team
+  leader (a judgement call — coaching plans from a trainer read as
+  intended; flip it there if not); `canRunTeamPrograms` (new: admin and
+  supervisor only) gates `saveEwsAssessment` and the ramp actions, and
+  the employee page hides the EWS panel from them, so "no EWS/Ramp" holds
+  through the employee page and server actions, not just the nav. Nav
+  (`app-header.tsx`): no Time Off, Skills/"My Tools", EWS, Ramp or
+  Adherence; MBO, Quality Audit, 201 File stay. Pages back it: `/pto`,
+  `/ews`, `/ramp`, `/adherence`, `/skills` redirect them to the dashboard,
+  and the PTO and adherence actions refuse them ("Time off is not filed
+  here for a trainer or SME account."). Dashboard: the team-lead layout
+  ("All teams"), which puts `getTeamPeriodComparison` and the agent table
+  over 600-odd rows — the widest use of that page yet, not measured in
+  production; if it is slow, the admin's org-wide view is the fallback
+  (`isSupervisor` in `dashboard/page.tsx`). Quality: `countsForRequirement`
+  (supervisor only) is stamped on every audit; the roster count query in
+  `src/lib/queries/quality.ts` and therefore the requirement, the
+  "Completed" card ("By the agent's team lead") and the two-per-agent
+  standing count only `counts_for_requirement = true`, while History
+  (evaluator shows "· support"), Analysis, the export and the agent's My
+  Quality Scores include every audit. Also: `MFA_ROLES` requires `aal2`
+  for them like the other leaders; `reportingScopeIds` treats them as an
+  admin; the Users page offers "Trainer"/"SME" (`ROLE_LABELS`) and the
+  `updateUser` schema, the implied-role map and
+  `scripts/set-user-role.mts` accept them; the authorization tests for
+  `/quality`, `/my-quality-scores` and the admin pages cover both roles.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

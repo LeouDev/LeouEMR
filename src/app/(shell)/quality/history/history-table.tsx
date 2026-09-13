@@ -65,7 +65,10 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
                   <td className="px-6 py-2 font-semibold text-ink">{row.agentName}</td>
                   <td className="px-3 py-2 text-ink">{row.formLabel}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted">{formatDate(row.auditDate)}</td>
-                  <td className="px-3 py-2 text-xs text-muted">{row.evaluatorName}</td>
+                  <td className="px-3 py-2 text-xs text-muted">
+                    {row.evaluatorName}
+                    {!row.countsForRequirement && <span className="ml-1.5 text-[10px] font-bold tracking-[0.06em] uppercase">· support</span>}
+                  </td>
                   <td className={`px-3 py-2 text-right font-mono text-sm font-bold tabular-nums ${SCORE_COLOR[outcome]}`}>{Math.round(row.scorePct)}%</td>
                   <td className="px-6 py-2">
                     <Tag tone={OUTCOME_TONE[outcome]}>{OUTCOME_LABELS[outcome]}</Tag>

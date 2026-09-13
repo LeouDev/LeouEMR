@@ -77,10 +77,19 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
         ),
       ),
     separationDates(ids),
+    // Only the team leader's own audits complete the requirement; a
+    // support role's audit is on the record but does not count here.
     db
       .select({ agentId: qaAudits.agentId, n: count() })
       .from(qaAudits)
-      .where(and(inArray(qaAudits.agentId, ids), gte(qaAudits.auditDate, week.start), lte(qaAudits.auditDate, week.end)))
+      .where(
+        and(
+          inArray(qaAudits.agentId, ids),
+          eq(qaAudits.countsForRequirement, true),
+          gte(qaAudits.auditDate, week.start),
+          lte(qaAudits.auditDate, week.end),
+        ),
+      )
       .groupBy(qaAudits.agentId),
   ]);
 
@@ -163,6 +172,8 @@ export interface QaHistoryRow {
   /** ISO timestamp once the agent has acknowledged the review. */
   acknowledgedAt: string | null;
   timeMotion: StoredTimeMotion | null;
+  /** False for a support role's audit, which does not complete the weekly requirement. */
+  countsForRequirement: boolean;
 }
 
 export const HISTORY_LIMIT = 500;
@@ -187,6 +198,7 @@ export async function getQaHistory(user: CurrentUser): Promise<QaHistoryRow[]> {
       headerValues: qaAudits.headerValues,
       acknowledgedAt: qaAudits.acknowledgedAt,
       timeMotion: qaAudits.timeMotion,
+      countsForRequirement: qaAudits.countsForRequirement,
     })
     .from(qaAudits)
     .innerJoin(employees, eq(employees.id, qaAudits.agentId))

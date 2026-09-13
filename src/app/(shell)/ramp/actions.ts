@@ -3,7 +3,7 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canManageActionItems, employeeScope } from "@/lib/auth/scope";
+import { canRunTeamPrograms, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
@@ -51,7 +51,7 @@ async function loadScopedEmployee(user: Awaited<ReturnType<typeof getCurrentUser
 export async function setRampAssignment(input: unknown): Promise<RampResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
-  if (!canManageActionItems(user)) {
+  if (!canRunTeamPrograms(user)) {
     return { ok: false, error: "Only supervisors and administrators can set a ramp schedule" };
   }
 
@@ -112,7 +112,7 @@ const clearRampSchema = z.object({
 export async function clearRampAssignment(input: unknown): Promise<RampResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
-  if (!canManageActionItems(user)) {
+  if (!canRunTeamPrograms(user)) {
     return { ok: false, error: "Only supervisors and administrators can clear a ramp schedule" };
   }
 

@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardHeader, PageBand, formatWeek } from "@/components/ui";
-import { canManageActionItems } from "@/lib/auth/scope";
+import { canRunTeamPrograms, isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
@@ -64,11 +64,12 @@ export default async function EmployeePage({
   ]);
   const [assessment] = assessmentRows;
 
-  const canAssess = canManageActionItems(user);
+  const canAssess = canRunTeamPrograms(user);
   // Early warning signs are the supervisor's own read on flight risk and
   // coachability — notes written about the agent, not for them. Leaders see
-  // them on anyone's page; an agent opening their own page does not.
-  const showsEws = user.role !== "agent";
+  // them on anyone's page; an agent opening their own page does not, and
+  // neither does a support role, which has no EWS at all.
+  const showsEws = user.role !== "agent" && !isSupportRole(user);
   // Joined rather than rendered as fixed " · " fragments: with the EID
   // moved up into the band, a missing supervisor left the line opening on a
   // bare separator (" · Manager: …") for anyone whose supervisor is blank.

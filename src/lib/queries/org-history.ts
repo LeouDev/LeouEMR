@@ -205,7 +205,9 @@ export function supervisorEidOfRecord(owner: PeriodOwner) {
  * resolves to nobody rather than to everybody.
  */
 export async function reportingScopeIds(user: CurrentUser, period: DateRange): Promise<string[]> {
-  if (user.role === "admin" || user.role === "agent") return resolveScopedIds(user);
+  if (user.role === "admin" || user.role === "agent" || user.role === "trainer" || user.role === "sme") {
+    return resolveScopedIds(user);
+  }
 
   const owner = periodOwnerSubquery(period);
 

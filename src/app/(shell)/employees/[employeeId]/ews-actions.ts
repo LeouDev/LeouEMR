@@ -3,7 +3,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canManageActionItems, employeeScope } from "@/lib/auth/scope";
+import { canRunTeamPrograms, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
@@ -34,7 +34,7 @@ export type EwsResult = { ok: true; riskLevel: string; score: number } | { ok: f
 export async function saveEwsAssessment(input: unknown): Promise<EwsResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
-  if (!canManageActionItems(user)) {
+  if (!canRunTeamPrograms(user)) {
     return { ok: false, error: "Only supervisors and administrators can record an assessment" };
   }
 

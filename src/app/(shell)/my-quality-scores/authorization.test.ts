@@ -51,7 +51,7 @@ beforeEach(() => {
   currentUser.value = null;
 });
 
-describe.each<UserRole>(["supervisor", "manager", "admin"])("a %s", (role) => {
+describe.each<UserRole>(["supervisor", "manager", "admin", "trainer", "sme"])("a %s", (role) => {
   beforeEach(() => {
     currentUser.value = signedInAs(role);
   });
