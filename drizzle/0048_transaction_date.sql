@@ -1,0 +1,1 @@
+ALTER TABLE "qa_audits" ADD COLUMN IF NOT EXISTS "transaction_date" date;

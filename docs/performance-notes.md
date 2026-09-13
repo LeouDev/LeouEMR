@@ -599,6 +599,33 @@ from every environment this project gets worked on in.
   audits keep the segments they were filed with. The aside stays mounted
   while closed (`hidden`, not unmounted) so the clock keeps running while
   the QA steps are scored, and the corner toggle shows "● Running".
+- **Audit date locked to today, transaction date added, every category
+  must be opened (feature branch, 13 Sep).** Three asks from the first
+  live audit. (1) The audit date is the day the audit is filed: the New
+  Audit page shows it disabled (the browser's local today, as before) and
+  `submitAudit` refuses anything but the server's UTC today give or take
+  one day (`AUDIT_DATE_NOT_TODAY`) — the give-or-take is Manila being
+  east of UTC, not slack. (2) `qa_audits.transaction_date` (date, null on
+  earlier audits; migration `0048_transaction_date`, apply with
+  `drizzle/APPLY_0048_TRANSACTION_DATE.sql`, `IF NOT EXISTS`, nothing to
+  re-grant, rehearsed twice on a scratch database) is the date of the
+  call, case or fax: required on the page (submit stays disabled with
+  "Enter the transaction date to submit."), a real date no later than the
+  audit date on the server (`TRANSACTION_DATE_MISSING`,
+  `TRANSACTION_DATE_AFTER_AUDIT`). It shows as a "Transaction" column and
+  in the drawer on History ("Audited … · Transaction …"), in the agent's
+  My Quality Scores drawer, and in both exports — the bulk CSV gained a
+  "Transaction date" column after "Date", so anything keyed on column
+  positions moves one to the right (the csv tests did). The generator
+  named the file `0047_` again and this time overwrote nothing (0047 is a
+  custom data migration with no snapshot); renumbered to 0048. (3) The
+  category list's "pending" is now a gate: `pendingSteps` counts steps
+  never opened (`statusOf` === "pending") and the submit button stays
+  disabled with "Review every category before submitting — n still
+  pending." Client-side only; the server cannot know what was looked at.
+  The authorization tests date their filing `today` (UTC) with a
+  transaction date of the same day, since the date rules run before the
+  scope check.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

@@ -81,8 +81,9 @@ export function AuditForm({
   // Rendered with the server's (UTC) today, then with the browser's own
   // once there — the way a client-only value is read without a mismatch.
   const localDate = useSyncExternalStore(subscribeToNothing, localToday, () => today);
-  const [pickedDate, setPickedDate] = useState<string | null>(null);
-  const auditDate = pickedDate ?? localDate;
+  // Locked to the day it is filed; the transaction itself is dated by hand.
+  const auditDate = localDate;
+  const [transactionDate, setTransactionDate] = useState("");
   const [headerValues, setHeaderValues] = useState<Record<string, string>>({});
   const [marks, setMarks] = useState<QaMarks>({});
   const [remarks, setRemarks] = useState<Record<string, string>>({});
@@ -143,7 +144,7 @@ export function AuditForm({
   }
 
   async function submit() {
-    if (!form || !agentId) return;
+    if (!form || !agentId || transactionMissing || pendingSteps > 0) return;
     if (tmSpec && !tmComplete) {
       setTmWarned(true);
       setTmOpen(true);
@@ -157,6 +158,7 @@ export function AuditForm({
         agentId,
         formKey: form.key,
         auditDate,
+        transactionDate,
         headerValues,
         marks,
         remarks,
@@ -176,6 +178,11 @@ export function AuditForm({
   }
 
   const agentName = agents.find((a) => a.id === agentId)?.name;
+  // Every category must have been looked at: a step never opened is still
+  // "pending" in the list, and an audit with one cannot be filed.
+  const pendingSteps = steps.filter((step, i) => statusOf(step, i) === "pending").length;
+  const transactionMissing = transactionDate === "";
+  const canSubmit = Boolean(agentId) && !transactionMissing && pendingSteps === 0 && !submitting;
 
   return (
     <div className="space-y-5">
@@ -208,7 +215,20 @@ export function AuditForm({
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <label>
                   <span className={label}>Audit date</span>
-                  <input type="date" value={auditDate} max={localDate} onChange={(e) => setPickedDate(e.target.value)} className={`${control} font-mono`} />
+                  <input type="date" value={auditDate} disabled className={`${control} font-mono`} />
+                  <span className="mt-1 block text-[11px] text-muted">Today — the day the audit is filed.</span>
+                </label>
+                <label>
+                  <span className={label}>Transaction date</span>
+                  <input
+                    type="date"
+                    value={transactionDate}
+                    max={localDate}
+                    required
+                    onChange={(e) => setTransactionDate(e.target.value)}
+                    className={`${control} font-mono`}
+                  />
+                  <span className="mt-1 block text-[11px] text-muted">When the call, case or fax happened.</span>
                 </label>
                 {form.headerFields.map((field) => (
                   <label key={field.key}>
@@ -377,7 +397,13 @@ export function AuditForm({
             <div className="flex flex-wrap items-center justify-end gap-3">
               {tmWarning && <span className="text-xs font-semibold text-fail">{TIME_MOTION_INCOMPLETE}</span>}
               {!agentId && <span className="text-xs text-muted">Choose an agent to submit.</span>}
-              <button type="button" onClick={submit} disabled={!agentId || submitting} className="btn-primary px-6 py-3 text-sm disabled:opacity-50">
+              {agentId && transactionMissing && <span className="text-xs text-muted">Enter the transaction date to submit.</span>}
+              {agentId && !transactionMissing && pendingSteps > 0 && (
+                <span className="text-xs font-semibold text-fail">
+                  Review every category before submitting — {pendingSteps} still pending.
+                </span>
+              )}
+              <button type="button" onClick={submit} disabled={!canSubmit} className="btn-primary px-6 py-3 text-sm disabled:opacity-50">
                 {submitting ? "Saving…" : agentName ? `Submit audit for ${agentName}` : "Submit audit"}
               </button>
             </div>

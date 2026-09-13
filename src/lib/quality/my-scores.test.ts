@@ -13,6 +13,7 @@ const fail = (position: number, category: string, attribute: string): MyResult =
 function audit(over: Partial<MyAudit> & { id: string; auditDate: string; scorePct: number }): MyAudit {
   return {
     formLabel: "Phone Form",
+    transactionDate: null,
     evaluatorName: "Lopez, Ana",
     isCritical: false,
     remarks: null,

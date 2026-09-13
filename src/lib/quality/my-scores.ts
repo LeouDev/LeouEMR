@@ -18,6 +18,8 @@ export interface MyAudit {
   id: string;
   formLabel: string;
   auditDate: string;
+  /** The date of the call, case or fax; null on audits filed before it was asked for. */
+  transactionDate: string | null;
   evaluatorName: string;
   scorePct: number;
   isCritical: boolean;

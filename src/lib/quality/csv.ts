@@ -26,6 +26,8 @@ export interface ExportAudit {
   agentEid: string;
   form: QaForm;
   auditDate: string;
+  /** The date of the call, case or fax; null on audits filed before it was asked for. */
+  transactionDate: string | null;
   evaluatorName: string;
   headerValues: Record<string, string>;
   remarks: string | null;
@@ -43,6 +45,7 @@ export function auditRawRows(audit: ExportAudit): Array<Array<string | number>> 
     ["Employee ID", audit.agentEid],
     ["Form", audit.form.label],
     ["Date", audit.auditDate],
+    ["Transaction date", audit.transactionDate ?? ""],
     ["Evaluator", audit.evaluatorName],
   ];
   for (const field of audit.form.headerFields) rows.push([field.label, audit.headerValues[field.key] ?? ""]);
@@ -69,6 +72,7 @@ export const ALL_FINDINGS_HEADER = [
   "Employee ID",
   "Form",
   "Date",
+  "Transaction date",
   "Evaluator",
   "Category",
   "Attribute",
@@ -88,6 +92,7 @@ export function allFindingsRows(audits: readonly ExportAudit[]): Array<Array<str
         audit.agentEid,
         audit.form.label,
         audit.auditDate,
+        audit.transactionDate ?? "",
         audit.evaluatorName,
         finding.category,
         finding.attribute,
@@ -105,6 +110,7 @@ export function allFindingsRows(audits: readonly ExportAudit[]): Array<Array<str
         audit.agentEid,
         audit.form.label,
         audit.auditDate,
+        audit.transactionDate ?? "",
         audit.evaluatorName,
         "Time & Motion",
         `${seg.label} (baseline ${seg.baselineSeconds}s, actual ${seg.actualSeconds}s)`,
