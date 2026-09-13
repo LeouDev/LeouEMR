@@ -14,9 +14,18 @@ import {
   type QaOutcome,
   type QaStep,
 } from "@/lib/quality/scoring";
+import {
+  TIME_MOTION_INCOMPLETE,
+  emptyDraft,
+  finalizeDraft,
+  isComplete,
+  timeMotionSpecOf,
+  type TimeMotionDraft,
+} from "@/lib/quality/time-motion";
 import { describeActionError } from "@/lib/ui/action-error";
 import { submitAudit } from "../actions";
 import { Tag } from "../quality-tabs";
+import { TimeMotionPanel } from "./time-motion-panel";
 
 const control = "w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition disabled:bg-cream disabled:text-muted";
 const label = "mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase";
@@ -67,11 +76,18 @@ export function AuditForm({
   const [visited, setVisited] = useState<number[]>([0]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [timeMotion, setTimeMotion] = useState<TimeMotionDraft>(emptyDraft());
+  const [tmOpen, setTmOpen] = useState(false);
+  const [tmWarned, setTmWarned] = useState(false);
 
   const form = forms.find((f) => f.key === formKey) ?? null;
   const steps = useMemo(() => (form ? stepsOf(form.definition) : []), [form]);
   const score = useMemo(() => (form ? scoreAudit(form.definition, marks) : null), [form, marks]);
   const outcome = score ? outcomeOf(score.scorePct, score.isCritical) : null;
+  const tmSpec = form ? timeMotionSpecOf(form.definition) : null;
+  const tmComplete = !tmSpec || isComplete(tmSpec, timeMotion);
+  // The warning shows after a blocked submit and clears itself once every segment has a value.
+  const tmWarning = tmWarned && !tmComplete;
 
   const current: QaStep | undefined = steps[Math.min(stepIndex, Math.max(steps.length - 1, 0))];
   const currentScore = score?.steps[steps.indexOf(current!)];
@@ -84,6 +100,9 @@ export function AuditForm({
     setStepIndex(0);
     setVisited([0]);
     setError(null);
+    setTimeMotion(emptyDraft());
+    setTmOpen(false);
+    setTmWarned(false);
   }
 
   function goTo(index: number) {
@@ -111,11 +130,24 @@ export function AuditForm({
 
   async function submit() {
     if (!form || !agentId) return;
+    if (tmSpec && !tmComplete) {
+      setTmWarned(true);
+      setTmOpen(true);
+      return;
+    }
     setSubmitting(true);
     setError(null);
     let result: Awaited<ReturnType<typeof submitAudit>>;
     try {
-      result = await submitAudit({ agentId, formKey: form.key, auditDate, headerValues, marks, remarks });
+      result = await submitAudit({
+        agentId,
+        formKey: form.key,
+        auditDate,
+        headerValues,
+        marks,
+        remarks,
+        timeMotion: tmSpec ? (finalizeDraft(tmSpec, timeMotion) ?? undefined) : undefined,
+      });
     } catch (cause) {
       setError(describeActionError(cause, "The audit did not save — the request timed out or the connection dropped. Check History before filing it again."));
       setSubmitting(false);
@@ -338,6 +370,7 @@ export function AuditForm({
             )}
 
             <div className="flex flex-wrap items-center justify-end gap-3">
+              {tmWarning && <span className="text-xs font-semibold text-fail">{TIME_MOTION_INCOMPLETE}</span>}
               {!agentId && <span className="text-xs text-muted">Choose an agent to submit.</span>}
               <button type="button" onClick={submit} disabled={!agentId || submitting} className="btn-primary px-6 py-3 text-sm disabled:opacity-50">
                 {submitting ? "Saving…" : agentName ? `Submit audit for ${agentName}` : "Submit audit"}
@@ -345,6 +378,10 @@ export function AuditForm({
             </div>
           </div>
         </div>
+      )}
+
+      {form && tmSpec && (
+        <TimeMotionPanel spec={tmSpec} draft={timeMotion} open={tmOpen} onToggle={() => setTmOpen((v) => !v)} onChange={setTimeMotion} />
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import type { ExportAudit } from "@/lib/quality/csv";
 import { qaFormFromRow, type QaForm } from "@/lib/quality/forms";
 import type { MyAudit, MyResult } from "@/lib/quality/my-scores";
 import type { FindingRow } from "@/lib/quality/scoring";
+import { storedTimeMotionFromRow, type StoredTimeMotion } from "@/lib/quality/time-motion";
 import { requiredFor, standingFor, type AgentWeekStanding, type AuditWeek } from "@/lib/quality/week";
 import { separationDates } from "@/lib/queries/eligibility";
 import { resolveScopedIds } from "@/lib/queries/performance";
@@ -152,6 +153,7 @@ export interface QaHistoryRow {
   headerFields: Array<{ key: string; label: string }>;
   /** ISO timestamp once the agent has acknowledged the review. */
   acknowledgedAt: string | null;
+  timeMotion: StoredTimeMotion | null;
 }
 
 const HISTORY_LIMIT = 500;
@@ -175,6 +177,7 @@ export async function getQaHistory(user: CurrentUser): Promise<QaHistoryRow[]> {
       remarks: qaAudits.remarks,
       headerValues: qaAudits.headerValues,
       acknowledgedAt: qaAudits.acknowledgedAt,
+      timeMotion: qaAudits.timeMotion,
     })
     .from(qaAudits)
     .innerJoin(employees, eq(employees.id, qaAudits.agentId))
@@ -186,6 +189,7 @@ export async function getQaHistory(user: CurrentUser): Promise<QaHistoryRow[]> {
   return rows.map((row) => ({
     ...row,
     acknowledgedAt: row.acknowledgedAt?.toISOString() ?? null,
+    timeMotion: storedTimeMotionFromRow(row.timeMotion),
     scorePct: Number(row.scorePct),
     headerValues: (row.headerValues ?? {}) as Record<string, string>,
     headerFields: ((row.headerFields ?? []) as Array<{ key: string; label: string }>).map((f) => ({ key: f.key, label: f.label })),
@@ -208,6 +212,7 @@ export async function getQaExport(user: CurrentUser, auditId: string | null): Pr
       remarks: qaAudits.remarks,
       scorePct: qaAudits.scorePct,
       isCritical: qaAudits.isCritical,
+      timeMotion: qaAudits.timeMotion,
     })
     .from(qaAudits)
     .innerJoin(employees, eq(employees.id, qaAudits.agentId))
@@ -248,6 +253,7 @@ export async function getQaExport(user: CurrentUser, auditId: string | null): Pr
     scorePct: Number(a.scorePct),
     isCritical: a.isCritical,
     findings: findingsByAudit.get(a.id) ?? [],
+    timeMotion: storedTimeMotionFromRow(a.timeMotion),
   }));
 }
 

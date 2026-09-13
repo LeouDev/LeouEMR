@@ -10,6 +10,7 @@ import { auditLog, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
 import { qaFormFromRow } from "@/lib/quality/forms";
 import { NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
 import { concatRemarks, findingRows, markKeys, scoreAudit, stepsOf, type QaMarks } from "@/lib/quality/scoring";
+import { MAX_SECONDS, timeMotionSpecOf, validateStoredTimeMotion, type StoredTimeMotion } from "@/lib/quality/time-motion";
 import { resolveScopedIds } from "@/lib/queries/performance";
 
 export type SubmitAuditResult = { ok: true; auditId: string } | { ok: false; error: string };
@@ -23,6 +24,20 @@ const submitSchema = z.object({
   headerValues: z.record(z.string().max(64), z.string().trim().max(500)).default({}),
   marks: z.record(z.string().max(200), z.enum(["pass", "fail"])).default({}),
   remarks: z.record(z.string().max(200), z.string().trim().max(2000)).default({}),
+  timeMotion: z
+    .object({
+      callReference: z.string().trim().max(120).default(""),
+      segments: z
+        .array(
+          z.object({
+            label: z.string().max(120),
+            baselineSeconds: z.number().min(0).max(MAX_SECONDS),
+            actualSeconds: z.number().min(0).max(MAX_SECONDS),
+          }),
+        )
+        .max(50),
+    })
+    .optional(),
 });
 
 /**
@@ -73,6 +88,16 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
   const remarks: Record<string, string> = {};
   for (const [key, text] of Object.entries(parsed.data.remarks)) if (stepNames.has(key) && text) remarks[key] = text;
 
+  // Time & Motion is required in full on a form that logs it, and ignored
+  // on one that does not — the page never shows the panel there.
+  const timeMotionSpec = timeMotionSpecOf(form.definition);
+  let timeMotion: StoredTimeMotion | null = null;
+  if (timeMotionSpec) {
+    const checked = validateStoredTimeMotion(timeMotionSpec, parsed.data.timeMotion);
+    if ("error" in checked) return { ok: false, error: checked.error };
+    timeMotion = checked;
+  }
+
   const score = scoreAudit(form.definition, marks);
   const findings = findingRows(form.definition, marks);
   const remarksText = concatRemarks(form.definition, remarks) || null;
@@ -91,6 +116,7 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
         maxPoints: score.max,
         scorePct: score.scorePct.toFixed(2),
         isCritical: score.isCritical,
+        timeMotion,
       })
       .returning({ id: qaAudits.id });
     await tx.insert(qaAuditResults).values(

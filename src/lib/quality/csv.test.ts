@@ -16,6 +16,22 @@ const AUDIT: ExportAudit = {
   scorePct: 82.76,
   isCritical: false,
   findings: findingRows(faxForm.definition, { [itemKey("Documentation", 1)]: "fail" }),
+  timeMotion: null,
+};
+
+const phoneForm = QA_FORM_SEED.find((f) => f.key === "phone")!;
+const PHONE_AUDIT: ExportAudit = {
+  ...AUDIT,
+  form: phoneForm,
+  headerValues: {},
+  findings: findingRows(phoneForm.definition, {}),
+  timeMotion: {
+    callReference: "REC-88213",
+    segments: [
+      { label: "Greeting / verification", baselineSeconds: 30, actualSeconds: 28 },
+      { label: "Account lookup", baselineSeconds: 60, actualSeconds: 75 },
+    ],
+  },
 };
 
 describe("csvOf", () => {
@@ -42,6 +58,27 @@ describe("auditRawRows", () => {
     expect(rows[rows.length - 3]).toEqual(["Remarks", 'Documentation: said "will call back"']);
     expect(rows[rows.length - 2]).toEqual(["Overall score (%)", 82.76]);
     expect(rows[rows.length - 1]).toEqual(["Critical error", "NO"]);
+  });
+});
+
+describe("Time & Motion in the exports", () => {
+  it("adds a timing block to one audit's raw data, between the header and the attributes", () => {
+    const rows = auditRawRows(PHONE_AUDIT);
+    const start = rows.findIndex((r) => r[0] === "Time & Motion — Call reference");
+    expect(rows[start]).toEqual(["Time & Motion — Call reference", "REC-88213"]);
+    expect(rows[start + 1]).toEqual(["Segment", "Baseline (s)", "Actual (s)", "Delta (s)"]);
+    expect(rows[start + 2]).toEqual(["Greeting / verification", 30, 28, -2]);
+    expect(rows[start + 3]).toEqual(["Account lookup", 60, 75, 15]);
+    expect(rows[start + 5]).toEqual(["Category", "Attribute", "Result"]);
+    expect(auditRawRows(AUDIT).some((r) => r[0] === "Time & Motion — Call reference")).toBe(false);
+  });
+
+  it("adds one row per segment to the bulk export under its own category", () => {
+    const rows = allFindingsRows([PHONE_AUDIT]);
+    const timing = rows.filter((r) => r[5] === "Time & Motion");
+    expect(timing).toHaveLength(2);
+    expect(timing[1].slice(5, 8)).toEqual(["Time & Motion", "Account lookup (baseline 60s, actual 75s)", "+15s"]);
+    expect(rows).toHaveLength(1 + PHONE_AUDIT.findings.length + 2);
   });
 });
 

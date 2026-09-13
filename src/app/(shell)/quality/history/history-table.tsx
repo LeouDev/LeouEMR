@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { OUTCOME_LABELS, outcomeOf, type QaOutcome } from "@/lib/quality/scoring";
+import { formatDelta } from "@/lib/quality/time-motion";
 import type { QaHistoryRow } from "@/lib/queries/quality";
 import { Tag } from "../quality-tabs";
 
@@ -128,6 +129,27 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
                     <p className="text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase">Remarks</p>
                     <p className="mt-1 text-sm whitespace-pre-wrap text-ink">{open.remarks || "—"}</p>
                   </div>
+                  {open.timeMotion && (
+                    <div>
+                      <p className="text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase">
+                        Time &amp; Motion{open.timeMotion.callReference ? ` · ${open.timeMotion.callReference}` : ""}
+                      </p>
+                      <ul className="mt-1 divide-y-2 divide-line border-t-2 border-line text-sm">
+                        {open.timeMotion.segments.map((seg) => {
+                          const delta = seg.actualSeconds - seg.baselineSeconds;
+                          return (
+                            <li key={seg.label} className="flex items-center justify-between gap-3 py-1.5">
+                              <span className="text-ink">{seg.label}</span>
+                              <span className="font-mono text-xs tabular-nums text-muted">
+                                {seg.actualSeconds}s / {seg.baselineSeconds}s{" "}
+                                <span className={delta > 0 ? "text-fail" : "text-pass"}>{formatDelta(delta)}</span>
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
                   <div>
                     <p className="text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase">Agent acknowledgement</p>
                     <p className={`mt-1 text-sm ${open.acknowledgedAt ? "text-pass" : "text-muted"}`}>
