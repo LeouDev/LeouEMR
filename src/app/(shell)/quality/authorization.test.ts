@@ -31,7 +31,7 @@ vi.mock("@/lib/db/client", () => ({
 }));
 
 const { submitAudit } = await import("./actions");
-const { NOT_A_LEADER, OUT_OF_SCOPE } = await import("@/lib/quality/messages");
+const { NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } = await import("@/lib/quality/messages");
 const { GET } = await import("./export/route");
 const { getQaAgentOptions, getQaAnalysisInput, getQaExport, getQaHistory, getQaRoster } = await import(
   "@/lib/queries/quality"
@@ -94,9 +94,9 @@ describe("signed out", () => {
   });
 });
 
-describe.each<UserRole>(["supervisor", "manager", "admin"])("a %s", (role) => {
+describe("a team leader", () => {
   beforeEach(() => {
-    currentUser.value = signedInAs(role);
+    currentUser.value = signedInAs("supervisor");
     scope.ids = [AGENT_ID];
   });
 
@@ -109,6 +109,24 @@ describe.each<UserRole>(["supervisor", "manager", "admin"])("a %s", (role) => {
       ok: false,
       error: "The audit date cannot be in the future.",
     });
+  });
+});
+
+describe.each<UserRole>(["manager", "admin"])("a %s", (role) => {
+  beforeEach(() => {
+    currentUser.value = signedInAs(role);
+    scope.ids = [AGENT_ID];
+  });
+
+  it("reads the module but does not file audits — refused before any read or write", async () => {
+    expect(await submitAudit(filing())).toEqual({ ok: false, error: NOT_AN_EVALUATOR });
+  });
+});
+
+describe.each<UserRole>(["supervisor", "manager", "admin"])("a %s", (role) => {
+  beforeEach(() => {
+    currentUser.value = signedInAs(role);
+    scope.ids = [AGENT_ID];
   });
 
   it("is refused a malformed export id before any read", async () => {

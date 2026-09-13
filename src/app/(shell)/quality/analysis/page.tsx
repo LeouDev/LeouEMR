@@ -13,6 +13,7 @@ import {
 } from "@/lib/quality/analysis";
 import { PASS_THRESHOLD } from "@/lib/quality/scoring";
 import { getQaAnalysisInput } from "@/lib/queries/quality";
+import { canFileAudit } from "@/lib/auth/scope";
 import { requireQualityUser, todayIso } from "../access";
 import { QualityBand, QualityTabs } from "../quality-tabs";
 import { CountBars, OutcomeDonut } from "./analysis-charts";
@@ -69,7 +70,7 @@ export default async function QualityAnalysisPage({ searchParams }: { searchPara
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="analysis" />
+        <QualityTabs active="analysis" canFile={canFileAudit(user)} />
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">

@@ -3,12 +3,12 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canAuditQuality } from "@/lib/auth/scope";
+import { canAuditQuality, canFileAudit } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, qaAuditResults, qaAudits, qaForms } from "@/lib/db/schema";
 import { qaFormFromRow } from "@/lib/quality/forms";
-import { NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
+import { NOT_AN_EVALUATOR, NOT_A_LEADER, OUT_OF_SCOPE } from "@/lib/quality/messages";
 import { concatRemarks, findingRows, markKeys, scoreAudit, stepsOf, type QaMarks } from "@/lib/quality/scoring";
 import { resolveScopedIds } from "@/lib/queries/performance";
 
@@ -37,6 +37,7 @@ export async function submitAudit(input: unknown): Promise<SubmitAuditResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
   if (!canAuditQuality(user)) return { ok: false, error: NOT_A_LEADER };
+  if (!canFileAudit(user)) return { ok: false, error: NOT_AN_EVALUATOR };
 
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "That audit could not be saved" };

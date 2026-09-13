@@ -20,11 +20,12 @@ export function QualityBand() {
   );
 }
 
-/** The four screens, as a tab strip under the band. */
-export function QualityTabs({ active }: { active: QualityTab }) {
+/** The screens, as a tab strip under the band — New audit only for a role that files. */
+export function QualityTabs({ active, canFile }: { active: QualityTab; canFile: boolean }) {
+  const tabs = TABS.filter((tab) => tab.key !== "new" || canFile);
   return (
     <div className="mb-6 inline-flex flex-wrap border-2 border-ink">
-      {TABS.map((tab, i) => (
+      {tabs.map((tab, i) => (
         <NavLink
           key={tab.key}
           href={tab.href}
