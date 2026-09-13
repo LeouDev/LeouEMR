@@ -427,7 +427,9 @@ from every environment this project gets worked on in.
   in `my-quality-scores/authorization.test.ts`. The migration generator
   again named the file `0043_` (it numbers by journal index, one behind
   this repo's names) and overwrote `meta/0043_snapshot.json`; renumbered
-  to 0044 and the snapshot restored from git, as for 0043.
+  to 0044 and the snapshot restored from git, as for 0043. Live 13 Sep:
+  the administrator ran the 0044 paste, then the merge (production 03:55
+  UTC).
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent
