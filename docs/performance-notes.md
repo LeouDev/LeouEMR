@@ -657,6 +657,31 @@ from every environment this project gets worked on in.
   what an unlinked manager's scope falls back to — so the panel header
   shows the account name while the Profile section edits the personnel
   record; flagged to the user. No migration.
+- **Profile pictures (feature branch, 13 Sep).** Asked for right after
+  the panel shipped. `user_avatars` (migration `0049_user_avatars`; apply
+  with `drizzle/APPLY_0049_USER_AVATARS.sql`, which also creates the
+  `emr_app_full_access` policy on the new table — the one thing
+  re-running `scripts/sql/app-role.sql` would add; rehearsed twice on a
+  scratch database): `user_id` PK → users cascade, `content_type`,
+  `image` (base64, no prefix), `updated_at`. Its own table because
+  `users` is read on every request and a picture is tens of KB. The
+  browser does the work: `squareDataUrl` in `profile-panel.tsx` cuts the
+  chosen photo to a centred 256px square through a canvas (WebP at 0.85,
+  JPEG where WebP cannot be encoded; `imageOrientation: "from-image"` so
+  phone photos come out upright), so the upload is 10–30 KB;
+  `updateMyAvatar` re-checks that what arrived is a PNG/JPEG/WebP data
+  URL under 200 KB decoded (`parseAvatarDataUrl`, tested), upserts the
+  caller's own row and logs `avatar.updated` with the type and size only.
+  Served by `GET /profile/avatar` — the caller's own picture only —
+  with `Cache-Control: private, max-age=31536000, immutable`; the header
+  passes the row's timestamp as `?v=`, so a new upload is a new URL and
+  the old one can be cached for good. The header's `Promise.all` gained
+  the timestamp read (nothing else). The picture shows in the header
+  button (32px) and the panel (56px), grayscale like every image in the
+  app (`img:not([data-keep-color])` in globals.css). "Add/Change photo"
+  and "Remove" sit under the name in the panel header; status and
+  refusals show right there. Accepts PNG, JPEG, WebP — not HEIC, which
+  browsers cannot decode; an iPhone set to "Most compatible" sends JPEG.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

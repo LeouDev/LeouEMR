@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { updateMyProfile } from "@/app/(shell)/profile/actions";
+import { useEffect, useRef, useState } from "react";
+import { removeMyAvatar, updateMyAvatar, updateMyProfile } from "@/app/(shell)/profile/actions";
+import { AVATAR_SIZE, AVATAR_TYPES, avatarUrl } from "@/lib/profile/avatar";
 import { NO_PROFILE, initialsOf, validateProfileForm, type ProfileForm } from "@/lib/profile/panel";
 import { describeActionError } from "@/lib/ui/action-error";
 
@@ -14,6 +15,8 @@ export interface ProfilePanelProps {
   org: { supervisorName: string | null; managerName: string | null } | null;
   /** Role-appropriate shortcuts; empty hides the section. */
   quickLinks: Array<{ href: string; label: string }>;
+  /** The profile picture's version (its row's timestamp), or null when there is none. */
+  avatarVersion: number | null;
 }
 
 const heading = "mb-3.5 text-xs font-bold tracking-[0.1em] text-ink-muted uppercase";
@@ -26,6 +29,44 @@ function sameForm(a: ProfileForm, b: ProfileForm): boolean {
 }
 
 /**
+ * The chosen photo cut to a centred square of AVATAR_SIZE pixels, as a
+ * data URL — WebP where the browser can encode it, JPEG otherwise. Done
+ * here so the upload is a few tens of kilobytes whatever the camera made.
+ */
+async function squareDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  try {
+    const side = Math.min(bitmap.width, bitmap.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_SIZE;
+    canvas.height = AVATAR_SIZE;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas unavailable");
+    context.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+    const webp = canvas.toDataURL("image/webp", 0.85);
+    return webp.startsWith("data:image/webp") ? webp : canvas.toDataURL("image/jpeg", 0.85);
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** The picture, or the initials while there is none. Grayscale like every photo in the app. */
+function Avatar({ name, version, className }: { name: string; version: number | null; className: string }) {
+  if (version !== null) {
+    // A plain img on purpose: the picture is a private 256px route of the
+    // caller's own, already resized by the browser that uploaded it —
+    // next/image's optimizer would add a hop and nothing else.
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={avatarUrl(version)} alt="" className={`${className} object-cover`} />;
+  }
+  return (
+    <span aria-hidden className={`${className} flex items-center justify-center font-bold text-cream`}>
+      {initialsOf(name)}
+    </span>
+  );
+}
+
+/**
  * The name in the header is a button; this is what it opens — a panel from
  * the right edge where a person reads and edits their own personnel
  * details without leaving the page: names, contact, address, emergency
@@ -33,8 +74,11 @@ function sameForm(a: ProfileForm, b: ProfileForm): boolean {
  * manager) are shown, never edited. The form is seeded from the row the
  * layout read on the server, so opening the panel costs no round trip.
  */
-export function ProfilePanel({ account, profile, org, quickLinks }: ProfilePanelProps) {
+export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion }: ProfilePanelProps) {
   const [open, setOpen] = useState(false);
+  const [avatar, setAvatar] = useState<number | null>(avatarVersion);
+  const [photoStatus, setPhotoStatus] = useState<{ tone: "muted" | "fail"; text: string } | null>(null);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [saved, setSaved] = useState<ProfileForm | null>(profile);
   const [form, setForm] = useState<ProfileForm | null>(profile);
   const [saving, setSaving] = useState(false);
@@ -62,7 +106,43 @@ export function ProfilePanel({ account, profile, org, quickLinks }: ProfilePanel
   function close() {
     setForm(saved);
     setError(null);
+    setPhotoStatus(null);
     setOpen(false);
+  }
+
+  async function choosePhoto(file: File | undefined) {
+    if (!file) return;
+    if (!(AVATAR_TYPES as readonly string[]).includes(file.type)) {
+      setPhotoStatus({ tone: "fail", text: "Choose a PNG, JPEG or WebP picture." });
+      return;
+    }
+    setPhotoStatus({ tone: "muted", text: "Uploading…" });
+    try {
+      const image = await squareDataUrl(file);
+      const result = await updateMyAvatar({ image });
+      if (!result.ok) {
+        setPhotoStatus({ tone: "fail", text: result.error });
+      } else {
+        setAvatar(result.version);
+        setPhotoStatus(null);
+      }
+    } catch (cause) {
+      setPhotoStatus({ tone: "fail", text: describeActionError(cause, "That picture could not be read — try another photo.") });
+    }
+  }
+
+  async function removePhoto() {
+    setPhotoStatus({ tone: "muted", text: "Removing…" });
+    try {
+      const result = await removeMyAvatar();
+      if (!result.ok) setPhotoStatus({ tone: "fail", text: result.error });
+      else {
+        setAvatar(null);
+        setPhotoStatus(null);
+      }
+    } catch (cause) {
+      setPhotoStatus({ tone: "fail", text: describeActionError(cause) });
+    }
   }
 
   function set(key: keyof ProfileForm) {
@@ -128,11 +208,14 @@ export function ProfilePanel({ account, profile, org, quickLinks }: ProfilePanel
         aria-haspopup="dialog"
         aria-expanded={open}
         title="Your profile"
-        className="hidden border-2 border-transparent px-1.5 py-0.5 text-right leading-tight transition hover:border-orange-brand sm:block"
+        className="hidden items-center gap-2.5 border-2 border-transparent px-1.5 py-0.5 text-right leading-tight transition hover:border-orange-brand sm:flex"
       >
-        <span className="block text-sm font-semibold whitespace-nowrap text-cream">{account.name}</span>
-        <span className="block text-[10px] font-bold tracking-[0.12em] whitespace-nowrap text-orange-brand uppercase">
-          {account.roleLabel}
+        <Avatar name={account.name} version={avatar} className="h-8 w-8 shrink-0 rounded-full border-2 border-navy-500 bg-navy-500 text-[11px]" />
+        <span className="block">
+          <span className="block text-sm font-semibold whitespace-nowrap text-cream">{account.name}</span>
+          <span className="block text-[10px] font-bold tracking-[0.12em] whitespace-nowrap text-orange-brand uppercase">
+            {account.roleLabel}
+          </span>
         </span>
       </button>
 
@@ -150,16 +233,44 @@ export function ProfilePanel({ account, profile, org, quickLinks }: ProfilePanel
             className="fixed top-0 right-0 bottom-0 z-50 flex w-[min(420px,100vw)] animate-[slideInRight_0.22s_ease-out] flex-col border-l-2 border-ink bg-surface motion-reduce:animate-none"
           >
             <div className="flex shrink-0 items-start gap-3.5 border-b-2 border-orange-brand bg-navy-800 p-5">
-              <div
-                aria-hidden
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 border-orange-brand bg-navy-500 text-lg font-bold text-cream"
-              >
-                {initialsOf(account.name)}
-              </div>
+              <Avatar name={account.name} version={avatar} className="h-14 w-14 shrink-0 rounded-full border-2 border-orange-brand bg-navy-500 text-lg" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[17px] font-bold text-cream">{account.name}</p>
                 <p className="mt-1 text-[10px] font-bold tracking-[0.12em] text-orange-brand uppercase">{account.roleLabel}</p>
                 <p className="mt-1 truncate text-xs text-cream/70">{account.email}</p>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+                  <button
+                    type="button"
+                    onClick={() => photoInput.current?.click()}
+                    className="text-[10px] font-bold tracking-[0.08em] text-cream/80 uppercase underline-offset-4 transition hover:text-orange-brand hover:underline"
+                  >
+                    {avatar === null ? "Add photo" : "Change photo"}
+                  </button>
+                  {avatar !== null && (
+                    <button
+                      type="button"
+                      onClick={removePhoto}
+                      className="text-[10px] font-bold tracking-[0.08em] text-cream/80 uppercase underline-offset-4 transition hover:text-orange-brand hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <input
+                    ref={photoInput}
+                    type="file"
+                    accept={AVATAR_TYPES.join(",")}
+                    hidden
+                    onChange={(event) => {
+                      void choosePhoto(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </div>
+                {photoStatus && (
+                  <p role={photoStatus.tone === "fail" ? "alert" : undefined} className={`mt-1.5 text-xs ${photoStatus.tone === "fail" ? "text-orange-brand" : "text-cream/70"}`}>
+                    {photoStatus.text}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

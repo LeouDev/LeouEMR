@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { auditLog, employeeProfiles } from "@/lib/db/schema";
+import { auditLog, employeeProfiles, userAvatars } from "@/lib/db/schema";
+import { AVATAR_NOT_AN_IMAGE, AVATAR_TOO_LARGE, MAX_AVATAR_BYTES, parseAvatarDataUrl } from "@/lib/profile/avatar";
 import { NO_PROFILE, changedFields, formFromProfile, validateProfileForm, type ProfileForm } from "@/lib/profile/panel";
 
 export type ProfileActionResult = { ok: true; profile: ProfileForm } | { ok: false; error: string };
@@ -88,4 +89,61 @@ export async function updateMyProfile(input: unknown): Promise<ProfileActionResu
   // The 201 file shows these details to the person's leaders.
   revalidatePath("/201-file");
   return { ok: true, profile: after };
+}
+
+export type AvatarActionResult = { ok: true; version: number | null } | { ok: false; error: string };
+
+/**
+ * Saves the signed-in person's profile picture, replacing any they had.
+ * The browser has already cut it to a 256px square; the server checks
+ * that what arrived is a small raster image before keeping it, and logs
+ * the change without the bytes.
+ */
+export async function updateMyAvatar(input: unknown): Promise<AvatarActionResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+
+  const image = input && typeof input === "object" ? (input as { image?: unknown }).image : undefined;
+  if (typeof image === "string" && image.length > MAX_AVATAR_BYTES * 2) return { ok: false, error: AVATAR_TOO_LARGE };
+  const parsed = parseAvatarDataUrl(image);
+  if (!parsed) return { ok: false, error: AVATAR_NOT_AN_IMAGE };
+
+  const updatedAt = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(userAvatars)
+      .values({ userId: user.id, contentType: parsed.contentType, image: parsed.base64, updatedAt })
+      .onConflictDoUpdate({
+        target: userAvatars.userId,
+        set: { contentType: parsed.contentType, image: parsed.base64, updatedAt },
+      });
+    await tx.insert(auditLog).values({
+      actorId: user.id,
+      action: "avatar.updated",
+      entityType: "user",
+      entityId: user.id,
+      before: null,
+      after: { contentType: parsed.contentType, bytes: parsed.bytes },
+    });
+  });
+  return { ok: true, version: updatedAt.getTime() };
+}
+
+/** Removes the signed-in person's profile picture; the initials show again. */
+export async function removeMyAvatar(): Promise<AvatarActionResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+
+  await db.transaction(async (tx) => {
+    await tx.delete(userAvatars).where(eq(userAvatars.userId, user.id));
+    await tx.insert(auditLog).values({
+      actorId: user.id,
+      action: "avatar.removed",
+      entityType: "user",
+      entityId: user.id,
+      before: null,
+      after: null,
+    });
+  });
+  return { ok: true, version: null };
 }
