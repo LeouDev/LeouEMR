@@ -424,7 +424,11 @@ from every environment this project gets worked on in.
   file gets one row per segment under category "Time & Motion" with the
   signed delta in the result column. The leaders' History drawer lists
   the segments. Only forms whose definition carries `timeMotion` show the
-  panel or require it; the other three do not.
+  panel or require it; the other three do not. Live 13 Sep: the
+  administrator ran the 0045 paste (1 and 5 confirmed), then the merge
+  (production 04:06 UTC). The APPLY files from 0045 on guard the tracker
+  insert with `where not exists` — the tracker has no unique key, so
+  `on conflict do nothing` never stopped a duplicate row.
 - **My Quality Scores, the agent-facing page (feature branch, 13 Sep).**
   From the second handoff (`My Quality Scores.dc.html` + README):
   `/my-quality-scores` for the agent role (nav tab in `AGENT_NAV`; any
