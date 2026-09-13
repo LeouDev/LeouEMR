@@ -38,7 +38,10 @@ const RECORDS_NAV = { href: "/records", label: "Records" };
  * skill reference is a scoring policy table they cannot change, so their
  * slot goes to their own stats instead.
  */
-const AGENT_NAV = [{ href: "/my-stats", label: "My Tools" }];
+const AGENT_NAV = [
+  { href: "/my-stats", label: "My Tools" },
+  { href: "/my-quality-scores", label: "My Quality Scores" },
+];
 
 /**
  * Leaders only. An agent's own MBO is on My Stats; the MBO page is a roster
