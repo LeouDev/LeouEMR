@@ -373,7 +373,8 @@ from every environment this project gets worked on in.
   **Sunday–Saturday** (the handoff's rule; unlike the Sat–Fri reporting
   week), 2 audits per active agent; an agent is out for the week when
   separated before it, on leave of absence, or on approved leave covering
-  all seven days (`pto_requests`). Pages under `/quality` (tab strip:
+  all seven days (`pto_requests`); the roster does not list the separated
+  at all (asked for 13 Sep), only the other two as "not required". Pages under `/quality` (tab strip:
   Dashboard, New audit, History, Team QA analysis; nav tab for
   admin/manager/supervisor via `LEADER_NAV`): the dashboard's roster with
   Previous/This week/Next; the New audit stepper (`new/audit-form.tsx`:

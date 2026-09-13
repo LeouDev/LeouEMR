@@ -89,20 +89,25 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
   }
   const doneByAgent = new Map(counts.map((c) => [c.agentId, c.n]));
 
-  const rows: QaRosterRow[] = people.map((person) => {
-    const standing = standingFor(
-      { status: person.status, separatedOn: separated.get(person.id) ?? null, leave: leaveByAgent.get(person.id) ?? [] },
-      week,
-    );
-    return {
-      id: person.id,
-      name: person.name,
-      supervisorName: person.supervisorName,
-      standing,
-      required: requiredFor(standing),
-      completed: doneByAgent.get(person.id) ?? 0,
-    };
-  });
+  // Someone who left before the week is not on its roster at all — not
+  // even as a "not required" row. On the calendar of a week they were
+  // still here, they are listed and owe audits like anyone else.
+  const rows: QaRosterRow[] = people
+    .map((person) => {
+      const standing = standingFor(
+        { status: person.status, separatedOn: separated.get(person.id) ?? null, leave: leaveByAgent.get(person.id) ?? [] },
+        week,
+      );
+      return {
+        id: person.id,
+        name: person.name,
+        supervisorName: person.supervisorName,
+        standing,
+        required: requiredFor(standing),
+        completed: doneByAgent.get(person.id) ?? 0,
+      };
+    })
+    .filter((row) => row.standing !== "separated");
 
   const active = rows.filter((r) => r.standing === "active");
   const required = active.reduce((sum, r) => sum + r.required, 0);
