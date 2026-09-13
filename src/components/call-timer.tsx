@@ -169,17 +169,18 @@ export function CallTimer({
         <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">
           Baseline (seconds per segment)
         </span>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {/* Bottom-aligned: a label that wraps to two lines in a narrow panel must not push its box out of line with the others. */}
+        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-5">
           {segments.map((s) => (
             <label key={s.code} className="block">
-              <span className="mb-1 block text-[11px] text-muted">{s.label}</span>
+              <span className="mb-1 block text-[11px] leading-tight text-muted">{s.label}</span>
               <input
                 type="number"
                 min={0}
                 disabled={started}
                 value={s.baselineSeconds}
                 onChange={(e) => setBaseline(s.code, e.target.value)}
-                className="w-full border-2 border-ink bg-surface px-2 py-1.5 text-center font-mono text-sm text-ink outline-none disabled:opacity-60"
+                className="w-full border-2 border-ink bg-surface px-2 py-1 text-center font-mono text-sm text-ink outline-none disabled:opacity-60"
               />
             </label>
           ))}
