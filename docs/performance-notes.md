@@ -571,6 +571,29 @@ from every environment this project gets worked on in.
   shows the first eight so a short team needs no typing). Options use
   mousedown rather than click because the input's blur fires between the
   two and would close the list first.
+- **Phone audit Time & Motion runs the action item's stopwatch (feature
+  branch, 13 Sep).** The QA panel had its own five segments (Greeting /
+  verification … Wrap-up, 480s) and typed-in seconds; the action item's
+  study times Opening & Verification / Identify the Concern /
+  Investigation / Delivery of Findings / Closing (30/45/120/75/30) on a
+  live clock with Start call, Hold, Complete segment, Reset. One call is
+  now timed the same way in both places: the clock is
+  `src/components/call-timer.tsx` (`CallTimer`, extracted unchanged from
+  the action-item `LiveTimer`, which now wraps it with the call
+  reference, remarks and save), and the Phone form's segments are
+  `DEFAULT_SEGMENTS` from `src/lib/time-motion/engine.ts` — in the seed
+  (`forms.ts`) and in production through migration
+  `0047_qa_time_motion_segments` (a custom data migration, no snapshot,
+  like 0033–0037; apply with `drizzle/APPLY_0047_QA_TIME_MOTION_SEGMENTS.sql`,
+  updates the row only while its segments differ, nothing to re-grant;
+  rehearsed twice on a scratch database). The QA panel
+  (`quality/new/time-motion-panel.tsx`) is the call reference plus the
+  clock; `applyTimer` (tested) copies every baseline and each completed
+  segment's whole seconds into the draft, so `finalizeDraft`, the stored
+  shape, History, the export and My Quality Scores are untouched; past
+  audits keep the segments they were filed with. The aside stays mounted
+  while closed (`hidden`, not unmounted) so the clock keeps running while
+  the QA steps are scored, and the corner toggle shows "● Running".
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

@@ -11,6 +11,8 @@
  * in a compliance list: any failure there zeroes the audit.
  */
 
+import { DEFAULT_SEGMENTS } from "@/lib/time-motion/engine";
+
 export interface QaSection {
   name: string;
   weight: number;
@@ -186,14 +188,11 @@ export const QA_FORM_SEED: QaForm[] = [
         { name: "Call Control", weight: 1, items: ["Did not keep call on track"] },
       ],
       compliance: ["Incorrect case priority", "Invalid cancellation", "Case worked for incorrect member", "Unprofessional/profane language"],
+      // The same call flow the action item's study times, so one call is
+      // timed the same way wherever it is timed (migration 0047 aligned
+      // the seeded row).
       timeMotion: {
-        segments: [
-          { label: "Greeting / verification", baseline: 30 },
-          { label: "Account lookup", baseline: 60 },
-          { label: "Issue discussion", baseline: 240 },
-          { label: "Resolution / hold", baseline: 90 },
-          { label: "Wrap-up", baseline: 60 },
-        ],
+        segments: DEFAULT_SEGMENTS.map((s) => ({ label: s.label, baseline: s.defaultBaselineSeconds })),
       },
     },
   },
