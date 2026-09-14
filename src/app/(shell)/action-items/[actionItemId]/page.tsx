@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
 import { rootCauseCategories } from "@/lib/db/schema";
+import { SUPPORT_PLAN_LOCKED, SUPPORT_RCA_LOCKED, canRewriteRecord } from "@/lib/development/support";
 import { getActionItemDetail } from "@/lib/queries/performance";
 import { AcknowledgeButton, ActionPlanForm, RcaForm, SendToAgentButton } from "./workflow";
 import { RcaNotes } from "./rca-notes";
@@ -59,6 +60,12 @@ export default async function ActionItemPage({
   // everyone, matching the server (closedRecordError in actions.ts).
   const closed = issue.status === "COMPLETED";
   const canWrite = canEdit && !closed;
+  // A trainer or SME may write a record where none exists and edit their
+  // own, but someone else's is read-only to them (canRewriteRecord): notes
+  // go under the root cause, and only the training and coaching flags on
+  // the plan are theirs to change.
+  const rcaLocked = rca !== null && !canRewriteRecord(user, rca.createdBy);
+  const planLocked = plan !== null && !canRewriteRecord(user, plan.createdBy);
   const reopened = issue.status === "REOPENED";
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
   const canAck =
@@ -217,16 +224,18 @@ export default async function ActionItemPage({
             subtitle={
               closed
                 ? "Closed with the item — the record is read-only"
-                : canEdit
-                  ? "Required before the item can be sent to the agent"
-                  : "Entered by the supervisor"
+                : canEdit && rcaLocked
+                  ? SUPPORT_RCA_LOCKED
+                  : canEdit
+                    ? "Required before the item can be sent to the agent"
+                    : "Entered by the supervisor"
             }
             action={rca ? <Recorded /> : undefined}
           />
           <RcaForm
             actionItemId={actionItem.id}
             categories={categories}
-            readOnly={!canWrite}
+            readOnly={!canWrite || rcaLocked}
             initial={{
               problemStatement: rca?.problemStatement ?? "",
               rootCauseCategoryId: rca?.rootCauseCategoryId ?? "",
@@ -265,15 +274,18 @@ export default async function ActionItemPage({
             subtitle={
               closed
                 ? "Closed with the item — the record is read-only"
-                : canEdit
-                  ? "Required before the item can be sent to the agent"
-                  : "Entered by the supervisor"
+                : canEdit && planLocked
+                  ? SUPPORT_PLAN_LOCKED
+                  : canEdit
+                    ? "Required before the item can be sent to the agent"
+                    : "Entered by the supervisor"
             }
             action={plan ? <Recorded /> : undefined}
           />
           <ActionPlanForm
             actionItemId={actionItem.id}
             readOnly={!canWrite}
+            flagsOnly={canWrite && planLocked}
             initial={{
               correctiveAction: plan?.correctiveAction ?? "",
               expectedBehavior: plan?.expectedBehavior ?? "",

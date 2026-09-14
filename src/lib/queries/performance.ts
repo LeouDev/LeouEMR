@@ -281,10 +281,16 @@ export interface ActionItemListRow {
   openedWeek: string;
   employeeId: string;
   employeeName: string;
+  /** The team leader as the roster records them — the support queue groups by it. */
+  supervisorName: string | null;
   kpiName: string;
   kpiCode: string;
   hasRca: boolean;
   hasActionPlan: boolean;
+  /** Whether the action plan asks for coaching; false with no plan. */
+  coachingRequired: boolean;
+  /** Whether the action plan asks for training; false with no plan. */
+  trainingRequired: boolean;
 }
 
 /** Statuses an item sits in before anyone has written an RCA/action plan — see submitRcaAndPlan in the engine. */
@@ -370,10 +376,13 @@ async function listActionItems(
       openedWeek: performanceIssues.openedWeek,
       employeeId: employees.id,
       employeeName: employees.name,
+      supervisorName: employees.supervisorName,
       kpiName: kpiDefinitions.name,
       kpiCode: kpiDefinitions.code,
       rcaId: rcaEntries.id,
       planId: actionPlans.id,
+      coachingRequired: actionPlans.coachingRequired,
+      trainingRequired: actionPlans.trainingRequired,
     })
     .from(actionItems)
     .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
@@ -398,10 +407,13 @@ async function listActionItems(
     openedWeek: row.openedWeek,
     employeeId: row.employeeId,
     employeeName: row.employeeName,
+    supervisorName: row.supervisorName,
     kpiName: row.kpiName,
     kpiCode: row.kpiCode,
     hasRca: row.rcaId !== null,
     hasActionPlan: row.planId !== null,
+    coachingRequired: row.coachingRequired ?? false,
+    trainingRequired: row.trainingRequired ?? false,
   }));
 }
 

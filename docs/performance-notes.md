@@ -717,6 +717,30 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Trainer and SME Development Hub is a support queue (feature branch,
+  14 Sep).** Asked after the audit: a support role reads the whole floor,
+  where "most blocked first" put hundreds of root causes that are the
+  team leaders' to write at the top. `boardReaderFor(user)` names three
+  readers (leader, agent, support); `getDevelopmentBoard(user,
+  {everyItem})` opens a support role on the items whose action plan
+  marks coaching or training required (`supportRequested`; the flags
+  and `employees.supervisorName` now ride on `ActionItemListRow`), with
+  "Every open item" one click away (`?scope=floor`, composable with
+  `?all=1` via `hubHref`). Their rows sort by KPI, then team leader,
+  then name (`byKpiThenLeader`; a person with two KPIs sits under the
+  first alphabetically), with a Team leader column and cards for Needs
+  training / Needs coaching / In monitoring / Nearing close; the next
+  step reads "Training requested · monitoring (1/4)"
+  (`assessForSupport`). `buildDevelopmentBoard` is the pure grouping
+  and is tested. One owner per record: `canRewriteRecord` in
+  `src/lib/development/support.ts` lets a support role write an RCA or
+  plan where none exists and edit their own, but someone else's RCA is
+  read-only to them (server refuses with `SUPPORT_RCA_LOCKED`; the page
+  says to add a note) and on someone else's plan only the coaching and
+  training flags are applied (`action_plan.support_flags_updated`; the
+  form's `flagsOnly` mode shows the plan as a record with just the two
+  checkboxes). Leaders and admins are unchanged. Performance left as
+  is: one select with a handful of joins over a few hundred rows.
 - **Development plan audit follow-ups (feature branch, 14 Sep).** The
   rest of what the audit found, none of it a data change:
   - *Development Hub totals are no longer capped.* `getDevelopmentBoard`

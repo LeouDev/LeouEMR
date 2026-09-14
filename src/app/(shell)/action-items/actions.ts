@@ -25,6 +25,7 @@ import {
   acknowledgeByAgent,
   submitRcaAndActionPlan,
 } from "@/lib/action-item-engine/engine";
+import { SUPPORT_RCA_LOCKED, canRewriteRecord } from "@/lib/development/support";
 import { actionPlanSchema, rcaSchema } from "@/lib/rca-action-plan/validation";
 import { isHandleTimeKpi, scoreSegments } from "@/lib/time-motion/engine";
 import { z } from "zod";
@@ -102,6 +103,10 @@ export async function saveRca(input: unknown): Promise<ActionResult> {
     .from(rcaEntries)
     .where(eq(rcaEntries.actionItemId, parsed.data.actionItemId))
     .limit(1);
+  // A support role adds notes under someone else's root cause; it does not rewrite it.
+  if (existing && !canRewriteRecord(user, existing.createdBy)) {
+    return { ok: false, error: SUPPORT_RCA_LOCKED };
+  }
 
   if (existing) {
     await db
@@ -159,6 +164,31 @@ export async function saveActionPlan(input: unknown): Promise<ActionResult> {
     .from(actionPlans)
     .where(eq(actionPlans.actionItemId, parsed.data.actionItemId))
     .limit(1);
+
+  // A support role adjusts only whether training or coaching is required
+  // on a plan someone else wrote — the corrective action, the target and
+  // the dates stay the team leader's (canRewriteRecord). The rest of the
+  // submission is ignored rather than refused, so the form's one save
+  // button does the right thing for both readers.
+  if (existing && !canRewriteRecord(user, existing.createdBy)) {
+    const flags = {
+      coachingRequired: parsed.data.coachingRequired,
+      trainingRequired: parsed.data.trainingRequired,
+    };
+    await db
+      .update(actionPlans)
+      .set({ ...flags, updatedBy: user.id, updatedAt: new Date() })
+      .where(eq(actionPlans.id, existing.id));
+    await db.insert(auditLog).values({
+      actorId: user.id,
+      action: "action_plan.support_flags_updated",
+      entityType: "action_item",
+      entityId: parsed.data.actionItemId,
+      after: flags,
+    });
+    revalidatePath(`/action-items/${parsed.data.actionItemId}`);
+    return { ok: true };
+  }
 
   if (existing) {
     await db
