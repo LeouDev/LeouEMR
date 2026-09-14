@@ -717,6 +717,40 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard, step 4: the page, the stamps, the migration (feature
+  branch, 14 Sep).** `/scorecard` for every role but trainer/SME (who are
+  redirected): an agent's own card ("My Scorecard" in their nav), a team
+  leader's people, a manager's or admin's span ("Scorecard" after MBO in
+  the leader nav; the support filter drops it). `ScorecardPickers`
+  (agent + month, URL-driven) over months from the first fact to today,
+  so the current month is a running month-to-date card. Loader
+  `src/lib/scorecard/load.ts`: `computeScorecards(ids, monthStart)` reads
+  the month's skill facts (folded to configured skills through the same
+  aliases as PAR; hours = IEX hours where present, productive hours
+  otherwise; the target averaged over the month's weeks with ramp
+  overrides, `ramping` flagged), quality facts by skill group
+  (`score_sum / audits`), the six-month CRITICAL/STANDARD counts from
+  `metric_facts`, attendance (`combine("ratio_pct")`), NPS from
+  `nps_facts`, and `monthly_metrics` — one round of eight queries for the
+  whole set. `getScorecardFor` adds the employee, the review row and its
+  names. `ScorecardTable` prints the workbook's layout (weightage,
+  metric, actual, rate, goal, the five bands, weightage score, prod
+  hours, weight; Total weightage / Raw score / Final score with the 3.00
+  minimum). Stamps: `scorecard_reviews` (migration
+  `0051_scorecard_reviews` / `APPLY_0051_SCORECARD_REVIEWS.sql`,
+  rehearsed twice; run after 0050): `reviewScorecard` — supervisor only,
+  own scope, refused before the DB until ten days after the month ends
+  (`reviewOpensOn`, `canReview` in `review.ts`, tested), stores the score
+  at review and clears any acknowledgement, notifies the agent
+  (`scorecard.reviewed`); `acknowledgeScorecard` — agent only, own
+  record, needs a review first, once, notifies the linked team leader
+  (`scorecard.acknowledged`). Notifications link to
+  `/scorecard?month=…[&employee=…]`. A re-import that moves a reviewed
+  card shows "Changed since it was reviewed" (`changedSinceReview`,
+  0.005 tolerance); the leader's button reads "Review again" and the
+  agent's acknowledgement waits for it. Print via the records
+  `PrintButton` with `print:hidden` chrome. Authorization tests in
+  `scorecard/authorization.test.ts`.
 - **Scorecard, step 3: the engine (feature branch, 14 Sep).**
   `src/lib/scorecard/engine.ts` (`computeScorecard`, pure, pinned by
   `engine.test.ts` against the business's own August 2026 card: 4.12)

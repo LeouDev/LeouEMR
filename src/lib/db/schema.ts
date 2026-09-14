@@ -598,6 +598,35 @@ export const monthlyMetrics = pgTable(
   ],
 );
 
+/**
+ * The two stamps on a month's scorecard. The team leader reviews first —
+ * from ten days after the month ends, once its data has landed — and only
+ * then can the agent acknowledge. The score at review is kept so a later
+ * re-import that moves the card can say "changed since review" rather than
+ * freezing the numbers or silently rewriting what was signed.
+ */
+export const scorecardReviews = pgTable(
+  "scorecard_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    /** The first day of the scorecard's month. */
+    month: date("month").notNull(),
+    reviewedBy: uuid("reviewed_by")
+      .notNull()
+      .references(() => users.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The final score as it stood at review; null when nothing could be scored then. */
+    reviewedScore: numeric("reviewed_score", { mode: "number" }),
+    acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("scorecard_reviews_employee_month_idx").on(table.employeeId, table.month)],
+);
+
 // ---------------------------------------------------------------------------
 // Action item engine: performance issues, action items, RCA, action plans
 // ---------------------------------------------------------------------------
