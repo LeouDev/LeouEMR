@@ -717,6 +717,15 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard table hides its dash rows (feature branch, 14 Sep).**
+  Asked for: a row with nothing to show — `no-weight` (no hours on that
+  side: Phone Quality and NPS for a pure ancillary agent) or `no-data`
+  (weight but nothing measured) — is left off the table instead of
+  printed as "--". The engine still carries them (the score and its
+  rescaling are unchanged); the Total weightage line names any
+  measured-but-missing row ("Ancillary Quality not measured — read over
+  the 80% that could be scored") so a rescaled score still explains
+  itself.
 - **Scorecard PDF on one page (main, 14 Sep).** The first signed print
   ran to two pages: the acknowledgement card (break-inside-avoid) did not
   fit under the table and moved whole to page 2, leaving page 1 a third
