@@ -8,7 +8,10 @@ import { db } from "@/lib/db/client";
 import { auditLog, employeeAssignments, employees, users } from "@/lib/db/schema";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
-export type UserActionResult = { ok: true } | { ok: false; error: string };
+export type UserActionResult = { ok: true; warning?: string } | { ok: false; error: string };
+
+const EMAIL_NOT_CONFIRMED_WARNING =
+  "Saved, but their email address could not be marked confirmed. They can still use the link in the confirmation email.";
 
 const updateSchema = z.object({
   userId: z.string().uuid(),
@@ -99,6 +102,12 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
     .where(eq(users.id, parsed.data.userId));
   await recordRoleInToken(parsed.data.userId, parsed.data.role);
 
+  // Activating a pending account is the approval, whichever button did it,
+  // so it confirms the email address too (see confirmEmail). Re-enabling
+  // a disabled account is not an approval and leaves the address as it is.
+  const approving = before.status === "pending" && parsed.data.status === "active";
+  const emailConfirmed = approving ? await confirmEmail(parsed.data.userId) : null;
+
   await db.insert(auditLog).values({
     actorId: actor.id,
     action: "user.updated",
@@ -110,11 +119,17 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
       employeeEid: before.employeeEid,
       managerName: before.managerName,
     },
-    after: { role: parsed.data.role, status: parsed.data.status, employeeEid, managerName },
+    after: {
+      role: parsed.data.role,
+      status: parsed.data.status,
+      employeeEid,
+      managerName,
+      ...(approving ? { emailConfirmed } : {}),
+    },
   });
 
   revalidatePath("/users");
-  return { ok: true };
+  return emailConfirmed === false ? { ok: true, warning: EMAIL_NOT_CONFIRMED_WARNING } : { ok: true };
 }
 
 const approveSchema = z.object({
@@ -134,7 +149,7 @@ const approveSchema = z.object({
  */
 export async function approvePendingUsers(
   input: unknown,
-): Promise<{ ok: true; approved: number } | { ok: false; error: string }> {
+): Promise<{ ok: true; approved: number; unconfirmed: number } | { ok: false; error: string }> {
   const actor = await getCurrentUser();
   if (!actor || actor.status !== "active") return { ok: false, error: "Not signed in" };
   if (actor.role !== "admin") return { ok: false, error: "Only administrators can manage users" };
@@ -155,22 +170,56 @@ export async function approvePendingUsers(
     )
     .returning({ id: users.id, role: users.role });
 
+  const confirmed = await confirmEmails(approved.map((row) => row.id));
+
   if (approved.length > 0) {
     await db.insert(auditLog).values(
-      approved.map((row) => ({
+      approved.map((row, index) => ({
         actorId: actor.id,
         action: "user.approved",
         entityType: "user",
         entityId: row.id,
         before: { status: "pending" },
-        after: { status: "active", role: row.role },
+        after: { status: "active", role: row.role, emailConfirmed: confirmed[index] },
       })),
     );
   }
 
   revalidatePath("/users");
-  return { ok: true, approved: approved.length };
+  return { ok: true, approved: approved.length, unconfirmed: confirmed.filter((ok) => !ok).length };
 }
+
+/**
+ * Marks the account's email address confirmed in Supabase Auth, as the
+ * link in the confirmation email would have.
+ *
+ * Company mailboxes filter that email often enough — and Supabase's
+ * built-in mailer sends few enough per hour — that people were left unable
+ * to sign in after an administrator had already approved them. The
+ * approval is the stronger check anyway: an administrator vouching for a
+ * named colleague on the roster, where the link only proves the mailbox
+ * was reachable. Best effort: false when Supabase refused, in which case
+ * the approval stands and the link in their inbox still works.
+ */
+async function confirmEmail(userId: string): Promise<boolean> {
+  try {
+    const { error } = await createSupabaseAdminClient().auth.admin.updateUserById(userId, { email_confirm: true });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+/** confirmEmail for a batch, a few at a time — one result per id, in order. */
+async function confirmEmails(userIds: string[]): Promise<boolean[]> {
+  const results: boolean[] = [];
+  for (let start = 0; start < userIds.length; start += CONFIRM_BATCH) {
+    results.push(...(await Promise.all(userIds.slice(start, start + CONFIRM_BATCH).map(confirmEmail))));
+  }
+  return results;
+}
+
+const CONFIRM_BATCH = 10;
 
 /**
  * Copies the role into the account's auth metadata, where it rides in the
