@@ -184,7 +184,7 @@ export default async function ScorecardPage({
       <style>{`@media print { @page { size: A4 landscape; margin: 0; } }`}</style>
       <div className="print:hidden">{band}</div>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8 print:max-w-none print:space-y-3 print:p-[8mm]">
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8 print:max-w-none print:space-y-2 print:p-[7mm]">
         {review?.changedSinceReview && (
           <div className="border-2 border-ink bg-warn-bg px-4 py-3 text-sm text-ink print:hidden">
             <p className="font-semibold">Changed since it was reviewed.</p>
@@ -197,8 +197,9 @@ export default async function ScorecardPage({
         )}
 
         <Card className="print:break-inside-avoid">
-          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          {/* Compact on paper so the card and its acknowledgement share one landscape page. */}
+          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5 print:px-4 print:py-2">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm print:gap-y-0 print:text-xs">
               <dt className="font-semibold text-muted">Employee ID</dt>
               <dd className="font-mono text-ink">{employee.eid}</dd>
               <dt className="font-semibold text-muted">Employee name</dt>
@@ -211,11 +212,11 @@ export default async function ScorecardPage({
               <dd className="text-ink">{processType}</dd>
             </dl>
             <div className="text-right">
-              <p className="text-2xl font-extrabold tracking-[-0.01em] text-ink">{month.label}</p>
+              <p className="text-2xl font-extrabold tracking-[-0.01em] text-ink print:text-lg">{month.label}</p>
               <p className="mt-1 text-xs text-muted">
                 {current ? "Running month to date" : "Full month"} · Optum Rx prior authorization scorecard
               </p>
-              <p className="mt-3 font-mono text-4xl font-bold tabular-nums text-ink">
+              <p className="mt-3 font-mono text-4xl font-bold tabular-nums text-ink print:mt-1 print:text-2xl">
                 {card.finalScore === null ? "--" : card.finalScore.toFixed(2)}
               </p>
               <p className="text-xs text-muted">final score out of 5</p>
@@ -229,12 +230,12 @@ export default async function ScorecardPage({
             title="Acknowledgement"
             subtitle="I acknowledge that performance goals and their definitions were clearly discussed to me by my Immediate Manager."
           />
-          <div className="grid gap-6 px-6 py-5 sm:grid-cols-2">
+          <div className="grid gap-6 px-6 py-5 sm:grid-cols-2 print:gap-4 print:px-4 print:py-2">
             <div>
               {/* The drawn signature sits on the line, the way it would on the printed sheet. */}
-              <div className="flex h-20 items-end">
+              <div className="flex h-20 items-end print:h-12">
                 {review?.acknowledgedSignature ? (
-                  <SignatureImage signature={review.acknowledgedSignature} className="h-20 w-auto max-w-full text-ink" />
+                  <SignatureImage signature={review.acknowledgedSignature} className="h-20 w-auto max-w-full text-ink print:h-12" />
                 ) : null}
               </div>
               <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">{employee.name}</p>
@@ -249,9 +250,9 @@ export default async function ScorecardPage({
               )}
             </div>
             <div>
-              <div className="flex h-20 items-end">
+              <div className="flex h-20 items-end print:h-12">
                 {review?.reviewedSignature ? (
-                  <SignatureImage signature={review.reviewedSignature} className="h-20 w-auto max-w-full text-ink" />
+                  <SignatureImage signature={review.reviewedSignature} className="h-20 w-auto max-w-full text-ink print:h-12" />
                 ) : null}
               </div>
               <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">

@@ -717,6 +717,13 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard PDF on one page (main, 14 Sep).** The first signed print
+  ran to two pages: the acknowledgement card (break-inside-avoid) did not
+  fit under the table and moved whole to page 2, leaving page 1 a third
+  empty. Print-only compaction on the page: 7mm margin, tighter header
+  card (smaller month and score type, no row gaps in the details list),
+  signature areas 3rem instead of 5rem, and the acknowledgement grid's
+  padding halved. The table's own print sizes are unchanged.
 - **Signatures on the scorecard stamps (feature branch, 14 Sep).** "Mark
   as reviewed" and "Acknowledge" now open a signature dialog
   (`signature-dialog.tsx` over a pointer-event canvas, `signature-pad.tsx`,
