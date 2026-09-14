@@ -92,7 +92,14 @@ function statusNote(row: ScorecardRow): string | null {
  */
 export function ScorecardTable({ card }: { card: Scorecard }) {
   const productivity = card.rows.find((r) => r.key === "PRODUCTIVITY")!;
-  const others = card.rows.filter((r) => r.key !== "PRODUCTIVITY");
+  // A row with nothing to show — no hours on its side, or weight but
+  // nothing measured — is left off rather than printed as a line of
+  // dashes. The total line names anything measured-but-missing, since
+  // that is what the score is rescaled around.
+  const others = card.rows.filter(
+    (r) => r.key !== "PRODUCTIVITY" && r.status !== "no-weight" && r.status !== "no-data",
+  );
+  const unmeasured = card.rows.filter((r) => r.key !== "PRODUCTIVITY" && r.status === "no-data");
 
   return (
     // On paper the whole table has to show: no scroll box (which printed as
@@ -170,6 +177,7 @@ export function ScorecardTable({ card }: { card: Scorecard }) {
               Total weightage
               {card.rescaled && (
                 <span className="ml-2 text-xs font-normal text-muted">
+                  {unmeasured.length > 0 ? `${unmeasured.map((r) => r.label).join(", ")} not measured — ` : ""}
                   read over the {pct(card.weightScored, 0)} that could be scored
                 </span>
               )}
