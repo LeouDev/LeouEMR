@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { SHEET_ALIASES } from "./aggregate";
-import { IDENTITY_COLUMNS, parseWeekLabel } from "./columns";
-import { TEMPLATE_IDENTITY, TEMPLATE_SHEETS, buildTemplateWorkbook } from "./template";
+import { MONTHLY_SHEET_ALIASES, SHEET_ALIASES, aggregateWorkbook } from "./aggregate";
+import { IDENTITY_COLUMNS, parseMonthLabel, parseWeekLabel } from "./columns";
+import { TEMPLATE_IDENTITY, TEMPLATE_MONTHLY, TEMPLATE_SHEETS, buildTemplateWorkbook } from "./template";
 
 /**
  * The template exists to tell an administrator exactly what to fill in, so
@@ -54,7 +54,11 @@ describe("upload template", () => {
   it("round-trips through a real workbook with one example row per sheet", () => {
     const parsed = XLSX.read(XLSX.write(book, { bookType: "xlsx", type: "buffer" }));
 
-    expect(parsed.SheetNames).toEqual(["Read me", ...TEMPLATE_SHEETS.map((s) => s.name)]);
+    expect(parsed.SheetNames).toEqual([
+      "Read me",
+      ...TEMPLATE_SHEETS.map((s) => s.name),
+      TEMPLATE_MONTHLY.name,
+    ]);
 
     for (const sheet of TEMPLATE_SHEETS) {
       const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets[sheet.name]);
@@ -63,5 +67,30 @@ describe("upload template", () => {
       const expected = [...TEMPLATE_IDENTITY, ...sheet.extra].map(([h]) => h);
       expect(Object.keys(rows[0]), sheet.name).toEqual(expected);
     }
+  });
+});
+
+describe("upload template — the monthly sheet", () => {
+  it("is named so the importer finds it", () => {
+    expect(MONTHLY_SHEET_ALIASES).toContain(TEMPLATE_MONTHLY.name.trim().toLowerCase());
+  });
+
+  it("writes an example month the parser can read", () => {
+    const [, example] = TEMPLATE_MONTHLY.columns.find(([h]) => h === "Month")!;
+    expect(parseMonthLabel(example)).toBe("2026-09-01");
+  });
+
+  it("round-trips its example row into three monthly figures", () => {
+    const parsed = XLSX.read(XLSX.write(buildTemplateWorkbook(), { bookType: "xlsx", type: "buffer" }));
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(parsed.Sheets[TEMPLATE_MONTHLY.name]);
+    const result = aggregateWorkbook({ [TEMPLATE_MONTHLY.name]: rows });
+    expect(result.monthlyMetrics).toEqual([
+      { eid: "001895123", month: "2026-09-01", metric: "IRE", value: 0 },
+      { eid: "001895123", month: "2026-09-01", metric: "PKT", value: 95 },
+      { eid: "001895123", month: "2026-09-01", metric: "LH_UTILIZATION", value: 82.38 },
+    ]);
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "warning", sheet: "productivity" }),
+    ]));
   });
 });

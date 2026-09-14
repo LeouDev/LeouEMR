@@ -6,6 +6,7 @@ import {
   importBatches,
   kpiDefinitions,
   metricFacts,
+  monthlyMetrics,
   npsFacts,
   qualityFacts,
   skillFacts,
@@ -32,6 +33,8 @@ export interface CommitSummary {
   employeesCreated: number;
   employeesUpdated: number;
   metricsWritten: number;
+  /** Figures from the Monthly sheet (IRE, PKT, LH Utilization) written or replaced. */
+  monthlyMetricsWritten: number;
   metricsSkippedNoKpi: string[];
   weeks: string[];
   issuesOpened: number;
@@ -116,6 +119,7 @@ export async function commitImport(
   // silently overwriting a more complete prior total the moment two imports
   // carried a non-identical view of the same week (see reconcileFactBackedRows).
   await persistFacts(parsed, definitions, options.importBatchId, employeeIdByEid);
+  const monthlyWritten = await persistMonthlyMetrics(parsed, options.importBatchId, employeeIdByEid);
   await reconcileFactBackedRows(factBackedRows, definitions);
 
   const rows = [...factBackedRows, ...derivedRows];
@@ -154,6 +158,7 @@ export async function commitImport(
       rowCounts: {
         employees: parsed.employees.length,
         metrics: rows.length,
+        monthlyMetrics: monthlyWritten,
         weeks: parsed.weeks,
         sheets: parsed.sheets,
       },
@@ -163,6 +168,7 @@ export async function commitImport(
   return {
     ...employeeIdByEid.stats,
     metricsWritten: rows.length,
+    monthlyMetricsWritten: monthlyWritten,
     metricsSkippedNoKpi: [...missingKpis],
     unmatchedSkills: par.unmatchedSkills,
     weeks: parsed.weeks,
@@ -265,6 +271,7 @@ async function persistFacts(
         audits: fact.audits,
         imperfect: fact.imperfect,
         markdowns: fact.markdowns,
+        scoreSum: fact.scoreSum,
         sourceImportId: importBatchId,
       };
     })
@@ -280,6 +287,7 @@ async function persistFacts(
           audits: sql`excluded.audits`,
           imperfect: sql`excluded.imperfect`,
           markdowns: sql`excluded.markdowns`,
+          scoreSum: sql`excluded.score_sum`,
           sourceImportId: sql`excluded.source_import_id`,
         },
       });
@@ -314,6 +322,46 @@ async function persistFacts(
         },
       });
   }
+}
+
+/**
+ * Stores the Monthly sheet's figures, one per employee, month and metric.
+ * Re-uploading a month replaces that month's figure; a month the file does
+ * not carry is left alone.
+ */
+async function persistMonthlyMetrics(
+  parsed: ParseResult,
+  importBatchId: string,
+  employeeIdByEid: Map<string, string>,
+): Promise<number> {
+  const rows = (parsed.monthlyMetrics ?? [])
+    .map((fact) => {
+      const employeeId = employeeIdByEid.get(fact.eid);
+      if (!employeeId) return null;
+      return {
+        employeeId,
+        month: fact.month,
+        metric: fact.metric,
+        value: fact.value,
+        sourceImportId: importBatchId,
+      };
+    })
+    .filter((r) => r !== null);
+
+  const CHUNK = 1000;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    await db
+      .insert(monthlyMetrics)
+      .values(rows.slice(i, i + CHUNK))
+      .onConflictDoUpdate({
+        target: [monthlyMetrics.employeeId, monthlyMetrics.month, monthlyMetrics.metric],
+        set: {
+          value: sql`excluded.value`,
+          sourceImportId: sql`excluded.source_import_id`,
+        },
+      });
+  }
+  return rows.length;
 }
 
 /**

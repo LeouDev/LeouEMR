@@ -89,6 +89,32 @@ export const TEMPLATE_SHEETS: Array<{
   },
 ];
 
+/**
+ * The monthly sheet: one figure per employee per month, no week label.
+ * Uploaded once the month has ended, so it is optional on a weekly file.
+ */
+export const TEMPLATE_MONTHLY: {
+  name: string;
+  note: string;
+  columns: Array<[header: string, example: string]>;
+} = {
+  name: "Monthly",
+  note:
+    "One row per employee per month, uploaded after the month ends. IRE is a count; PKT and " +
+    "LH Utilization are percentages (82.38 for 82.38%). Month is the calendar month, " +
+    "written as 2026-09 or September 2026. Optional on a weekly upload.",
+  columns: [
+    ["EID", "001895123"],
+    ["Employee Name", "Dela Cruz, Juan"],
+    ["Current Supervisor", "Santos, Maria"],
+    ["Current Sup EID", "001772004"],
+    ["Month", "2026-09"],
+    ["IRE", "0"],
+    ["PKT", "95"],
+    ["LH Utilization", "82.38"],
+  ],
+};
+
 const README: string[][] = [
   ["OptumRX EMR — performance data upload template"],
   [],
@@ -106,6 +132,7 @@ const README: string[][] = [
   [],
   ["Sheets"],
   ...TEMPLATE_SHEETS.map((sheet) => [sheet.name, sheet.note]),
+  [TEMPLATE_MONTHLY.name, TEMPLATE_MONTHLY.note],
 ];
 
 export function buildTemplateWorkbook(): XLSX.WorkBook {
@@ -124,6 +151,13 @@ export function buildTemplateWorkbook(): XLSX.WorkBook {
     sheet["!cols"] = columns.map(([header]) => ({ wch: Math.max(header.length + 4, 14) }));
     XLSX.utils.book_append_sheet(book, sheet, name);
   }
+
+  const monthly = XLSX.utils.aoa_to_sheet([
+    TEMPLATE_MONTHLY.columns.map(([header]) => header),
+    TEMPLATE_MONTHLY.columns.map(([, example]) => example),
+  ]);
+  monthly["!cols"] = TEMPLATE_MONTHLY.columns.map(([header]) => ({ wch: Math.max(header.length + 4, 14) }));
+  XLSX.utils.book_append_sheet(book, monthly, TEMPLATE_MONTHLY.name);
 
   return book;
 }

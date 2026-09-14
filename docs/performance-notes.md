@@ -717,6 +717,38 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard, steps 1-2: the import learns its inputs (feature branch,
+  14 Sep).** First slice of the monthly OptumRx scorecard (see the
+  scorecard bullets that follow for the engine and pages). Migration
+  `0050_scorecard_inputs` / `APPLY_0050_SCORECARD_INPUTS.sql` (rehearsed
+  twice on the scratch DB; the generator numbered it 0049 and was
+  renamed as usual): `quality_facts.score_sum` (the audits' 0-1 scores
+  added up per skill and day, so the mean per skill group is
+  `score_sum / audits` — the blended weekly Quality KPI cannot be split
+  back into phone and ancillary), a `monthly_metrics` table (one figure
+  per employee, month and metric: IRE a count, PKT and LH_UTILIZATION
+  percentages; unique on the three; RLS + policy in the APPLY), and a
+  `STANDARD_ERRORS` KPI definition (`generates_action_items` false,
+  aggregation `sum`) so the Feedback sheet's Standard column can be kept
+  as `metric_facts` by date — no weekly row is ever written for it, so
+  it appears nowhere a weekly measure would. Import: the Quality case
+  adds `scoreSum` to each quality fact; the Feedback case reads a
+  `Standard` column (`Standard`, `Standard Error(s)`, `Standard IO`,
+  `Standard Count`) as the row's count, falling back to a Compliance
+  Risk label that says Standard, and the preview warns when the column
+  is missing; a new optional `Monthly` sheet (`MONTHLY_SHEET_ALIASES`:
+  Monthly / Monthly Metrics / Monthly Scorecard) is read outside the
+  weekly loop — a Month column (`parseMonthLabel`: 2026-09, 09/2026,
+  9/1/2026, Sep-2026, September 2026, a date cell) instead of Weekly,
+  either one column per metric (IRE, PKT, LH Utilization) or a Metric /
+  Value pair, percentages typed as 82.38 or as the Excel fraction
+  0.8238, last row wins per employee-month-metric, its own skipped-row
+  issues, and no warning when absent from a weekly file. The template
+  gains the Monthly sheet (`TEMPLATE_MONTHLY`), `commitImport` upserts
+  `monthly_metrics` and reports `monthlyMetricsWritten`. Backfill: after
+  this deploys, re-upload the last six monthly workbooks (April to
+  September 2026) once so `score_sum` and the Standard counts exist for
+  the scorecard's windows; the upserts replace, never duplicate.
 - **Support queue wording (main, 14 Sep).** Post-deploy audit of the
   support queue: the next step read "Training and Coaching requested"
   with a capital mid-sentence (now built lower-case and capitalised

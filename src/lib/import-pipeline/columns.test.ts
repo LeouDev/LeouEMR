@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEid, toText } from "./columns";
+import { normalizeEid, parseMonthLabel, toText } from "./columns";
 
 describe("normalizeEid", () => {
   it("pads an all-digit EID to nine digits", () => {
@@ -18,5 +18,32 @@ describe("normalizeEid", () => {
     expect(normalizeEid("-")).toBeNull();
     expect(normalizeEid(undefined)).toBeNull();
     expect(toText("  ")).toBeNull();
+  });
+});
+
+describe("parseMonthLabel", () => {
+  it("reads the shapes a month column is typed in", () => {
+    expect(parseMonthLabel("2026-09")).toBe("2026-09-01");
+    expect(parseMonthLabel("2026/09")).toBe("2026-09-01");
+    expect(parseMonthLabel("09/2026")).toBe("2026-09-01");
+    expect(parseMonthLabel("9/15/2026")).toBe("2026-09-01");
+    expect(parseMonthLabel("2026-09-15")).toBe("2026-09-01");
+    expect(parseMonthLabel("Sep-2026")).toBe("2026-09-01");
+    expect(parseMonthLabel("September 2026")).toBe("2026-09-01");
+    expect(parseMonthLabel("2026 September")).toBe("2026-09-01");
+    expect(parseMonthLabel("Sept 26")).toBe("2026-09-01");
+  });
+
+  it("reads a real date cell as its month", () => {
+    expect(parseMonthLabel(new Date(Date.UTC(2026, 8, 30)))).toBe("2026-09-01");
+  });
+
+  it("rejects what it cannot place rather than guessing", () => {
+    expect(parseMonthLabel("")).toBeNull();
+    expect(parseMonthLabel(null)).toBeNull();
+    expect(parseMonthLabel("Q3")).toBeNull();
+    expect(parseMonthLabel("2026-13")).toBeNull();
+    expect(parseMonthLabel("Steady")).toBeNull();
+    expect(parseMonthLabel(202609)).toBeNull();
   });
 });

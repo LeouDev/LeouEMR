@@ -6,9 +6,32 @@ export const KPI_CODES = {
   CPH: "CPH",
   AHT: "AHT",
   CRITICAL_ERRORS: "CRITICAL_ERRORS",
+  /** Standard (non-critical) compliance errors, a count kept as daily facts only. */
+  STANDARD_ERRORS: "STANDARD_ERRORS",
 } as const;
 
 export type KpiCode = (typeof KPI_CODES)[keyof typeof KPI_CODES];
+
+/** The scorecard inputs that arrive as one figure per person per month. */
+export const MONTHLY_METRIC_CODES = {
+  IRE: "IRE",
+  PKT: "PKT",
+  LH_UTILIZATION: "LH_UTILIZATION",
+} as const;
+
+export type MonthlyMetricCode = (typeof MONTHLY_METRIC_CODES)[keyof typeof MONTHLY_METRIC_CODES];
+
+/**
+ * One month's figure for one employee from the "Monthly" sheet. IRE is a
+ * count; PKT and LH Utilization are percentages (82.38 for 82.38%).
+ */
+export interface MonthlyMetric {
+  eid: string;
+  /** First day of the month, YYYY-MM-01. */
+  month: string;
+  metric: MonthlyMetricCode;
+  value: number;
+}
 
 /** One employee as discovered in the source workbook. */
 export interface ParsedEmployee {
@@ -144,6 +167,7 @@ export interface ParseResult {
   skillFacts: SkillFact[];
   qualityFacts: QualityFact[];
   npsFacts: NpsFact[];
+  monthlyMetrics: MonthlyMetric[];
   issues: ValidationIssue[];
   sheets: SheetSummary[];
   weeks: string[];
@@ -198,4 +222,6 @@ export interface QualityFact {
   audits: number;
   imperfect: number;
   markdowns: number;
+  /** The audits' 0-1 scores added up; mean score = scoreSum / audits. */
+  scoreSum: number;
 }

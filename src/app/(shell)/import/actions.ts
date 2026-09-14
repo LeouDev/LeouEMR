@@ -165,6 +165,7 @@ export interface CommitResponse {
     employeesCreated: number;
     employeesUpdated: number;
     metricsWritten: number;
+    monthlyMetricsWritten: number;
     issuesOpened: number;
     issuesUpdated: number;
     issuesCorrected: number;
