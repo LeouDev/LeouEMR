@@ -27,6 +27,7 @@ import { periodContaining, periodsBetween, type Period } from "@/lib/queries/per
 import { combine } from "@/lib/queries/period-metrics";
 import { computeScorecard, skillGroupOf, type Scorecard, type ScorecardSkillInput } from "./engine";
 import { changedSinceReview, errorWindow } from "./review";
+import { parseSignature, type Signature } from "./signature";
 
 /**
  * Reads a month's inputs for a set of people and runs the engine over
@@ -235,8 +236,10 @@ export interface ScorecardReviewState {
   reviewedByName: string | null;
   reviewedAt: Date;
   reviewedScore: number | null;
+  reviewedSignature: Signature | null;
   acknowledgedByName: string | null;
   acknowledgedAt: Date | null;
+  acknowledgedSignature: Signature | null;
   /** The card no longer says what was reviewed — a re-import has moved it. */
   changedSinceReview: boolean;
 }
@@ -297,8 +300,10 @@ export async function getScorecardFor(employeeId: string, monthStart: string): P
       reviewedByName: nameOf(review.reviewedBy),
       reviewedAt: review.reviewedAt,
       reviewedScore: review.reviewedScore,
+      reviewedSignature: parseSignature(review.reviewedSignature),
       acknowledgedByName: nameOf(review.acknowledgedBy),
       acknowledgedAt: review.acknowledgedAt,
+      acknowledgedSignature: parseSignature(review.acknowledgedSignature),
       changedSinceReview: changedSinceReview(review.reviewedScore, card.finalScore),
     };
   }

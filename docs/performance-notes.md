@@ -717,6 +717,25 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Signatures on the scorecard stamps (feature branch, 14 Sep).** "Mark
+  as reviewed" and "Acknowledge" now open a signature dialog
+  (`signature-dialog.tsx` over a pointer-event canvas, `signature-pad.tsx`,
+  600×200 pad space, mouse/pen/finger, Clear, Escape cancels); confirming
+  an empty pad is impossible client-side and refused server-side ("Draw
+  your signature before confirming"). Strokes are stored as vector data,
+  not a picture — `Signature {w, h, strokes: number[][]}` validated by
+  `signatureSchema` in `src/lib/scorecard/signature.ts` (integer points,
+  even-length strokes, ≤ 20,000 points, `hasInk` ≥ 2 points) — in two
+  jsonb columns on `scorecard_reviews` (migration
+  `0052_scorecard_signatures` / `APPLY_0052_SCORECARD_SIGNATURES.sql`,
+  rehearsed twice; run after 0051). A re-review replaces the leader's
+  signature and clears the agent's with the acknowledgement. The card and
+  the PDF draw them back as SVG (`SignatureImage`, `signaturePath`) on the
+  signature lines with "Signed Sep 14, 2026, 2:42 PM Manila time"
+  (`signedAt`, Asia/Manila). The audit log entries note `signed: true`.
+  Also asked for in the same round: the table's column band is navy with
+  orange lettering and an orange rule (`bg-navy-800`), the final-score
+  row stays orange.
 - **Scorecard prints whole (main, 14 Sep).** Download PDF printed a
   portrait page with the table clipped at the scroll box's edge (a
   scrollbar and all), the orange header and final-score rows dropped so

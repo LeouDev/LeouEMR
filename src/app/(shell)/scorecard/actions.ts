@@ -10,6 +10,7 @@ import { reportingScopeIds } from "@/lib/queries/org-history";
 import { periodContaining } from "@/lib/queries/period";
 import { computeScorecards } from "@/lib/scorecard/load";
 import { canReview, reviewOpensOn } from "@/lib/scorecard/review";
+import { signatureSchema } from "@/lib/scorecard/signature";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -19,8 +20,9 @@ const NOT_AN_AGENT = "Only the agent named on a scorecard acknowledges it";
 
 const monthSchema = z.string().regex(/^\d{4}-\d{2}-01$/, "Pick the month");
 
-const reviewSchema = z.object({ employeeId: z.string().uuid(), month: monthSchema });
-const acknowledgeSchema = z.object({ month: monthSchema });
+// Every stamp carries a drawn signature; the schema refuses an empty pad.
+const reviewSchema = z.object({ employeeId: z.string().uuid(), month: monthSchema, signature: signatureSchema });
+const acknowledgeSchema = z.object({ month: monthSchema, signature: signatureSchema });
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -47,7 +49,7 @@ export async function reviewScorecard(input: unknown): Promise<ActionResult> {
 
   const parsed = reviewSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
-  const { employeeId, month } = parsed.data;
+  const { employeeId, month, signature } = parsed.data;
 
   if (!canReview(month, todayIso())) {
     return {
@@ -73,15 +75,24 @@ export async function reviewScorecard(input: unknown): Promise<ActionResult> {
 
   await db
     .insert(scorecardReviews)
-    .values({ employeeId: employee.id, month, reviewedBy: user.id, reviewedAt: now, reviewedScore })
+    .values({
+      employeeId: employee.id,
+      month,
+      reviewedBy: user.id,
+      reviewedAt: now,
+      reviewedScore,
+      reviewedSignature: signature,
+    })
     .onConflictDoUpdate({
       target: [scorecardReviews.employeeId, scorecardReviews.month],
       set: {
         reviewedBy: user.id,
         reviewedAt: now,
         reviewedScore,
+        reviewedSignature: signature,
         acknowledgedBy: null,
         acknowledgedAt: null,
+        acknowledgedSignature: null,
         updatedAt: sql`now()`,
       },
     });
@@ -91,7 +102,7 @@ export async function reviewScorecard(input: unknown): Promise<ActionResult> {
     action: "scorecard.reviewed",
     entityType: "employee",
     entityId: employee.id,
-    after: { month, reviewedScore },
+    after: { month, reviewedScore, signed: true, reviewedAt: now.toISOString() },
   });
 
   const agents = await db
@@ -125,7 +136,7 @@ export async function acknowledgeScorecard(input: unknown): Promise<ActionResult
 
   const parsed = acknowledgeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
-  const { month } = parsed.data;
+  const { month, signature } = parsed.data;
 
   const [me] = await db
     .select({ id: employees.id, name: employees.name, supervisorEid: employees.supervisorEid })
@@ -145,7 +156,7 @@ export async function acknowledgeScorecard(input: unknown): Promise<ActionResult
   const now = new Date();
   await db
     .update(scorecardReviews)
-    .set({ acknowledgedBy: user.id, acknowledgedAt: now, updatedAt: sql`now()` })
+    .set({ acknowledgedBy: user.id, acknowledgedAt: now, acknowledgedSignature: signature, updatedAt: sql`now()` })
     .where(eq(scorecardReviews.id, review.id));
 
   await db.insert(auditLog).values({
@@ -153,7 +164,7 @@ export async function acknowledgeScorecard(input: unknown): Promise<ActionResult
     action: "scorecard.acknowledged",
     entityType: "employee",
     entityId: me.id,
-    after: { month, acknowledgedAt: now.toISOString() },
+    after: { month, acknowledgedAt: now.toISOString(), signed: true },
   });
 
   if (me.supervisorEid) {
