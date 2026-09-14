@@ -717,6 +717,17 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard, step 5: the stack rank ranks on it (feature branch,
+  14 Sep).** `getStackRanks` now scores the roster with
+  `computeScorecards(ids, monthStartOf(period.start))` alongside the
+  period KPIs; `RankRow.score` (the month's final score) is the ranking
+  key in `rank()` and `rankSupervisors()` (team mean over scored
+  members), with the PAR rating kept as a column. The page is monthly
+  only (`PeriodPicker` gained `granularities`, hiding the switch when
+  one size is offered) over months from the first fact to today, so the
+  current month is a running month-to-date ranking; "Your score" out of
+  5 against the 3.00 minimum replaces "Your rating". Tests updated
+  (`stack-rank.test.ts`, `stack-rank-scope.test.ts` mocks the loader).
 - **Scorecard, step 4: the page, the stamps, the migration (feature
   branch, 14 Sep).** `/scorecard` for every role but trainer/SME (who are
   redirected): an agent's own card ("My Scorecard" in their nav), a team

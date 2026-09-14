@@ -4,9 +4,10 @@ import { PeriodPicker } from "@/components/period-picker";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { getCurrentUser, type UserRole } from "@/lib/auth/session";
 import { getOwnEmployee } from "@/lib/queries/my-stats";
-import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
+import { periodContaining, periodsBetween } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getStackRanks } from "@/lib/queries/stack-rank";
+import { MINIMUM_SCORE } from "@/lib/scorecard/engine";
 import { NavLink } from "@/components/nav-link";
 import { abridge, RankTable, SupervisorRankTable } from "./rank-table";
 
@@ -16,14 +17,16 @@ const ORG_ROWS_SHOWN = 20;
 /**
  * Stack ranks: your team, the whole organization, and every supervisor in it.
  *
- * Ranking is on the PAR production rating, the score the business already
- * rates performance with. Everyone sees the same ranking — a stack rank that
- * hid your peers could not tell you where you stand.
+ * Ranking is on the monthly scorecard's final score, the figure the business
+ * rates performance with; the current month ranks on its running
+ * month-to-date card. Monthly only, since that is the scorecard's grain.
+ * Everyone sees the same ranking — a stack rank that hid your peers could
+ * not tell you where you stand.
  */
 export default async function StackRankPage({
   searchParams,
 }: {
-  searchParams: Promise<{ granularity?: string; period?: string; all?: string }>;
+  searchParams: Promise<{ period?: string; all?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -44,14 +47,13 @@ export default async function StackRankPage({
     cookies(),
   ]);
 
-  // Dashboard, MBO and Stack Rank share one PeriodPicker and remember the
-  // same selection between them (see period-picker.tsx) — an explicit URL
-  // param still wins, so a shared link or the back button shows what it
-  // captured.
-  const granularity = parseGranularity(
-    params.granularity ?? cookieStore.get("periodGranularity")?.value ?? "month",
-  );
-  const periods = range ? periodsBetween(granularity, range.first, range.last) : [];
+  // Months only — the scorecard's grain — from the first fact to today, so
+  // the current month is on the list as a running month-to-date ranking. The
+  // shared period cookie (see period-picker.tsx) is honoured when it names a
+  // month; an explicit URL param still wins.
+  const granularity = "month" as const;
+  const today = new Date().toISOString().slice(0, 10);
+  const periods = range ? periodsBetween(granularity, range.first, today > range.last ? today : range.last) : [];
   const period =
     periods.find((p) => p.start === params.period) ??
     (!params.period
@@ -78,11 +80,11 @@ export default async function StackRankPage({
 
   const ranks = await getStackRanks(user, employee, period);
 
-  // How many of the ranking actually have a rating this period. A single
-  // person's data can extend the fact range — so the newest period may be one
+  // How many of the ranking actually have a score this month. A single
+  // person's data can extend the fact range — so the newest month may be one
   // almost nobody was measured in, and a table of 452 dashes sorted
   // alphabetically looks broken rather than empty.
-  const scored = ranks.org.filter((r) => r.productionRate !== null).length;
+  const scored = ranks.org.filter((r) => r.score !== null).length;
   const thinlyScored = ranks.org.length > 0 && scored <= Math.max(2, ranks.org.length * 0.05);
   const mine = employee ? ranks.org.find((r) => r.employeeId === employee.id) : undefined;
   const myTeamRank = employee ? ranks.team.find((r) => r.employeeId === employee.id) : undefined;
@@ -97,18 +99,19 @@ export default async function StackRankPage({
   // click away and keeps the same period.
   const showAll = params.all === "1";
   const orgShown = showAll ? ranks.org : abridge(ranks.org, ORG_ROWS_SHOWN, mine?.rank);
-  const showAllHref = `/stack-rank?${new URLSearchParams({ granularity, period: period.start, all: "1" })}`;
+  const showAllHref = `/stack-rank?${new URLSearchParams({ period: period.start, all: "1" })}`;
 
   return (
     <>
       <PageBand
         title="Stack rank"
-        subtitle={`${period.label} · organization-wide`}
+        subtitle={`${period.label} · organization-wide · ranked on the monthly scorecard`}
         action={
           periods.length > 0 ? (
             <PeriodPicker
               basePath="/stack-rank"
               granularity={granularity}
+              granularities={[granularity]}
               periods={periods}
               selected={period}
             />
@@ -129,16 +132,16 @@ export default async function StackRankPage({
             hint="Across every site"
           />
           <StatCard
-            label="Your rating"
-            value={mine?.productionRate === null || mine === undefined ? "—" : mine.productionRate.toFixed(3)}
+            label="Your score"
+            value={mine?.score === null || mine === undefined ? "—" : mine.score.toFixed(2)}
             tone={
-              mine?.productionRate === null || mine === undefined
+              mine?.score === null || mine === undefined
                 ? "default"
-                : mine.productionRate >= 3
+                : mine.score >= MINIMUM_SCORE
                   ? "pass"
                   : "fail"
             }
-            hint="PAR production rating"
+            hint={`Monthly scorecard · ${MINIMUM_SCORE.toFixed(2)} is the minimum`}
           />
           <StatCard
             label="Your MBO"
@@ -167,11 +170,11 @@ export default async function StackRankPage({
           <Card>
             <div className="border-l-8 border-warn px-6 py-4">
               <p className="text-sm font-bold text-ink">
-                Only {scored} of {ranks.org.length} people have a rating for {period.label}
+                Only {scored} of {ranks.org.length} people have a score for {period.label}
               </p>
               <p className="mt-1 text-sm text-muted">
-                Ranking a period almost nobody was measured in is not meaningful — the rows below
-                are mostly empty and fall back to alphabetical order. Pick an earlier period above.
+                Ranking a month almost nobody was measured in is not meaningful — the rows below
+                are mostly empty and fall back to alphabetical order. Pick an earlier month above.
               </p>
             </div>
           </Card>
@@ -182,7 +185,7 @@ export default async function StackRankPage({
             title="Whole organization"
             subtitle={
               showAll || orgShown.length === ranks.org.length
-                ? mine && mine.productionRate !== null
+                ? mine && mine.score !== null
                   ? `${scored} of ${ranks.org.length} scored · you are ${mine.rank}, scroll to find yourself`
                   : `${scored} of ${ranks.org.length} people scored this period`
                 : mine
@@ -207,14 +210,14 @@ export default async function StackRankPage({
             showSupervisor
             visibleRows={20}
             emptyTitle="No organization ranking"
-            emptyDescription="No active employees have a scored rating for this period."
+            emptyDescription="No active employees have a scorecard score for this month."
           />
         </Card>
 
         <Card>
           <CardHeader
             title="By supervisor"
-            subtitle="Every supervisor in the organization, ranked by their team's mean rating over the members who have one"
+            subtitle="Every supervisor in the organization, ranked by their team's mean scorecard score over the members who have one"
           />
           <SupervisorRankTable rows={ranks.supervisors} selfSupervisor={ranks.teamLabel} />
         </Card>

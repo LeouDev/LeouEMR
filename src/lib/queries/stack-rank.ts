@@ -6,6 +6,8 @@ import { employees } from "@/lib/db/schema";
 import { getPeriodMetrics } from "./period-metrics";
 import { eligibleForPeriod } from "./eligibility";
 import type { Period } from "./period";
+import { computeScorecards } from "@/lib/scorecard/load";
+import { monthStartOf } from "@/lib/scorecard/review";
 
 export interface RankRow {
   rank: number;
@@ -14,7 +16,9 @@ export interface RankRow {
   name: string;
   supervisorName: string | null;
   site: string | null;
-  /** The PAR production rating, 1.00–5.00. The ranking key. */
+  /** The month's scorecard final score, out of 5. The ranking key. */
+  score: number | null;
+  /** The PAR production rating, 1.00–5.00 — the scorecard's productivity row. */
   productionRate: number | null;
   mbo: number | null;
   quality: number | null;
@@ -25,6 +29,8 @@ export interface SupervisorRankRow {
   rank: number;
   supervisorName: string;
   teamSize: number;
+  /** Mean scorecard score across the team members who have one. */
+  score: number | null;
   /** Mean production rating across the team members who have one. */
   productionRate: number | null;
   mbo: number | null;
@@ -32,19 +38,20 @@ export interface SupervisorRankRow {
 }
 
 /**
- * Ranks on the PAR production rating, the score the business already uses to
- * rate performance. Someone with no rating in the period is listed last
- * rather than treated as a zero — absent data is not a bad result.
+ * Ranks on the monthly scorecard's final score — the figure the business
+ * now rates and ranks people by, of which the PAR rating is one row.
+ * Someone with no score in the month is listed last rather than treated as
+ * a zero — absent data is not a bad result.
  */
 export function rank(rows: Omit<RankRow, "rank">[]): RankRow[] {
   return rows
     .sort((a, b) => {
-      if (a.productionRate === null && b.productionRate === null) {
+      if (a.score === null && b.score === null) {
         return a.name.localeCompare(b.name);
       }
-      if (a.productionRate === null) return 1;
-      if (b.productionRate === null) return -1;
-      return b.productionRate - a.productionRate;
+      if (a.score === null) return 1;
+      if (b.score === null) return -1;
+      return b.score - a.score;
     })
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
@@ -78,6 +85,10 @@ export interface StackRanks {
  * show where you stand among peers, which a ranking of only your own team —
  * or only your own site — cannot answer. Sites vary in size and skill mix, so
  * ranking within one hides how a small site compares to a large one.
+ *
+ * Ranked on the monthly scorecard, so the period is a calendar month: the
+ * month containing `period.start` is scored, the current month as a running
+ * month-to-date card.
  */
 export async function getStackRanks(
   viewer: CurrentUser,
@@ -130,10 +141,12 @@ export async function getStackRanks(
     };
   }
 
-  const byEmployee = await metricsFor(
-    roster.map((r) => r.id),
-    period,
-  );
+  // The scorecards and the period's KPI columns are independent reads.
+  const rosterIds = roster.map((r) => r.id);
+  const [byEmployee, cards] = await Promise.all([
+    metricsFor(rosterIds, period),
+    computeScorecards(rosterIds, monthStartOf(period.start)),
+  ]);
 
   const build = (rows: typeof roster) =>
     rank(
@@ -145,6 +158,7 @@ export async function getStackRanks(
           name: r.name,
           site: r.site,
           supervisorName: r.supervisorName,
+          score: cards.get(r.id)?.finalScore ?? null,
           productionRate: m.PRODUCTION_RATE ?? null,
           mbo: m.MBO ?? null,
           quality: visible.has(r.id) ? (m.QUALITY ?? null) : null,
@@ -193,9 +207,9 @@ export function meanPresent(values: (number | null)[]): number | null {
 }
 
 /**
- * Ranks supervisors by their team's mean rating.
+ * Ranks supervisors by their team's mean scorecard score.
  *
- * The mean is over members who actually have a rating, so a team with sparse
+ * The mean is over members who actually have a score, so a team with sparse
  * data ranks on how its scored members performed rather than being pushed
  * down for having fewer of them. `scored` is reported alongside so a thin
  * sample is visible rather than hidden.
@@ -205,10 +219,11 @@ export function rankSupervisors(teams: Map<string, RankRow[]>): SupervisorRankRo
     .map(([supervisorName, members]) => ({
       supervisorName,
       teamSize: members.length,
-      scored: members.filter((m) => m.productionRate !== null).length,
+      scored: members.filter((m) => m.score !== null).length,
+      score: meanPresent(members.map((m) => m.score)),
       productionRate: meanPresent(members.map((m) => m.productionRate)),
       mbo: meanPresent(members.map((m) => m.mbo)),
     }))
-    .sort((a, b) => (b.productionRate ?? -1) - (a.productionRate ?? -1))
+    .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
