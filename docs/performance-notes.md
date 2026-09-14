@@ -717,6 +717,21 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard picker lists the month's team, not today's (main, 14 Sep).**
+  Reported by Lea: her Agent dropdown offered one person, and someone
+  who left in July was still offered for August and September. The page
+  built the list from today's roster (`employees.supervisor_eid` = her
+  EID, status active), so a realigned team shrank to whoever is linked
+  to her now, and an attrition recorded by EWS tag or masterlist (which
+  does not flip `employees.status`) never dropped anyone. Now
+  `rosterFor(user, month)`: `reportingScopeIds(user, month)` (whoever
+  held each person for most of that month, by assignment history — the
+  MBO and Stack Rank rule) filtered by `eligibleForPeriod` (left before
+  or too early in the month), with the supervisor of record for the
+  month in the dropdown; `getScorecardFor` prints the month's supervisor,
+  manager and site (`coalesce` over the period owner, then today's
+  roster); `reviewScorecard` checks the same month scope instead of
+  `withScope`. An agent is always just themselves.
 - **Scorecard build fix (main, 14 Sep).** The first merge of the
   scorecard failed the Vercel build and CI: `scorecard/actions.ts` is a
   `"use server"` module and exported two string constants, which Next

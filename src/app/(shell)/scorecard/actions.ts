@@ -3,10 +3,10 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { withScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, notifications, scorecardReviews, users } from "@/lib/db/schema";
+import { reportingScopeIds } from "@/lib/queries/org-history";
 import { periodContaining } from "@/lib/queries/period";
 import { computeScorecards } from "@/lib/scorecard/load";
 import { canReview, reviewOpensOn } from "@/lib/scorecard/review";
@@ -56,13 +56,14 @@ export async function reviewScorecard(input: unknown): Promise<ActionResult> {
     };
   }
 
-  // Role alone is not enough — the person must be on this leader's team.
-  const scope = withScope(user, eq(employees.id, employeeId));
-  if (scope === null) return { ok: false, error: "Employee not found" };
+  // Role alone is not enough — the person must have been on this leader's
+  // team that month, by assignment history, the same rule the page lists by.
+  const team = await reportingScopeIds(user, periodContaining("month", month));
+  if (!team.includes(employeeId)) return { ok: false, error: "Employee not found" };
   const [employee] = await db
     .select({ id: employees.id, eid: employees.eid, name: employees.name })
     .from(employees)
-    .where(scope)
+    .where(eq(employees.id, employeeId))
     .limit(1);
   if (!employee) return { ok: false, error: "Employee not found" };
 

@@ -16,6 +16,13 @@ import { loadRampTargets, loadSkillReferences, normalize } from "@/lib/import-pi
 import { KPI_CODES, MONTHLY_METRIC_CODES } from "@/lib/import-pipeline/types";
 import { computeNps } from "@/lib/kpi-engine/nps";
 import { measureSkill } from "@/lib/kpi-engine/skill-result";
+import {
+  joinPeriodOwner,
+  managerOfRecord,
+  periodOwnerSubquery,
+  siteOfRecord,
+  supervisorOfRecord,
+} from "@/lib/queries/org-history";
 import { periodContaining, periodsBetween, type Period } from "@/lib/queries/period";
 import { combine } from "@/lib/queries/period-metrics";
 import { computeScorecard, skillGroupOf, type Scorecard, type ScorecardSkillInput } from "./engine";
@@ -248,20 +255,27 @@ export interface ScorecardPageData {
   review: ScorecardReviewState | null;
 }
 
-/** One person's card for one month, with its stamps. Scope is the caller's to check. */
+/**
+ * One person's card for one month, with its stamps. Scope is the caller's
+ * to check. The supervisor, manager and site printed on the card are the
+ * month's own — whoever held the person for most of it — falling back to
+ * today's roster only where the history has nothing.
+ */
 export async function getScorecardFor(employeeId: string, monthStart: string): Promise<ScorecardPageData | null> {
   const month = periodContaining("month", monthStart);
+  const owner = periodOwnerSubquery(month);
   const [[employee], cards, [review]] = await Promise.all([
     db
       .select({
         id: employees.id,
         eid: employees.eid,
         name: employees.name,
-        supervisorName: employees.supervisorName,
-        managerName: employees.managerName,
-        site: employees.site,
+        supervisorName: sql<string | null>`coalesce(${supervisorOfRecord(owner)}, ${employees.supervisorName})`,
+        managerName: sql<string | null>`coalesce(${managerOfRecord(owner)}, ${employees.managerName})`,
+        site: sql<string | null>`coalesce(${siteOfRecord(owner)}, ${employees.site})`,
       })
       .from(employees)
+      .leftJoin(owner, joinPeriodOwner(owner))
       .where(eq(employees.id, employeeId))
       .limit(1),
     computeScorecards([employeeId], month.start),

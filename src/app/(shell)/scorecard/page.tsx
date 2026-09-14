@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
 import { isSupportRole } from "@/lib/auth/scope";
@@ -6,8 +6,9 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { employees } from "@/lib/db/schema";
 import { isUuid } from "@/lib/ids";
-import { getScopedEmployeeIds } from "@/lib/queries/performance";
-import { periodsBetween } from "@/lib/queries/period";
+import { eligibleForPeriod } from "@/lib/queries/eligibility";
+import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorOfRecord } from "@/lib/queries/org-history";
+import { periodsBetween, type Period } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getScorecardFor } from "@/lib/scorecard/load";
 import { canReview, monthStartOf, reviewOpensOn } from "@/lib/scorecard/review";
@@ -23,6 +24,38 @@ function todayIso(): string {
 function longDate(value: Date | string): string {
   const d = typeof value === "string" ? new Date(`${value}T00:00:00Z`) : value;
   return d.toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" });
+}
+
+/**
+ * Who can be picked for a month: the people whose results belonged to this
+ * leader THAT month — whoever held them for most of it, by assignment
+ * history, the way every period view scopes — and who had not left before
+ * it. Today's roster would show a leader only the people linked to them
+ * now, and keep listing someone who left in July on August's card. An
+ * agent is always just themselves.
+ */
+async function rosterFor(
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  month: Period,
+): Promise<Array<{ id: string; name: string; supervisorName: string | null }>> {
+  if (user.role === "agent") {
+    if (!user.employeeEid) return [];
+    return db
+      .select({ id: employees.id, name: employees.name, supervisorName: employees.supervisorName })
+      .from(employees)
+      .where(eq(employees.eid, user.employeeEid))
+      .limit(1);
+  }
+  const scoped = await reportingScopeIds(user, month);
+  const eligible = await eligibleForPeriod(scoped, month);
+  if (eligible.length === 0) return [];
+  const owner = periodOwnerSubquery(month);
+  return db
+    .select({ id: employees.id, name: employees.name, supervisorName: supervisorOfRecord(owner) })
+    .from(employees)
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .where(inArray(employees.id, eligible))
+    .orderBy(asc(employees.name));
 }
 
 /**
@@ -42,7 +75,7 @@ export default async function ScorecardPage({
   if (isSupportRole(user)) redirect("/dashboard");
 
   const isAgent = user.role === "agent";
-  const [params, range, ids] = await Promise.all([searchParams, getFactDateRange(), getScopedEmployeeIds(user)]);
+  const [params, range] = await Promise.all([searchParams, getFactDateRange()]);
   const today = todayIso();
 
   // Every month from the first fact to today, newest first: the current
@@ -51,19 +84,7 @@ export default async function ScorecardPage({
   const months = range ? periodsBetween("month", range.first, today > range.last ? today : range.last) : [];
   const month = months.find((m) => m.start === params.month) ?? months[0] ?? null;
 
-  const people =
-    ids === null || (Array.isArray(ids) && ids.length === 0)
-      ? []
-      : await db
-          .select({ id: employees.id, name: employees.name, supervisorName: employees.supervisorName })
-          .from(employees)
-          .where(
-            and(
-              eq(employees.status, "active"),
-              ids === "all" ? undefined : inArray(employees.id, ids),
-            ),
-          )
-          .orderBy(asc(employees.name));
+  const people = month ? await rosterFor(user, month) : [];
 
   const employeeId = isAgent
     ? (people[0]?.id ?? null)
@@ -103,7 +124,7 @@ export default async function ScorecardPage({
               description={
                 isAgent
                   ? "An administrator needs to link this account to an employee ID before your scorecard appears here."
-                  : "Scorecards appear once performance data has been imported for someone in your scope."
+                  : "Nobody was on your team this month, or no performance data has been imported yet. Pick another month above."
               }
             />
           </Card>
