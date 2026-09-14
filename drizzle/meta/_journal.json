@@ -358,6 +358,13 @@
       "when": 1789355254028,
       "tag": "0051_scorecard_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789368760310,
+      "tag": "0052_scorecard_signatures",
+      "breakpoints": true
     }
   ]
 }

@@ -12,9 +12,11 @@ import { periodsBetween, type Period } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getScorecardFor } from "@/lib/scorecard/load";
 import { canReview, monthStartOf, reviewOpensOn } from "@/lib/scorecard/review";
+import { signedAt } from "@/lib/scorecard/signature";
 import { PrintButton } from "@/app/(shell)/records/[actionItemId]/print-button";
 import { ScorecardPickers } from "./pickers";
 import { ScorecardTable } from "./scorecard-table";
+import { SignatureImage } from "./signature-image";
 import { AcknowledgeButton, ReviewButton } from "./stamps";
 
 function todayIso(): string {
@@ -164,12 +166,12 @@ export default async function ScorecardPage({
   const reviewDisabled = !reviewable
     ? `Opens for review on ${longDate(opensOn)}`
     : review && !review.changedSinceReview
-      ? `Reviewed by ${review.reviewedByName ?? "the team leader"} on ${longDate(review.reviewedAt)}`
+      ? `Reviewed by ${review.reviewedByName ?? "the team leader"}, ${signedAt(review.reviewedAt)}`
       : null;
   const acknowledgeDisabled = !review
     ? "Your team leader reviews the month first"
     : review.acknowledgedAt
-      ? `Acknowledged on ${longDate(review.acknowledgedAt)}`
+      ? `Acknowledged ${signedAt(review.acknowledgedAt)}`
       : review.changedSinceReview
         ? "The card changed since it was reviewed — your team leader will review it again"
         : null;
@@ -229,20 +231,29 @@ export default async function ScorecardPage({
           />
           <div className="grid gap-6 px-6 py-5 sm:grid-cols-2">
             <div>
+              {/* The drawn signature sits on the line, the way it would on the printed sheet. */}
+              <div className="flex h-20 items-end">
+                {review?.acknowledgedSignature ? (
+                  <SignatureImage signature={review.acknowledgedSignature} className="h-20 w-auto max-w-full text-ink" />
+                ) : null}
+              </div>
               <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">{employee.name}</p>
               <p className="mt-1 text-xs font-bold tracking-[0.06em] text-muted uppercase">Employee name &amp; signature</p>
               <p className="mt-1 text-sm text-ink">
-                {review?.acknowledgedAt
-                  ? `Acknowledged ${longDate(review.acknowledgedAt)}`
-                  : "Not yet acknowledged"}
+                {review?.acknowledgedAt ? `Signed ${signedAt(review.acknowledgedAt)}` : "Not yet acknowledged"}
               </p>
               {isAgent && (
                 <div className="mt-3 print:hidden">
-                  <AcknowledgeButton month={month.start} disabledReason={acknowledgeDisabled} />
+                  <AcknowledgeButton month={month.start} monthLabel={month.label} disabledReason={acknowledgeDisabled} />
                 </div>
               )}
             </div>
             <div>
+              <div className="flex h-20 items-end">
+                {review?.reviewedSignature ? (
+                  <SignatureImage signature={review.reviewedSignature} className="h-20 w-auto max-w-full text-ink" />
+                ) : null}
+              </div>
               <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">
                 {review?.reviewedByName ?? employee.supervisorName ?? "—"}
               </p>
@@ -250,13 +261,15 @@ export default async function ScorecardPage({
                 Immediate manager name &amp; signature
               </p>
               <p className="mt-1 text-sm text-ink">
-                {review ? `Reviewed ${longDate(review.reviewedAt)}` : `Not yet reviewed · opens ${longDate(opensOn)}`}
+                {review ? `Signed ${signedAt(review.reviewedAt)}` : `Not yet reviewed · opens ${longDate(opensOn)}`}
               </p>
               {user.role === "supervisor" && (
                 <div className="mt-3 print:hidden">
                   <ReviewButton
                     employeeId={employee.id}
+                    employeeName={employee.name}
                     month={month.start}
+                    monthLabel={month.label}
                     disabledReason={reviewDisabled}
                     label={review ? "Review again" : "Mark as reviewed"}
                   />

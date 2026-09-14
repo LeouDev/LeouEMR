@@ -620,8 +620,12 @@ export const scorecardReviews = pgTable(
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
     /** The final score as it stood at review; null when nothing could be scored then. */
     reviewedScore: numeric("reviewed_score", { mode: "number" }),
+    /** The team leader's drawn signature, as strokes (src/lib/scorecard/signature.ts). */
+    reviewedSignature: jsonb("reviewed_signature"),
     acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
     acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    /** The agent's drawn signature, cleared with the acknowledgement on a re-review. */
+    acknowledgedSignature: jsonb("acknowledged_signature"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("scorecard_reviews_employee_month_idx").on(table.employeeId, table.month)],

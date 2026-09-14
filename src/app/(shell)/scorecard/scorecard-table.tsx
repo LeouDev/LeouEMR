@@ -1,7 +1,9 @@
 import type { ProductivitySkillRow, Scorecard, ScorecardRow } from "@/lib/scorecard/engine";
 import { MINIMUM_SCORE } from "@/lib/scorecard/engine";
 
-const HEAD = "px-2 py-2 text-[11px] font-bold tracking-[0.06em] text-white uppercase print:px-1 print:py-1 print:text-[8px]";
+// The column band in the app's own colours: navy with orange lettering,
+// like the page band above it; the final-score row stays orange.
+const HEAD = "px-2 py-2 text-[11px] font-bold tracking-[0.06em] text-orange-brand uppercase print:px-1 print:py-1 print:text-[8px]";
 const CELL = "px-2 py-1.5 text-sm print:px-1 print:py-0.5 print:text-[9px]";
 const NUM = `${CELL} font-mono tabular-nums`;
 const BAND = `${CELL} text-xs text-muted print:text-[8px]`;
@@ -100,7 +102,7 @@ export function ScorecardTable({ card }: { card: Scorecard }) {
     <div className="overflow-x-auto print:overflow-visible">
       <table className="w-full min-w-[1100px] border-collapse border-2 border-ink text-sm print:min-w-0 print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]">
         <thead>
-          <tr className="bg-orange-brand">
+          <tr className="border-b-4 border-orange-brand bg-navy-800">
             <th className={HEAD}>Weightage</th>
             <th className={`${HEAD} text-left`}>Metric</th>
             <th className={`${HEAD} text-right`}>Actual data</th>

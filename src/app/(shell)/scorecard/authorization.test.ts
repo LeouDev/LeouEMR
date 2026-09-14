@@ -41,6 +41,9 @@ function signedInAs(role: UserRole): CurrentUser {
 }
 
 const EMPLOYEE = "44444444-4444-4444-8444-444444444444";
+/** A drawn signature; every stamp needs one. */
+const SIGNATURE = { w: 600, h: 200, strokes: [[10, 10, 50, 40, 90, 20]] };
+const EMPTY_PAD = { w: 600, h: 200, strokes: [[10, 10]] };
 /** A month whose review has long since opened. */
 const OLD_MONTH = "2026-01-01";
 /** A month that cannot have opened yet: it starts after today. */
@@ -54,7 +57,7 @@ beforeEach(() => {
 describe("reviewScorecard", () => {
   it.each(["agent", "manager", "admin", "trainer", "sme"] as UserRole[])("refuses %s — only the team leader reviews", async (role) => {
     currentUser.value = signedInAs(role);
-    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH })).toEqual({
+    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH, signature: SIGNATURE })).toEqual({
       ok: false,
       error: "Only the team leader reviews a scorecard",
     });
@@ -62,26 +65,39 @@ describe("reviewScorecard", () => {
 
   it("refuses a signed-out or pending caller", async () => {
     currentUser.value = null;
-    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH })).toEqual({ ok: false, error: "Not signed in" });
+    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH, signature: SIGNATURE })).toEqual({ ok: false, error: "Not signed in" });
     currentUser.value = { ...signedInAs("supervisor"), status: "pending" };
-    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH })).toEqual({ ok: false, error: "Not signed in" });
+    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH, signature: SIGNATURE })).toEqual({ ok: false, error: "Not signed in" });
   });
 
   it("rejects a malformed month before any database access", async () => {
     currentUser.value = signedInAs("supervisor");
-    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: "2026-09" })).toEqual({ ok: false, error: "Pick the month" });
+    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: "2026-09", signature: SIGNATURE })).toEqual({ ok: false, error: "Pick the month" });
+  });
+
+  it("refuses an empty signature pad before any database access", async () => {
+    currentUser.value = signedInAs("supervisor");
+    expect(await reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH, signature: EMPTY_PAD })).toEqual({
+      ok: false,
+      error: "Draw your signature before confirming",
+    });
+    currentUser.value = signedInAs("agent");
+    expect(await acknowledgeScorecard({ month: OLD_MONTH, signature: EMPTY_PAD })).toEqual({
+      ok: false,
+      error: "Draw your signature before confirming",
+    });
   });
 
   it("keeps a month locked until ten days after it ends, before any database access", async () => {
     currentUser.value = signedInAs("supervisor");
-    const result = await reviewScorecard({ employeeId: EMPLOYEE, month: FUTURE_MONTH });
+    const result = await reviewScorecard({ employeeId: EMPLOYEE, month: FUTURE_MONTH, signature: SIGNATURE });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/opens for review on/);
   });
 
   it("lets a team leader through to the scope check on an open month", async () => {
     currentUser.value = signedInAs("supervisor");
-    await expect(reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH })).rejects.toThrow(
+    await expect(reviewScorecard({ employeeId: EMPLOYEE, month: OLD_MONTH, signature: SIGNATURE })).rejects.toThrow(
       "database reached before the authorization check",
     );
   });
@@ -90,7 +106,7 @@ describe("reviewScorecard", () => {
 describe("acknowledgeScorecard", () => {
   it.each(["supervisor", "manager", "admin", "trainer", "sme"] as UserRole[])("refuses %s — only the agent acknowledges", async (role) => {
     currentUser.value = signedInAs(role);
-    expect(await acknowledgeScorecard({ month: OLD_MONTH })).toEqual({
+    expect(await acknowledgeScorecard({ month: OLD_MONTH, signature: SIGNATURE })).toEqual({
       ok: false,
       error: "Only the agent named on a scorecard acknowledges it",
     });
@@ -98,7 +114,7 @@ describe("acknowledgeScorecard", () => {
 
   it("refuses an agent whose account is not linked, before any database access", async () => {
     currentUser.value = { ...signedInAs("agent"), employeeEid: null };
-    expect(await acknowledgeScorecard({ month: OLD_MONTH })).toEqual({
+    expect(await acknowledgeScorecard({ month: OLD_MONTH, signature: SIGNATURE })).toEqual({
       ok: false,
       error: "Your account is not linked to an employee record",
     });
@@ -106,7 +122,7 @@ describe("acknowledgeScorecard", () => {
 
   it("lets a linked agent through to their own record", async () => {
     currentUser.value = signedInAs("agent");
-    await expect(acknowledgeScorecard({ month: OLD_MONTH })).rejects.toThrow(
+    await expect(acknowledgeScorecard({ month: OLD_MONTH, signature: SIGNATURE })).rejects.toThrow(
       "database reached before the authorization check",
     );
   });
