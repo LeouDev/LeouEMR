@@ -95,7 +95,7 @@ describe("assess — a trainer's or SME's queue", () => {
     expect(
       assess([item({ trainingRequired: true }), item({ actionItemId: "a2", coachingRequired: true, status: "REOPENED" })], "support")
         .nextStep,
-    ).toBe("Training and Coaching requested · reopened, plan being updated");
+    ).toBe("Training and coaching requested · reopened, plan being updated");
   });
 
   it("never reads as blocked on them — the root cause is the leader's to write", () => {

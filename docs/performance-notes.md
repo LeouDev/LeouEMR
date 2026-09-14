@@ -717,6 +717,12 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Support queue wording (main, 14 Sep).** Post-deploy audit of the
+  support queue: the next step read "Training and Coaching requested"
+  with a capital mid-sentence (now built lower-case and capitalised
+  once), and the headline card's hint said "N open items" when the
+  queue counts only items asking for support (now "N items asking for
+  support"; "open items" on the every-item view).
 - **Trainer and SME Development Hub is a support queue (feature branch,
   14 Sep).** Asked after the audit: a support role reads the whole floor,
   where "most blocked first" put hundreds of root causes that are the

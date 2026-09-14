@@ -123,7 +123,7 @@ export default async function DevelopmentPage({
               <StatCard
                 label={floor ? "People in development" : "People needing support"}
                 value={totals.peopleInDevelopment}
-                hint={`${totals.openItems} open items`}
+                hint={floor ? `${totals.openItems} open items` : `${totals.openItems} items asking for support`}
               />
               <StatCard
                 label="Needs training"

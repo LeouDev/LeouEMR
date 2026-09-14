@@ -139,10 +139,11 @@ export function assess(
  */
 function assessForSupport(items: ActionItemListRow[]): Pick<DevelopmentRow, "nextStep" | "urgency"> {
   const asked = [
-    items.some((i) => i.trainingRequired) && "Training",
-    items.some((i) => i.coachingRequired) && "Coaching",
+    items.some((i) => i.trainingRequired) && "training",
+    items.some((i) => i.coachingRequired) && "coaching",
   ].filter((s): s is string => Boolean(s));
-  const support = asked.length > 0 ? `${asked.join(" and ")} requested` : "No support requested";
+  const phrase = asked.length > 0 ? `${asked.join(" and ")} requested` : "no support requested";
+  const support = phrase.charAt(0).toUpperCase() + phrase.slice(1);
 
   if (items.some((i) => !i.hasRca)) {
     return { nextStep: `${support} · root cause not recorded yet`, urgency: 0 };
