@@ -980,6 +980,30 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Approving an account confirms its email address (14 Sep, feature
+  branch).** People approved on the Users page were still refused at
+  sign-in with "Confirm your email using the link we sent you": company
+  mailboxes filter Supabase's confirmation email, and its built-in mailer
+  sends only a few per hour, so the link often never arrived. Approval is
+  the stronger check anyway (an administrator vouching for a named
+  colleague on the roster, where the link only proves the mailbox was
+  reachable), so both approval paths in `users/actions.ts` now also mark
+  the address confirmed through the service-role admin API
+  (`confirmEmail`: `auth.admin.updateUserById(id, { email_confirm: true })`).
+  Only a pending → active transition counts: a save that keeps the
+  account pending, or re-enables a disabled one, never touches the
+  address. Best effort: a refusal from Supabase leaves the approval
+  standing (the emailed link still works) and is reported — the row save
+  returns `warning` and shows it under the name, the bulk button returns
+  `unconfirmed` and says how many; each `user.updated` (on approval) and
+  `user.approved` audit row carries `emailConfirmed`. The bulk path calls
+  the API ten at a time (`confirmEmails`). The confirmation email still
+  goes out, so whoever's mailbox works confirms themselves first, and the
+  operator step from the earlier note stands: Custom SMTP in Supabase
+  (the Brevo relay the EOD report already uses) lifts the hourly cap.
+  Tests fake the admin client and extend the in-memory `db` with
+  `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
+  runs end to end.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

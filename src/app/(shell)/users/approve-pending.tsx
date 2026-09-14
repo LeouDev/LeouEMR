@@ -16,7 +16,7 @@ export function ApprovePending({ userIds }: { userIds: string[] }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<number | null>(null);
+  const [done, setDone] = useState<{ approved: number; unconfirmed: number } | null>(null);
 
   if (userIds.length === 0) return null;
   const count = userIds.length;
@@ -35,7 +35,7 @@ export function ApprovePending({ userIds }: { userIds: string[] }) {
       setBusy(false);
     }
     if (result.ok) {
-      setDone(result.approved);
+      setDone({ approved: result.approved, unconfirmed: result.unconfirmed });
       setConfirming(false);
       router.refresh();
     } else {
@@ -71,8 +71,15 @@ export function ApprovePending({ userIds }: { userIds: string[] }) {
         </p>
       )}
       {done !== null && !error && (
-        <p role="status" className="text-xs text-pass">
-          Approved {done}
+        <p role="status" className="text-xs">
+          <span className="text-pass">Approved {done.approved}</span>
+          {done.unconfirmed > 0 && (
+            <span className="text-warn">
+              {" "}
+              · {done.unconfirmed} email address{done.unconfirmed === 1 ? "" : "es"} could not be marked confirmed;
+              those people can still use the link in their confirmation email.
+            </span>
+          )}
         </p>
       )}
     </div>

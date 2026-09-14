@@ -107,6 +107,7 @@ function UserRowEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
 
   // Only a manager's span or a team leader's cluster is sent and compared;
   // for any other role the value is blank, as the server will store it —
@@ -122,6 +123,7 @@ function UserRowEditor({
     setSaving(true);
     setError(null);
     setSaved(false);
+    setWarning(null);
 
     let result;
     try {
@@ -141,6 +143,7 @@ function UserRowEditor({
 
     if (result.ok) {
       setSaved(true);
+      setWarning(result.warning ?? null);
       router.refresh();
     } else {
       setError(result.error);
@@ -153,7 +156,8 @@ function UserRowEditor({
         <p className="font-medium text-ink">{user.name}</p>
         <p className="text-xs text-muted">{user.email}</p>
         {error && <p className="mt-1 text-xs text-fail">{error}</p>}
-        {saved && !error && <p className="mt-1 text-xs text-pass">Saved</p>}
+        {saved && !error && !warning && <p className="mt-1 text-xs text-pass">Saved</p>}
+        {saved && !error && warning && <p className="mt-1 text-xs text-warn">{warning}</p>}
       </td>
       <td className="px-3 py-2">
         <select
