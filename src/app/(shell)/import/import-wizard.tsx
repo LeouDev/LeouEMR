@@ -272,6 +272,9 @@ export function ImportWizard() {
             <h2 className="text-base font-semibold text-ink">Import complete</h2>
             <ul className="mt-2 space-y-1 text-sm text-ink">
               <li>{result.metricsWritten} weekly metrics written</li>
+              {result.monthlyMetricsWritten > 0 && (
+                <li>{result.monthlyMetricsWritten} monthly figures written</li>
+              )}
               <li>
                 {result.employeesCreated} employees created, {result.employeesUpdated} updated
               </li>

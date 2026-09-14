@@ -40,12 +40,15 @@ export function PeriodPicker({
   periods,
   selected,
   extraParams = {},
+  granularities = GRANULARITIES,
 }: {
   basePath: string;
   granularity: Granularity;
   periods: Period[];
   selected: Period;
   extraParams?: Record<string, string | undefined>;
+  /** The sizes this page offers; a page that only makes sense at one size hides the switch. */
+  granularities?: Granularity[];
 }) {
   // Shared with the header's progress bar, so picking a period lights the
   // bar and greys these controls at once — a period change re-aggregates
@@ -74,8 +77,9 @@ export function PeriodPicker({
 
   return (
     <div className={`flex flex-wrap items-center gap-3 transition-opacity ${pending ? "opacity-60" : ""}`} aria-busy={pending}>
+      {granularities.length > 1 && (
       <div className="flex border-2 border-ink bg-surface p-0.5">
-        {GRANULARITIES.map((option) => (
+        {granularities.map((option) => (
           <button
             key={option}
             type="button"
@@ -89,6 +93,7 @@ export function PeriodPicker({
           </button>
         ))}
       </div>
+      )}
 
       <select
         value={selected.start}

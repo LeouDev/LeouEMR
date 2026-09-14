@@ -20,8 +20,14 @@ const roster = vi.hoisted(() => ({
 const metrics = vi.hoisted(() => ({
   byEmployee: new Map<string, Record<string, number>>(),
 }));
+const scores = vi.hoisted(() => ({ byEmployee: new Map<string, number | null>() }));
 
 vi.mock("./performance", () => ({ resolveScopedIds: async () => scope.ids }));
+// The month's scorecards, the ranking key; the engine itself is pinned in src/lib/scorecard.
+vi.mock("@/lib/scorecard/load", () => ({
+  computeScorecards: async (ids: string[]) =>
+    new Map(ids.map((id) => [id, { finalScore: scores.byEmployee.get(id) ?? null }])),
+}));
 vi.mock("./org-history", () => ({
   periodOwnerSubquery: () => undefined,
   joinPeriodOwner: () => undefined,
@@ -93,6 +99,10 @@ beforeEach(() => {
     ["mine", { PRODUCTION_RATE: 3.5, MBO: 100, QUALITY: 98.2, ATTENDANCE: 99 }],
     ["theirs", { PRODUCTION_RATE: 4.1, MBO: 100, QUALITY: 91.4, ATTENDANCE: 88 }],
   ]);
+  scores.byEmployee = new Map([
+    ["mine", 3.6],
+    ["theirs", 4.3],
+  ]);
   scope.ids = ["mine"];
 });
 
@@ -101,6 +111,7 @@ describe("stack rank disclosure", () => {
     const ranks = await getStackRanks(user("agent"), null, PERIOD);
     expect(ranks.org.map((r) => r.name)).toEqual(["Theirs", "Mine"]);
     // The ranking basis stays visible, or the page could not do its job.
+    expect(ranks.org.map((r) => r.score)).toEqual([4.3, 3.6]);
     expect(ranks.org.map((r) => r.productionRate)).toEqual([4.1, 3.5]);
   });
 

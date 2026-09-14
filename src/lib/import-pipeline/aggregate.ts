@@ -1,5 +1,6 @@
 import {
   IDENTITY_COLUMNS,
+  parseMonthLabel,
   parseWeekLabel,
   resolveColumns,
   toNumber,
@@ -9,8 +10,11 @@ import {
 } from "./columns";
 import {
   KPI_CODES,
+  MONTHLY_METRIC_CODES,
   type AggregatedMetric,
   type KpiCode,
+  type MonthlyMetric,
+  type MonthlyMetricCode,
   type ParsedEmployee,
   type ParsedOrgWeek,
   type ParseResult,
@@ -44,6 +48,13 @@ export const SHEET_ALIASES: Record<string, string[]> = {
   attendance: ["attendance"],
   feedback: ["feedback"],
 };
+
+/**
+ * The monthly sheet, kept apart from the weekly ones: its rows carry a
+ * month rather than a week label, and it is optional — it is uploaded once
+ * a month ends, so its absence from a weekly upload is not worth a warning.
+ */
+export const MONTHLY_SHEET_ALIASES = ["monthly", "monthly metrics", "monthly scorecard"];
 
 interface Accumulator {
   sum: number;
@@ -175,6 +186,19 @@ export function aggregateWorkbook(
 
     summaries.push({ sheet: sheetName, rowsRead: rows.length, rowsUsed: used, rowsSkipped: skipped });
 
+    // The scorecard's Standard Error count reads this column. Without it the
+    // only source is a Compliance Risk label that says "Standard", which the
+    // real workbook does not rely on — so say so before anything is written.
+    if (canonical === "feedback" && !cols.standard) {
+      issues.push({
+        severity: "warning",
+        sheet: sheetName,
+        message:
+          'No "Standard" column found — standard errors are counted only where the Compliance Risk label says Standard',
+        count: 0,
+      });
+    }
+
     if (missingEid > 0) {
       issues.push({
         severity: "error",
@@ -209,7 +233,13 @@ export function aggregateWorkbook(
     });
   }
 
+  const monthlySheet = matchMonthlySheet(sheets);
+  const monthlyMetrics = monthlySheet
+    ? readMonthlySheet(monthlySheet, sheets[monthlySheet] ?? [], employees, summaries, issues)
+    : [];
+
   const recognized = new Set(Object.values(resolvedSheets));
+  if (monthlySheet) recognized.add(monthlySheet);
   const unrecognizedSheets = Object.keys(sheets).filter((name) => !recognized.has(name));
 
   fillSupervisorEids(employees, orgWeeks);
@@ -224,6 +254,7 @@ export function aggregateWorkbook(
     skillFacts: [...skillFactAcc.values()],
     qualityFacts: [...qualityFactAcc.values()],
     npsFacts: [...npsFactAcc.values()],
+    monthlyMetrics,
     issues,
     sheets: summaries,
     weeks: [...weeks].sort(),
@@ -260,8 +291,141 @@ const EXTRA_COLUMNS: Record<string, Record<string, string[]>> = {
   feedback: {
     factDate: ["Error Date", "Date"],
     risk: ["ComplianceRisk", "Compliance Risk"],
+    // The standard-error count on the row, alongside the critical IO label.
+    standard: ["Standard", "Standard Error", "Standard Errors", "Standard IO", "Standard Count"],
   },
 };
+
+/**
+ * The monthly sheet's own columns: a month in place of the week label, and
+ * either one column per metric (IRE, PKT, LH Utilization on the same row)
+ * or a Metric / Value pair with one row per metric. Both shapes are read.
+ */
+const MONTHLY_COLUMNS: Record<string, string[]> = {
+  month: ["Month", "Reporting Month", "Period", "MONTH"],
+  ire: ["IRE", "IRE Count"],
+  pkt: ["PKT", "PKT Score", "PKT %"],
+  lhUtilization: ["LH Utilization", "LH Utilisation", "LH Util", "LHUtil"],
+  metric: ["Metric", "Metric Name", "KPI"],
+  value: ["Value", "Actual", "Score", "Result"],
+};
+
+/** A metric name as typed in the long form's Metric column, or null when it is not one of the three. */
+function monthlyMetricCode(label: string): MonthlyMetricCode | null {
+  const key = label.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (key === "ire") return MONTHLY_METRIC_CODES.IRE;
+  if (key === "pkt") return MONTHLY_METRIC_CODES.PKT;
+  if (key.startsWith("lhutil")) return MONTHLY_METRIC_CODES.LH_UTILIZATION;
+  return null;
+}
+
+/**
+ * PKT and LH Utilization are percentages. A cell formatted as a percentage
+ * in Excel arrives as the fraction (0.8238), a typed one as the figure
+ * (82.38); both are read as the same thing.
+ */
+function asPercent(value: number): number {
+  return value <= 1 ? value * 100 : value;
+}
+
+/** The figures on one monthly row, in either shape. */
+function monthlyReadings(
+  row: Record<string, unknown>,
+  cols: HeaderMap,
+): Array<{ metric: MonthlyMetricCode; value: number }> {
+  const readings: Array<{ metric: MonthlyMetricCode; value: number }> = [];
+
+  const ire = cols.ire ? toNumber(row[cols.ire]) : null;
+  if (ire !== null) readings.push({ metric: MONTHLY_METRIC_CODES.IRE, value: ire });
+  const pkt = cols.pkt ? toNumber(row[cols.pkt]) : null;
+  if (pkt !== null) readings.push({ metric: MONTHLY_METRIC_CODES.PKT, value: asPercent(pkt) });
+  const lh = cols.lhUtilization ? toNumber(row[cols.lhUtilization]) : null;
+  if (lh !== null) readings.push({ metric: MONTHLY_METRIC_CODES.LH_UTILIZATION, value: asPercent(lh) });
+
+  if (readings.length === 0 && cols.metric && cols.value) {
+    const label = toText(row[cols.metric]);
+    const value = toNumber(row[cols.value]);
+    const metric = label ? monthlyMetricCode(label) : null;
+    if (metric && value !== null) {
+      readings.push({ metric, value: metric === MONTHLY_METRIC_CODES.IRE ? value : asPercent(value) });
+    }
+  }
+  return readings;
+}
+
+/**
+ * Reads the monthly sheet: one figure per employee per month per metric,
+ * the last row read winning where a month is repeated. Rows without an
+ * employee, a readable month or a recognisable figure are reported and
+ * skipped, the same way the weekly sheets treat theirs.
+ */
+function readMonthlySheet(
+  sheetName: string,
+  rows: Array<Record<string, unknown>>,
+  employees: Map<string, ParsedEmployee>,
+  summaries: SheetSummary[],
+  issues: ValidationIssue[],
+): MonthlyMetric[] {
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const cols = resolveColumns(headers, { ...IDENTITY_COLUMNS, ...MONTHLY_COLUMNS });
+  const byKey = new Map<string, MonthlyMetric>();
+  let used = 0;
+  let missingEid = 0;
+  let missingMonth = 0;
+  let noFigure = 0;
+
+  for (const row of rows) {
+    const eid = toText(cols.eid ? row[cols.eid] : undefined);
+    if (!eid) {
+      missingEid += 1;
+      continue;
+    }
+    const month = parseMonthLabel(cols.month ? row[cols.month] : undefined);
+    if (!month) {
+      missingMonth += 1;
+      continue;
+    }
+    const readings = monthlyReadings(row, cols);
+    if (readings.length === 0) {
+      noFigure += 1;
+      continue;
+    }
+    captureEmployee(employees, eid, row, cols);
+    for (const reading of readings) {
+      byKey.set(`${eid}|${month}|${reading.metric}`, { eid, month, ...reading });
+    }
+    used += 1;
+  }
+
+  const skipped = missingEid + missingMonth + noFigure;
+  summaries.push({ sheet: sheetName, rowsRead: rows.length, rowsUsed: used, rowsSkipped: skipped });
+  if (missingEid > 0) {
+    issues.push({ severity: "error", sheet: sheetName, message: "Rows missing an employee ID were skipped", count: missingEid });
+  }
+  if (missingMonth > 0) {
+    issues.push({ severity: "error", sheet: sheetName, message: "Rows with an unreadable month were skipped", count: missingMonth });
+  }
+  if (noFigure > 0) {
+    issues.push({
+      severity: "error",
+      sheet: sheetName,
+      message: "Rows with no IRE, PKT or LH Utilization figure were skipped",
+      count: noFigure,
+    });
+  }
+  if (rows.length > 0 && !cols.month) {
+    issues.push({ severity: "error", sheet: sheetName, message: 'No "Month" column found', count: 0 });
+  }
+  return [...byKey.values()];
+}
+
+function matchMonthlySheet(sheets: SheetRows): string | null {
+  return (
+    Object.keys(sheets).find((name) =>
+      MONTHLY_SHEET_ALIASES.some((alias) => name.trim().toLowerCase() === alias),
+    ) ?? null
+  );
+}
 
 function matchSheets(sheets: SheetRows): Record<string, string> {
   const matched: Record<string, string> = {};
@@ -553,11 +717,12 @@ function consumeRow(
       if (qDate) {
         const factKey = `${eid}|${auditSkill}|${qDate}`;
         const fact = acc.qualityFactAcc.get(factKey) ?? {
-          eid, skillLabel: auditSkill, factDate: qDate, audits: 0, imperfect: 0, markdowns: 0,
+          eid, skillLabel: auditSkill, factDate: qDate, audits: 0, imperfect: 0, markdowns: 0, scoreSum: 0,
         };
         fact.audits += 1;
         if (score < 1) fact.imperfect += 1;
         fact.markdowns += markdown;
+        fact.scoreSum += score;
         acc.qualityFactAcc.set(factKey, fact);
       }
       return true;
@@ -609,13 +774,26 @@ function consumeRow(
       const raw = cols.risk ? row[cols.risk] : undefined;
       const numeric = toNumber(raw);
       const label = toText(raw);
-      if (numeric === null && !label) return false;
+      // The Standard column is a count on the row; without one, a label that
+      // says "Standard" counts as one. Kept as daily facts only — the
+      // scorecard sums them over its own window, and no weekly KPI row is
+      // written, so it appears nowhere a weekly measure would.
+      const standardCell = cols.standard ? toNumber(row[cols.standard]) : null;
+      if (numeric === null && !label && standardCell === null) return false;
 
-      const isCritical =
-        numeric !== null ? numeric === 1 : label!.toLowerCase().includes("critical");
-      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.CRITICAL_ERRORS,
-        readDate(cols.factDate ? row[cols.factDate] : undefined), isCritical ? 1 : 0, 1);
-      accumulate(acc.counts, eid, weekStart, KPI_CODES.CRITICAL_ERRORS, isCritical ? 1 : 0);
+      const factDate = readDate(cols.factDate ? row[cols.factDate] : undefined);
+      if (numeric !== null || label) {
+        const isCritical =
+          numeric !== null ? numeric === 1 : label!.toLowerCase().includes("critical");
+        addMetricFact(acc.metricFactAcc, eid, KPI_CODES.CRITICAL_ERRORS, factDate, isCritical ? 1 : 0, 1);
+        accumulate(acc.counts, eid, weekStart, KPI_CODES.CRITICAL_ERRORS, isCritical ? 1 : 0);
+      }
+      const standard = cols.standard
+        ? (standardCell ?? 0)
+        : label?.toLowerCase().includes("standard")
+          ? 1
+          : 0;
+      addMetricFact(acc.metricFactAcc, eid, KPI_CODES.STANDARD_ERRORS, factDate, standard, 1);
       return true;
     }
 

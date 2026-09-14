@@ -10,7 +10,20 @@ import { MarkAllReadButton } from "./mark-all-read";
 const TYPE_LABELS: Record<string, string> = {
   "action_item.awaiting_acknowledgement": "An action item needs your acknowledgement",
   "action_item.acknowledged": "An agent acknowledged their action item",
+  "scorecard.reviewed": "Your monthly scorecard is ready to acknowledge",
+  "scorecard.acknowledged": "An agent acknowledged their scorecard",
 };
+
+/** Where a notification opens: the action item, or the scorecard for the month it names. */
+function hrefFor(payload: { actionItemId?: string; employeeId?: string; month?: string } | null): string | null {
+  if (payload?.actionItemId) return `/action-items/${payload.actionItemId}`;
+  if (payload?.month) {
+    const params = new URLSearchParams({ month: payload.month });
+    if (payload.employeeId) params.set("employee", payload.employeeId);
+    return `/scorecard?${params.toString()}`;
+  }
+  return null;
+}
 
 export default async function NotificationsPage() {
   const user = await getCurrentUser();
@@ -46,7 +59,10 @@ export default async function NotificationsPage() {
           ) : (
             <ul className="divide-y divide-line">
               {rows.map((row) => {
-                const payload = row.payload as { actionItemId?: string; employeeName?: string } | null;
+                const payload = row.payload as
+                  | { actionItemId?: string; employeeId?: string; employeeName?: string; month?: string }
+                  | null;
+                const href = hrefFor(payload);
                 return (
                   <li
                     key={row.id}
@@ -65,10 +81,10 @@ export default async function NotificationsPage() {
                         })}
                       </p>
                     </div>
-                    {payload?.actionItemId && (
+                    {href && (
                       <Link
-                        href={`/action-items/${payload.actionItemId}`}
-                    prefetch={false}
+                        href={href}
+                        prefetch={false}
                         className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
                       >
                         Open

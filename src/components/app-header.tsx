@@ -46,6 +46,7 @@ const RECORDS_NAV = { href: "/records", label: "Records" };
 const AGENT_NAV = [
   { href: "/my-stats", label: "My Tools" },
   { href: "/my-quality-scores", label: "My Quality Scores" },
+  { href: "/scorecard", label: "My Scorecard" },
 ];
 
 /**
@@ -54,6 +55,9 @@ const AGENT_NAV = [
  */
 const LEADER_ONLY_NAV = [
   { href: "/mbo", label: "MBO" },
+  // The monthly scorecard: a team leader reviews their people's, a manager
+  // or admin reads their span's. Not for a support role (filtered below).
+  { href: "/scorecard", label: "Scorecard" },
   { href: "/skills", label: "Skills" },
   { href: "/ews", label: "EWS" },
   { href: "/ramp", label: "Ramp" },

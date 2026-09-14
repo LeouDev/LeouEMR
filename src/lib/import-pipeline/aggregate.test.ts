@@ -259,6 +259,21 @@ describe("PAR/MBO inputs", () => {
       Fax: { audits: 1, imperfect: 0, markdowns: 0 },
     });
   });
+
+  it("keeps the score per skill and day, so phone and ancillary quality can be told apart", () => {
+    const result = aggregateWorkbook({
+      Quality: [
+        { EID: "1", AgentName: "A", Weekly: week, Date: "2026-08-03", SkillSet: "Edits", Score: 1, TotalMarkdown: 0 },
+        { EID: "1", AgentName: "A", Weekly: week, Date: "2026-08-03", SkillSet: "Edits", Score: 0.94, TotalMarkdown: 1 },
+        { EID: "1", AgentName: "A", Weekly: week, Date: "2026-08-03", SkillSet: "Gen_Phones", Score: 0.9, TotalMarkdown: 2 },
+      ],
+    });
+
+    expect(result.qualityFacts).toEqual([
+      { eid: "1", skillLabel: "Edits", factDate: "2026-08-03", audits: 2, imperfect: 1, markdowns: 1, scoreSum: 1.94 },
+      { eid: "1", skillLabel: "Gen_Phones", factDate: "2026-08-03", audits: 1, imperfect: 1, markdowns: 2, scoreSum: 0.9 },
+    ]);
+  });
 });
 
 describe("compliance severity", () => {
@@ -673,5 +688,111 @@ describe("ramp target overrides", () => {
     );
 
     expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 920 });
+  });
+});
+
+describe("standard errors", () => {
+  const week = "WE 08/07/26";
+  const standardFacts = (result: ReturnType<typeof aggregateWorkbook>) =>
+    result.metricFacts.filter((f) => f.kpiCode === "STANDARD_ERRORS");
+
+  it("reads the Standard count column alongside the critical IO label", () => {
+    const result = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, "Error Date": "2026-08-03", ComplianceRisk: "Critical IO", Standard: 2 },
+        { EID: "1", AgentName: "A", Weekly: week, "Error Date": "2026-08-04", ComplianceRisk: "Standard IO", Standard: 1 },
+      ],
+    });
+    expect(standardFacts(result)).toEqual([
+      { eid: "1", kpiCode: "STANDARD_ERRORS", factDate: "2026-08-03", numerator: 2, denominator: 1, sampleSize: 1 },
+      { eid: "1", kpiCode: "STANDARD_ERRORS", factDate: "2026-08-04", numerator: 1, denominator: 1, sampleSize: 1 },
+    ]);
+    // The critical count is unchanged by the new column.
+    expect(result.metrics.find((m) => m.kpiCode === "CRITICAL_ERRORS")?.actualValue).toBe(1);
+  });
+
+  it("falls back to the label when there is no Standard column, and says so", () => {
+    const result = aggregateWorkbook({
+      Feedback: [
+        { EID: "1", AgentName: "A", Weekly: week, "Error Date": "2026-08-03", ComplianceRisk: "Critical IO" },
+        { EID: "1", AgentName: "A", Weekly: week, "Error Date": "2026-08-03", ComplianceRisk: "Standard IO" },
+      ],
+    });
+    expect(standardFacts(result)).toEqual([
+      { eid: "1", kpiCode: "STANDARD_ERRORS", factDate: "2026-08-03", numerator: 1, denominator: 2, sampleSize: 2 },
+    ]);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ severity: "warning", sheet: "Feedback", message: expect.stringContaining('No "Standard" column') }),
+    );
+  });
+
+  it("never writes a weekly Standard Errors row — the scorecard sums the facts over its own window", () => {
+    const result = aggregateWorkbook({
+      Feedback: [{ EID: "1", AgentName: "A", Weekly: week, "Error Date": "2026-08-03", ComplianceRisk: "Standard IO", Standard: 3 }],
+    });
+    expect(result.metrics.map((m) => m.kpiCode)).toEqual(["CRITICAL_ERRORS"]);
+  });
+});
+
+describe("the Monthly sheet", () => {
+  it("reads one row per employee per month with a column per metric", () => {
+    const result = aggregateWorkbook({
+      Monthly: [
+        { EID: "1", "Employee Name": "A", "Current Sup EID": "9", Month: "2026-09", IRE: 0, PKT: 95, "LH Utilization": 82.38 },
+        { EID: "2", "Employee Name": "B", Month: "September 2026", IRE: 2, PKT: 0.9, "LH Utilization": 0.7 },
+      ],
+    });
+    expect(result.monthlyMetrics).toEqual([
+      { eid: "1", month: "2026-09-01", metric: "IRE", value: 0 },
+      { eid: "1", month: "2026-09-01", metric: "PKT", value: 95 },
+      { eid: "1", month: "2026-09-01", metric: "LH_UTILIZATION", value: 82.38 },
+      { eid: "2", month: "2026-09-01", metric: "IRE", value: 2 },
+      { eid: "2", month: "2026-09-01", metric: "PKT", value: 90 },
+      { eid: "2", month: "2026-09-01", metric: "LH_UTILIZATION", value: 70 },
+    ]);
+    expect(result.sheets).toContainEqual({ sheet: "Monthly", rowsRead: 2, rowsUsed: 2, rowsSkipped: 0 });
+    expect(result.unrecognizedSheets).toEqual([]);
+    expect(result.employees.map((e) => e.eid)).toEqual(["1", "2"]);
+  });
+
+  it("reads the long shape too — one row per metric", () => {
+    const result = aggregateWorkbook({
+      "Monthly Metrics": [
+        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "IRE", Value: 1 },
+        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "LH Utilisation", Value: 71.42 },
+        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "Attendance", Value: 100 },
+      ],
+    });
+    expect(result.monthlyMetrics).toEqual([
+      { eid: "1", month: "2026-09-01", metric: "IRE", value: 1 },
+      { eid: "1", month: "2026-09-01", metric: "LH_UTILIZATION", value: 71.42 },
+    ]);
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ sheet: "Monthly Metrics", message: expect.stringContaining("no IRE, PKT or LH"), count: 1 }),
+    );
+  });
+
+  it("is optional on a weekly upload, and never touches the week list", () => {
+    const weekly = aggregateWorkbook({
+      Feedback: [{ EID: "1", AgentName: "A", Weekly: "WE 08/07/26", ComplianceRisk: "Critical IO" }],
+    });
+    expect(weekly.monthlyMetrics).toEqual([]);
+    expect(weekly.issues.map((i) => i.sheet)).not.toContain("monthly");
+
+    const monthlyOnly = aggregateWorkbook({ Monthly: [{ EID: "1", Month: "2026-09", IRE: 0 }] });
+    expect(monthlyOnly.weeks).toEqual([]);
+  });
+
+  it("reports rows it cannot place", () => {
+    const result = aggregateWorkbook({
+      Monthly: [
+        { EID: "", Month: "2026-09", IRE: 0 },
+        { EID: "1", Month: "Q3", IRE: 0 },
+        { EID: "1", Month: "2026-09", Notes: "x" },
+      ],
+    });
+    expect(result.monthlyMetrics).toEqual([]);
+    expect(result.sheets).toContainEqual({ sheet: "Monthly", rowsRead: 3, rowsUsed: 0, rowsSkipped: 3 });
+    expect(result.issues.filter((i) => i.sheet === "Monthly").map((i) => i.count)).toEqual([1, 1, 1]);
   });
 });

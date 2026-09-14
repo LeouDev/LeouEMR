@@ -549,6 +549,13 @@ export const qualityFacts = pgTable(
     audits: integer("audits").notNull().default(0),
     imperfect: integer("imperfect").notNull().default(0),
     markdowns: integer("markdowns").notNull().default(0),
+    /**
+     * The audits' scores added up, each a 0-1 fraction, so the mean score
+     * for any skill over any period is score_sum / audits. Kept per skill
+     * because the scorecard rates phone and ancillary quality separately,
+     * which the blended weekly Quality KPI cannot be split back into.
+     */
+    scoreSum: numeric("score_sum", { mode: "number" }).notNull().default(0),
     sourceImportId: uuid("source_import_id")
       .notNull()
       .references(() => importBatches.id),
@@ -560,6 +567,64 @@ export const qualityFacts = pgTable(
       table.factDate,
     ),
   ],
+);
+
+/**
+ * Scorecard inputs that arrive as one figure per person per month rather
+ * than as daily rows: IRE (a count), PKT and LH Utilization (percentages).
+ * Uploaded on the "Monthly" sheet once the month has ended; until a month's
+ * figure arrives the scorecard substitutes full marks for it.
+ */
+export const monthlyMetrics = pgTable(
+  "monthly_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id").notNull().references(() => employees.id),
+    /** The first day of the month the figure is for. */
+    month: date("month").notNull(),
+    /** IRE, PKT or LH_UTILIZATION — see MONTHLY_METRIC_CODES in the import pipeline. */
+    metric: text("metric").notNull(),
+    value: numeric("value", { mode: "number" }).notNull(),
+    sourceImportId: uuid("source_import_id")
+      .notNull()
+      .references(() => importBatches.id),
+  },
+  (table) => [
+    uniqueIndex("monthly_metrics_employee_month_metric_idx").on(
+      table.employeeId,
+      table.month,
+      table.metric,
+    ),
+  ],
+);
+
+/**
+ * The two stamps on a month's scorecard. The team leader reviews first —
+ * from ten days after the month ends, once its data has landed — and only
+ * then can the agent acknowledge. The score at review is kept so a later
+ * re-import that moves the card can say "changed since review" rather than
+ * freezing the numbers or silently rewriting what was signed.
+ */
+export const scorecardReviews = pgTable(
+  "scorecard_reviews",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    employeeId: uuid("employee_id")
+      .notNull()
+      .references(() => employees.id),
+    /** The first day of the scorecard's month. */
+    month: date("month").notNull(),
+    reviewedBy: uuid("reviewed_by")
+      .notNull()
+      .references(() => users.id),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The final score as it stood at review; null when nothing could be scored then. */
+    reviewedScore: numeric("reviewed_score", { mode: "number" }),
+    acknowledgedBy: uuid("acknowledged_by").references(() => users.id),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("scorecard_reviews_employee_month_idx").on(table.employeeId, table.month)],
 );
 
 // ---------------------------------------------------------------------------

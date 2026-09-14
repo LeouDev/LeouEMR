@@ -83,7 +83,7 @@ export function RankTable({
       className="overflow-x-auto"
       style={scrolls ? { maxHeight: `${visibleRows! * 41 + 42}px`, overflowY: "auto" } : undefined}
     >
-      <table className="w-full min-w-[720px] border-collapse text-sm">
+      <table className="w-full min-w-[800px] border-collapse text-sm">
         {/* Sticky within the scroll container, so the columns stay readable
             while scrolling down a long ranking. */}
         <thead className={scrolls ? "sticky top-0 z-20" : undefined}>
@@ -99,6 +99,7 @@ export function RankTable({
                 Supervisor
               </th>
             )}
+            <th className={`${HEAD} bg-cream`}>Score</th>
             <th className={`${HEAD} bg-cream`}>Rating</th>
             <th className={`${HEAD} bg-cream`}>MBO</th>
             <th className={`${HEAD} bg-cream`}>Quality</th>
@@ -137,7 +138,8 @@ export function RankTable({
                 {showSupervisor && (
                   <td className="px-3 py-2.5 text-muted">{row.supervisorName ?? "—"}</td>
                 )}
-                <td className={`${NUM} font-semibold text-ink`}>{rate(row.productionRate)}</td>
+                <td className={`${NUM} font-semibold text-ink`}>{rate(row.score, 2)}</td>
+                <td className={`${NUM} text-muted`}>{rate(row.productionRate)}</td>
                 <td className={`${NUM} text-muted`}>
                   {row.mbo === null ? "—" : `${row.mbo.toFixed(0)}%`}
                 </td>
@@ -175,7 +177,7 @@ export function SupervisorRankTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[620px] border-collapse text-sm">
+      <table className="w-full min-w-[700px] border-collapse text-sm">
         <thead>
           <tr className="border-b-2 border-ink bg-cream">
             <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">
@@ -186,6 +188,7 @@ export function SupervisorRankTable({
             </th>
             <th className={HEAD}>Team</th>
             <th className={HEAD}>Scored</th>
+            <th className={HEAD}>Avg score</th>
             <th className={HEAD}>Avg rating</th>
             <th className={`${HEAD} pr-6`}>Avg MBO</th>
           </tr>
@@ -213,7 +216,8 @@ export function SupervisorRankTable({
                 </td>
                 <td className={`${NUM} text-muted`}>{row.teamSize}</td>
                 <td className={`${NUM} text-muted`}>{row.scored}</td>
-                <td className={`${NUM} font-semibold text-ink`}>{rate(row.productionRate)}</td>
+                <td className={`${NUM} font-semibold text-ink`}>{rate(row.score, 2)}</td>
+                <td className={`${NUM} text-muted`}>{rate(row.productionRate)}</td>
                 <td className={`${NUM} pr-6 text-muted`}>
                   {row.mbo === null ? "—" : `${row.mbo.toFixed(0)}%`}
                 </td>

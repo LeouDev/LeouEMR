@@ -104,6 +104,57 @@ export function toIsoDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+const MONTH_NAMES = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+function firstOfMonth(year: number, month: number): string | null {
+  if (!Number.isInteger(year) || !Number.isInteger(month)) return null;
+  if (year < 2000 || year > 2100 || month < 1 || month > 12) return null;
+  return `${year}-${String(month).padStart(2, "0")}-01`;
+}
+
+/**
+ * Parses the "Monthly" sheet's month cell into the first day of that month.
+ *
+ * Accepts what people actually type in a month column — a real date cell
+ * (any day of the month), "2026-09", "09/2026", "9/1/2026", "Sep-2026",
+ * "September 2026", "2026 September" — and returns null for anything else,
+ * so the row is reported rather than bucketed into the wrong month.
+ */
+export function parseMonthLabel(value: unknown): string | null {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return firstOfMonth(value.getUTCFullYear(), value.getUTCMonth() + 1);
+  }
+  const text = toText(value);
+  if (!text) return null;
+
+  let match = text.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.](\d{1,2}))?$/);
+  if (match) return firstOfMonth(Number(match[1]), Number(match[2]));
+
+  match = text.match(/^(\d{1,2})[-/.](\d{4})$/);
+  if (match) return firstOfMonth(Number(match[2]), Number(match[1]));
+
+  match = text.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (match) {
+    const year = Number(match[3]) < 100 ? 2000 + Number(match[3]) : Number(match[3]);
+    return firstOfMonth(year, Number(match[1]));
+  }
+
+  match =
+    text.match(/^([A-Za-z]+)[\s\-,/.]*(\d{2,4})$/) ?? text.match(/^(\d{4})[\s\-,/.]*([A-Za-z]+)$/);
+  if (match) {
+    const [name, yearText] = /^\d/.test(match[1]) ? [match[2], match[1]] : [match[1], match[2]];
+    const index = MONTH_NAMES.findIndex((m) => m.startsWith(name.toLowerCase().slice(0, 3)));
+    if (index === -1 || name.length < 3) return null;
+    const year = Number(yearText) < 100 ? 2000 + Number(yearText) : Number(yearText);
+    return firstOfMonth(year, index + 1);
+  }
+
+  return null;
+}
+
 /** Coerces a spreadsheet cell to a finite number, or null if it isn't one. */
 export function toNumber(value: unknown): number | null {
   if (typeof value === "number") return Number.isFinite(value) ? value : null;

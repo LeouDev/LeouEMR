@@ -1,0 +1,250 @@
+import { and, asc, eq, inArray } from "drizzle-orm";
+import { redirect } from "next/navigation";
+import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
+import { isSupportRole } from "@/lib/auth/scope";
+import { getCurrentUser } from "@/lib/auth/session";
+import { db } from "@/lib/db/client";
+import { employees } from "@/lib/db/schema";
+import { isUuid } from "@/lib/ids";
+import { getScopedEmployeeIds } from "@/lib/queries/performance";
+import { periodsBetween } from "@/lib/queries/period";
+import { getFactDateRange } from "@/lib/queries/period-metrics";
+import { getScorecardFor } from "@/lib/scorecard/load";
+import { canReview, monthStartOf, reviewOpensOn } from "@/lib/scorecard/review";
+import { PrintButton } from "@/app/(shell)/records/[actionItemId]/print-button";
+import { ScorecardPickers } from "./pickers";
+import { ScorecardTable } from "./scorecard-table";
+import { AcknowledgeButton, ReviewButton } from "./stamps";
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function longDate(value: Date | string): string {
+  const d = typeof value === "string" ? new Date(`${value}T00:00:00Z`) : value;
+  return d.toLocaleDateString("en-US", { dateStyle: "medium", timeZone: "UTC" });
+}
+
+/**
+ * The monthly scorecard. An agent sees their own; a team leader picks
+ * someone on their team and signs the month off once it opens; a manager
+ * or administrator reads their span. Trainers and SMEs have no scorecard
+ * to read.
+ */
+export default async function ScorecardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ employee?: string; month?: string }>;
+}) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.status !== "active") redirect("/pending");
+  if (isSupportRole(user)) redirect("/dashboard");
+
+  const isAgent = user.role === "agent";
+  const [params, range, ids] = await Promise.all([searchParams, getFactDateRange(), getScopedEmployeeIds(user)]);
+  const today = todayIso();
+
+  // Every month from the first fact to today, newest first: the current
+  // month is on the list as a running month-to-date card even before its
+  // first upload of the month.
+  const months = range ? periodsBetween("month", range.first, today > range.last ? today : range.last) : [];
+  const month = months.find((m) => m.start === params.month) ?? months[0] ?? null;
+
+  const people =
+    ids === null || (Array.isArray(ids) && ids.length === 0)
+      ? []
+      : await db
+          .select({ id: employees.id, name: employees.name, supervisorName: employees.supervisorName })
+          .from(employees)
+          .where(
+            and(
+              eq(employees.status, "active"),
+              ids === "all" ? undefined : inArray(employees.id, ids),
+            ),
+          )
+          .orderBy(asc(employees.name));
+
+  const employeeId = isAgent
+    ? (people[0]?.id ?? null)
+    : (people.find((p) => p.id === (isUuid(params.employee) ? params.employee : ""))?.id ?? people[0]?.id ?? null);
+
+  const band = (
+    <PageBand
+      title={isAgent ? "My Scorecard" : "Scorecard"}
+      subtitle={
+        isAgent
+          ? "Your monthly scorecard, and the acknowledgement your team leader needs"
+          : user.role === "supervisor"
+            ? "Each person's monthly scorecard, reviewed by you once the month's data has landed"
+            : "Monthly scorecards across your span"
+      }
+      action={
+        month ? (
+          <ScorecardPickers
+            people={isAgent ? [] : people}
+            employeeId={employeeId}
+            months={months.map((m) => ({ start: m.start, label: m.label }))}
+            month={month.start}
+          />
+        ) : undefined
+      }
+    />
+  );
+
+  if (!month || !employeeId) {
+    return (
+      <>
+        {band}
+        <main className="mx-auto max-w-7xl px-6 py-8">
+          <Card>
+            <EmptyState
+              title={isAgent ? "Account not linked" : "No scorecard to show"}
+              description={
+                isAgent
+                  ? "An administrator needs to link this account to an employee ID before your scorecard appears here."
+                  : "Scorecards appear once performance data has been imported for someone in your scope."
+              }
+            />
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  const data = await getScorecardFor(employeeId, month.start);
+  if (!data) {
+    return (
+      <>
+        {band}
+        <main className="mx-auto max-w-7xl px-6 py-8">
+          <Card>
+            <EmptyState title="No scorecard to show" description="This person is not in the roster." />
+          </Card>
+        </main>
+      </>
+    );
+  }
+
+  const { employee, card, review } = data;
+  const current = monthStartOf(today) === month.start;
+  const opensOn = reviewOpensOn(month.start);
+  const reviewable = canReview(month.start, today);
+  const topSkill = [...(card.rows[0].skills ?? [])].sort((a, b) => b.hours - a.hours)[0] ?? null;
+  const processType =
+    card.hours.phone + card.hours.ancillary === 0
+      ? "—"
+      : card.hours.phoneShare > 0.5
+        ? "Phone"
+        : card.hours.ancillaryShare > 0.5
+          ? "Ancillary"
+          : "Mixed";
+
+  const reviewDisabled = !reviewable
+    ? `Opens for review on ${longDate(opensOn)}`
+    : review && !review.changedSinceReview
+      ? `Reviewed by ${review.reviewedByName ?? "the team leader"} on ${longDate(review.reviewedAt)}`
+      : null;
+  const acknowledgeDisabled = !review
+    ? "Your team leader reviews the month first"
+    : review.acknowledgedAt
+      ? `Acknowledged on ${longDate(review.acknowledgedAt)}`
+      : review.changedSinceReview
+        ? "The card changed since it was reviewed — your team leader will review it again"
+        : null;
+
+  return (
+    <>
+      <div className="print:hidden">{band}</div>
+
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8 print:max-w-none print:px-0 print:py-0">
+        {review?.changedSinceReview && (
+          <div className="border-2 border-ink bg-warn-bg px-4 py-3 text-sm text-ink print:hidden">
+            <p className="font-semibold">Changed since it was reviewed.</p>
+            <p className="mt-1">
+              A later import moved this card from {review.reviewedScore === null ? "no score" : review.reviewedScore.toFixed(2)} to{" "}
+              {card.finalScore === null ? "no score" : card.finalScore.toFixed(2)}. The review stamp stands; the team leader
+              can review it again, which asks the agent to acknowledge it again.
+            </p>
+          </div>
+        )}
+
+        <Card className="print:break-inside-avoid">
+          <div className="flex flex-wrap items-start justify-between gap-4 px-6 py-5">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+              <dt className="font-semibold text-muted">Employee ID</dt>
+              <dd className="font-mono text-ink">{employee.eid}</dd>
+              <dt className="font-semibold text-muted">Employee name</dt>
+              <dd className="font-semibold text-ink">{employee.name}</dd>
+              <dt className="font-semibold text-muted">Supervisor</dt>
+              <dd className="text-ink">{employee.supervisorName ?? "—"}</dd>
+              <dt className="font-semibold text-muted">Process name</dt>
+              <dd className="text-ink">{topSkill ? `Prior Authorization - ${topSkill.name}` : "—"}</dd>
+              <dt className="font-semibold text-muted">Process type</dt>
+              <dd className="text-ink">{processType}</dd>
+            </dl>
+            <div className="text-right">
+              <p className="text-2xl font-extrabold tracking-[-0.01em] text-ink">{month.label}</p>
+              <p className="mt-1 text-xs text-muted">
+                {current ? "Running month to date" : "Full month"} · Optum Rx prior authorization scorecard
+              </p>
+              <p className="mt-3 font-mono text-4xl font-bold tabular-nums text-ink">
+                {card.finalScore === null ? "--" : card.finalScore.toFixed(2)}
+              </p>
+              <p className="text-xs text-muted">final score out of 5</p>
+            </div>
+          </div>
+          <ScorecardTable card={card} />
+        </Card>
+
+        <Card className="print:break-inside-avoid">
+          <CardHeader
+            title="Acknowledgement"
+            subtitle="I acknowledge that performance goals and their definitions were clearly discussed to me by my Immediate Manager."
+          />
+          <div className="grid gap-6 px-6 py-5 sm:grid-cols-2">
+            <div>
+              <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">{employee.name}</p>
+              <p className="mt-1 text-xs font-bold tracking-[0.06em] text-muted uppercase">Employee name &amp; signature</p>
+              <p className="mt-1 text-sm text-ink">
+                {review?.acknowledgedAt
+                  ? `Acknowledged ${longDate(review.acknowledgedAt)}`
+                  : "Not yet acknowledged"}
+              </p>
+              {isAgent && (
+                <div className="mt-3 print:hidden">
+                  <AcknowledgeButton month={month.start} disabledReason={acknowledgeDisabled} />
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="border-b-2 border-ink pb-1 text-base font-semibold text-ink">
+                {review?.reviewedByName ?? employee.supervisorName ?? "—"}
+              </p>
+              <p className="mt-1 text-xs font-bold tracking-[0.06em] text-muted uppercase">
+                Immediate manager name &amp; signature
+              </p>
+              <p className="mt-1 text-sm text-ink">
+                {review ? `Reviewed ${longDate(review.reviewedAt)}` : `Not yet reviewed · opens ${longDate(opensOn)}`}
+              </p>
+              {user.role === "supervisor" && (
+                <div className="mt-3 print:hidden">
+                  <ReviewButton
+                    employeeId={employee.id}
+                    month={month.start}
+                    disabledReason={reviewDisabled}
+                    label={review ? "Review again" : "Mark as reviewed"}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <div className="flex justify-end print:hidden">
+          <PrintButton />
+        </div>
+      </main>
+    </>
+  );
+}

@@ -17,6 +17,8 @@ const ACTION_LABELS: Record<string, string> = {
   "action_plan.created": "Action plan entered",
   "action_plan.updated": "Action plan updated",
   "action_plan.support_flags_updated": "Training/coaching flags updated",
+  "scorecard.reviewed": "Scorecard reviewed",
+  "scorecard.acknowledged": "Scorecard acknowledged",
   "action_item.sent_to_agent": "Sent to agent",
   "action_item.acknowledged": "Agent acknowledged",
   "skill_target.updated": "Skill target changed",
