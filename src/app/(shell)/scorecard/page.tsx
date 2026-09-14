@@ -176,9 +176,13 @@ export default async function ScorecardPage({
 
   return (
     <>
+      {/* Thirteen columns need the page on its side, and a zero page margin
+          is what stops the browser printing its own title and URL lines;
+          the main below carries the margin instead. */}
+      <style>{`@media print { @page { size: A4 landscape; margin: 0; } }`}</style>
       <div className="print:hidden">{band}</div>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8 print:max-w-none print:px-0 print:py-0">
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8 print:max-w-none print:space-y-3 print:p-[8mm]">
         {review?.changedSinceReview && (
           <div className="border-2 border-ink bg-warn-bg px-4 py-3 text-sm text-ink print:hidden">
             <p className="font-semibold">Changed since it was reviewed.</p>

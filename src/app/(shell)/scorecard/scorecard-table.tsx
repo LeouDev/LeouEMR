@@ -1,10 +1,10 @@
 import type { ProductivitySkillRow, Scorecard, ScorecardRow } from "@/lib/scorecard/engine";
 import { MINIMUM_SCORE } from "@/lib/scorecard/engine";
 
-const HEAD = "px-2 py-2 text-[11px] font-bold tracking-[0.06em] text-white uppercase";
-const CELL = "px-2 py-1.5 text-sm";
+const HEAD = "px-2 py-2 text-[11px] font-bold tracking-[0.06em] text-white uppercase print:px-1 print:py-1 print:text-[8px]";
+const CELL = "px-2 py-1.5 text-sm print:px-1 print:py-0.5 print:text-[9px]";
 const NUM = `${CELL} font-mono tabular-nums`;
-const BAND = `${CELL} text-xs text-muted`;
+const BAND = `${CELL} text-xs text-muted print:text-[8px]`;
 
 /** Percent rows print with two decimals, counts as whole numbers, the rest as given. */
 function actualText(row: ScorecardRow): string {
@@ -93,8 +93,12 @@ export function ScorecardTable({ card }: { card: Scorecard }) {
   const others = card.rows.filter((r) => r.key !== "PRODUCTIVITY");
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1100px] border-collapse border-2 border-ink text-sm">
+    // On paper the whole table has to show: no scroll box (which printed as
+    // a clipped table with a scrollbar), no minimum width, and the orange
+    // header and final-score rows kept — browsers drop backgrounds when
+    // printing unless the page insists, which left the score white on white.
+    <div className="overflow-x-auto print:overflow-visible">
+      <table className="w-full min-w-[1100px] border-collapse border-2 border-ink text-sm print:min-w-0 print:[-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]">
         <thead>
           <tr className="bg-orange-brand">
             <th className={HEAD}>Weightage</th>

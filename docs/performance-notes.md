@@ -717,6 +717,19 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard prints whole (main, 14 Sep).** Download PDF printed a
+  portrait page with the table clipped at the scroll box's edge (a
+  scrollbar and all), the orange header and final-score rows dropped so
+  the score was white on white, the authenticator banner at the top,
+  and the browser's own title/URL lines. Now: a `<style>` on the page
+  sets `@page { size: A4 landscape; margin: 0 }` (a zero page margin is
+  what suppresses the browser's header and footer lines; `main` carries
+  `print:p-[8mm]` instead); the table wrapper is `print:overflow-visible`
+  with `print:min-w-0` and smaller print type on its cells; the table
+  carries `print:[-webkit-print-color-adjust:exact]` /
+  `print:[print-color-adjust:exact]` so its backgrounds print whatever
+  the "Background graphics" setting; the shell's MFA grace banner is
+  `print:hidden`.
 - **Scorecard picker lists the month's team, not today's (main, 14 Sep).**
   Reported by Lea: her Agent dropdown offered one person, and someone
   who left in July was still offered for August and September. The page

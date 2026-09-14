@@ -36,7 +36,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
       <div className="min-h-screen bg-cream">
         <AppHeader user={user} />
         {mfa === "grace" && graceUntil && (
-          <div className="border-b-2 border-warn bg-warn-bg px-6 py-2.5 text-center text-sm font-semibold text-warn">
+          <div className="border-b-2 border-warn bg-warn-bg px-6 py-2.5 text-center text-sm font-semibold text-warn print:hidden">
             Your role will need an authenticator app to sign in from {formatDate(graceUntil)}.{" "}
             <Link href="/mfa" className="underline underline-offset-4">
               Set it up now
