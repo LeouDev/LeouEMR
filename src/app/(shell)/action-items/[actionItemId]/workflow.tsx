@@ -361,9 +361,12 @@ export function ActionPlanForm({
 export function SendToAgentButton({
   actionItemId,
   disabledReason,
+  label = "Send to agent",
 }: {
   actionItemId: string;
   disabledReason: string | null;
+  /** "Send to agent again" on a reopened item, where the plan has been to the agent once already. */
+  label?: string;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -394,7 +397,7 @@ export function SendToAgentButton({
         title={disabledReason ?? undefined}
         className="btn-primary px-5 py-3 text-sm"
       >
-        {sending ? "Sending…" : "Send to agent"}
+        {sending ? "Sending…" : label}
       </button>
       {disabledReason && <p className="text-xs text-muted">{disabledReason}</p>}
       <Feedback message={error} tone="error" />

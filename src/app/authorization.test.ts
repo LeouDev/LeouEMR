@@ -35,7 +35,9 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 const { updateSkillTarget } = await import("./(shell)/skills/actions");
 const { approvePendingUsers, resetMfa, updateUser } = await import("./(shell)/users/actions");
 const { createUploadTicket, previewImport, runImport } = await import("./(shell)/import/actions");
-const { addRcaNote } = await import("./(shell)/action-items/actions");
+const { acknowledge, addRcaNote, saveActionPlan, saveRca, sendToAgent } = await import(
+  "./(shell)/action-items/actions"
+);
 
 function signedInAs(role: UserRole): CurrentUser {
   return {
@@ -205,6 +207,122 @@ describe("RCA notes", () => {
     // passed and the scope lookup was actually attempted, rather than the
     // call being short-circuited.
     await expect(addRcaNote(valid)).rejects.toThrow(
+      "database reached before the authorization check",
+    );
+  });
+});
+
+/**
+ * The rest of the action-item workflow carries the same two gates as the
+ * notes: a managing role, then the caller's own scope. The acknowledgement
+ * is the one write gated the other way round — the agent role alone, since
+ * nobody acknowledges a plan on an agent's behalf, whatever their rank.
+ */
+describe("RCA, action plan and send to agent", () => {
+  const rca = {
+    actionItemId: "44444444-4444-4444-8444-444444444444",
+    problemStatement: "Handle time has been over target for three weeks.",
+    rootCauseCategoryId: "22222222-2222-4222-8222-222222222222",
+    rootCauseDetails: "Long holds while the second system loads.",
+    contributingFactors: "",
+    evidenceNotes: "",
+  };
+  const plan = {
+    actionItemId: rca.actionItemId,
+    correctiveAction: "Side-by-side on the second system twice a week.",
+    expectedBehavior: "Holds under a minute on ordinary calls.",
+    targetMetric: "AHT",
+    targetValue: 540,
+    dueDate: "2026-10-01",
+    followUpDate: "2026-10-15",
+    coachingRequired: true,
+    trainingRequired: false,
+    supervisorNotes: "",
+  };
+
+  it.each(["agent", "manager"] as UserRole[])("refuses %s outright", async (role) => {
+    currentUser.value = signedInAs(role);
+    expect(await saveRca(rca)).toEqual({
+      ok: false,
+      error: "Only supervisors and administrators can enter an RCA",
+    });
+    expect(await saveActionPlan(plan)).toEqual({
+      ok: false,
+      error: "Only supervisors and administrators can enter an action plan",
+    });
+    expect(await sendToAgent(rca.actionItemId)).toEqual({
+      ok: false,
+      error: "Only supervisors and administrators can send an action item",
+    });
+  });
+
+  it("refuses a signed-out caller", async () => {
+    currentUser.value = null;
+    expect(await saveRca(rca)).toEqual({ ok: false, error: "Not signed in" });
+    expect(await saveActionPlan(plan)).toEqual({ ok: false, error: "Not signed in" });
+    expect(await sendToAgent(rca.actionItemId)).toEqual({ ok: false, error: "Not signed in" });
+  });
+
+  it("refuses a pending account", async () => {
+    currentUser.value = { ...signedInAs("supervisor"), status: "pending" };
+    expect(await saveRca(rca)).toEqual({ ok: false, error: "Not signed in" });
+    expect(await saveActionPlan(plan)).toEqual({ ok: false, error: "Not signed in" });
+    expect(await sendToAgent(rca.actionItemId)).toEqual({ ok: false, error: "Not signed in" });
+  });
+
+  it("rejects an incomplete RCA before any database access", async () => {
+    currentUser.value = signedInAs("supervisor");
+    expect(await saveRca({ ...rca, problemStatement: "Short" })).toEqual({
+      ok: false,
+      error: "Describe the problem in at least 10 characters",
+    });
+  });
+
+  it("rejects a plan with no due date before any database access", async () => {
+    currentUser.value = signedInAs("supervisor");
+    expect(await saveActionPlan({ ...plan, dueDate: "" })).toEqual({
+      ok: false,
+      error: "Set a due date",
+    });
+  });
+
+  it.each(["supervisor", "trainer", "sme", "admin"] as UserRole[])(
+    "lets %s through to the scope check",
+    async (role) => {
+      currentUser.value = signedInAs(role);
+      await expect(saveRca(rca)).rejects.toThrow("database reached before the authorization check");
+      await expect(saveActionPlan(plan)).rejects.toThrow(
+        "database reached before the authorization check",
+      );
+      await expect(sendToAgent(rca.actionItemId)).rejects.toThrow(
+        "database reached before the authorization check",
+      );
+    },
+  );
+});
+
+describe("acknowledgement", () => {
+  const actionItemId = "44444444-4444-4444-8444-444444444444";
+
+  it.each(["admin", "manager", "supervisor", "trainer", "sme"] as UserRole[])(
+    "refuses %s — only the agent named on the item acknowledges it",
+    async (role) => {
+      currentUser.value = signedInAs(role);
+      expect(await acknowledge(actionItemId)).toEqual({
+        ok: false,
+        error: "Only the agent named on an action item can acknowledge it",
+      });
+    },
+  );
+
+  it("refuses a signed-out caller", async () => {
+    currentUser.value = null;
+    expect(await acknowledge(actionItemId)).toEqual({ ok: false, error: "Not signed in" });
+  });
+
+  it("lets an agent through to the scope check", async () => {
+    currentUser.value = signedInAs("agent");
+    await expect(acknowledge(actionItemId)).rejects.toThrow(
       "database reached before the authorization check",
     );
   });

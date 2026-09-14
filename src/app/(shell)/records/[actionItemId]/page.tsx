@@ -147,7 +147,11 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
                         )}
                       </span>
                       <span className={`font-semibold ${entry.result === "fail" ? "text-fail" : "text-pass"}`}>
-                        {entry.result === "fail" ? "FAIL" : `PASS · monitoring ${entry.consecutiveCountAfter} / 4`}
+                        {entry.result === "fail"
+                          ? "FAIL"
+                          : entry.consecutiveCountAfter === 0
+                            ? "PASS · before acknowledgement, not counted"
+                            : `PASS · monitoring ${entry.consecutiveCountAfter} / 4`}
                       </span>
                     </li>
                   );
