@@ -95,22 +95,26 @@ export default async function DevelopmentPage({
             value={isAgent ? totals.openItems : totals.peopleInDevelopment}
             hint={isAgent ? undefined : `${totals.openItems} open items`}
           />
+          {/* The alarm colours mark the reader's own move. A leader owes the
+              RCA and the plan; an agent owes the acknowledgement, and the
+              rest is with their supervisor. */}
           <StatCard
             label="Need root cause"
             value={totals.missingRca}
-            tone={totals.missingRca > 0 ? "fail" : "default"}
-            hint="Cannot progress until written"
+            tone={!isAgent && totals.missingRca > 0 ? "fail" : "default"}
+            hint={isAgent ? "Your supervisor writes this" : "Cannot progress until written"}
           />
           <StatCard
             label="Need action plan"
             value={totals.missingPlan}
-            tone={totals.missingPlan > 0 ? "warn" : "default"}
+            tone={!isAgent && totals.missingPlan > 0 ? "warn" : "default"}
+            hint={isAgent ? "Your supervisor writes this" : undefined}
           />
           <StatCard
             label="Awaiting acknowledgement"
             value={totals.awaitingAcknowledgement}
-            tone={totals.awaitingAcknowledgement > 0 ? "warn" : "default"}
-            hint="With the agent"
+            tone={totals.awaitingAcknowledgement > 0 ? (isAgent ? "fail" : "warn") : "default"}
+            hint={isAgent ? "Waiting on you" : "With the agent"}
           />
           <StatCard
             label="Nearing close"
@@ -233,11 +237,15 @@ export default async function DevelopmentPage({
                         <td className="px-6 py-3 align-top">
                           <span
                             className={`text-xs font-semibold ${
-                              row.urgency <= 1
-                                ? "text-fail"
-                                : row.urgency <= 3
-                                  ? "text-warn"
+                              isAgent
+                                ? row.urgency === 2
+                                  ? "text-fail"
                                   : "text-muted"
+                                : row.urgency <= 1
+                                  ? "text-fail"
+                                  : row.urgency <= 3
+                                    ? "text-warn"
+                                    : "text-muted"
                             }`}
                           >
                             {row.nextStep}

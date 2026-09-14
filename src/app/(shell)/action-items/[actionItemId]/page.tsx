@@ -55,6 +55,11 @@ export default async function ActionItemPage({
   const isAht = isHandleTimeKpi(kpi);
 
   const canEdit = canManageActionItems(user);
+  // A completed item is a closed record: its RCA and plan are read-only for
+  // everyone, matching the server (closedRecordError in actions.ts).
+  const closed = issue.status === "COMPLETED";
+  const canWrite = canEdit && !closed;
+  const reopened = issue.status === "REOPENED";
   const isOwnItem = user.employeeEid !== null && employee.eid === user.employeeEid;
   const canAck =
     canAcknowledge(user) && isOwnItem && issue.status === "AWAITING_AGENT_ACKNOWLEDGEMENT";
@@ -110,6 +115,24 @@ export default async function ActionItemPage({
           </div>
         </div>
 
+        {/* A reopened item logs its passing weeks but counts none of them
+            until the plan has gone back to the agent and been acknowledged.
+            The enabled button alone never said so, and an item left this way
+            sat with "not counted" passes until it aged out. */}
+        {reopened && (
+          <div className="mb-6 border-2 border-ink bg-warn-bg px-4 py-3 text-sm text-ink">
+            <p className="font-semibold">Reopened after a failing week.</p>
+            <p className="mt-1">
+              Passing weeks are logged but do not count toward the four until{" "}
+              {isOwnItem
+                ? "your supervisor sends the updated plan again and you acknowledge it."
+                : canEdit
+                  ? "the plan is updated and sent to the agent again, and the agent acknowledges it."
+                  : "the supervisor sends the updated plan again and the agent acknowledges it."}
+            </p>
+          </div>
+        )}
+
         <Card>
           <CardHeader title="Weekly timeline" subtitle="Every week this issue has been evaluated" />
           <div className="px-6 py-5">
@@ -143,8 +166,12 @@ export default async function ActionItemPage({
                               )} · `
                             : ""}
                           {entry.result === "fail"
-                            ? "counter reset to 0"
-                            : `monitoring ${entry.consecutiveCountAfter} / 4`}
+                            ? entry.week === issue.openedWeek
+                              ? "opened the item"
+                              : "counter reset to 0"
+                            : entry.consecutiveCountAfter === 0
+                              ? "passed before the plan was acknowledged — not counted"
+                              : `monitoring ${entry.consecutiveCountAfter} / 4`}
                         </p>
                       </div>
                     </li>
@@ -187,13 +214,19 @@ export default async function ActionItemPage({
         <Card className="mt-6">
           <CardHeader
             title="Root cause analysis"
-            subtitle={canEdit ? "Required before the item can be sent to the agent" : "Entered by the supervisor"}
+            subtitle={
+              closed
+                ? "Closed with the item — the record is read-only"
+                : canEdit
+                  ? "Required before the item can be sent to the agent"
+                  : "Entered by the supervisor"
+            }
             action={rca ? <Recorded /> : undefined}
           />
           <RcaForm
             actionItemId={actionItem.id}
             categories={categories}
-            readOnly={!canEdit}
+            readOnly={!canWrite}
             initial={{
               problemStatement: rca?.problemStatement ?? "",
               rootCauseCategoryId: rca?.rootCauseCategoryId ?? "",
@@ -229,12 +262,18 @@ export default async function ActionItemPage({
         <Card className="mt-6">
           <CardHeader
             title="Action plan"
-            subtitle={canEdit ? "Required before the item can be sent to the agent" : "Entered by the supervisor"}
+            subtitle={
+              closed
+                ? "Closed with the item — the record is read-only"
+                : canEdit
+                  ? "Required before the item can be sent to the agent"
+                  : "Entered by the supervisor"
+            }
             action={plan ? <Recorded /> : undefined}
           />
           <ActionPlanForm
             actionItemId={actionItem.id}
-            readOnly={!canEdit}
+            readOnly={!canWrite}
             initial={{
               correctiveAction: plan?.correctiveAction ?? "",
               expectedBehavior: plan?.expectedBehavior ?? "",
@@ -275,7 +314,13 @@ export default async function ActionItemPage({
 
             {canAck && <AcknowledgeButton actionItemId={actionItem.id} />}
 
-            {canEdit && <SendToAgentButton actionItemId={actionItem.id} disabledReason={sendBlockedReason} />}
+            {canEdit && (
+              <SendToAgentButton
+                actionItemId={actionItem.id}
+                disabledReason={sendBlockedReason}
+                label={reopened ? "Send to agent again" : "Send to agent"}
+              />
+            )}
 
             {!canEdit && !canAck && acknowledgements.length === 0 && (
               <p className="text-sm text-muted">

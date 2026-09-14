@@ -19,6 +19,7 @@ import {
   rcaNotes,
   timeMotionStudies,
   users,
+  weeklyIssueHistory,
 } from "@/lib/db/schema";
 import {
   acknowledgeByAgent,
@@ -54,6 +55,22 @@ async function loadScopedItem(user: CurrentUser, actionItemId: string) {
   return row ?? null;
 }
 
+type IssueStatus = typeof performanceIssues.$inferSelect.status;
+
+/**
+ * A completed item is a closed coaching record. The RCA and the plan are
+ * what the Records archive prints, and they stayed editable after closure —
+ * the audit log would show a rewrite, but nothing stopped one — while the
+ * notes beneath them were deliberately append-only. Notes can still be
+ * added to a closed item (a correction is another note); the record itself
+ * no longer changes.
+ */
+function closedRecordError(status: IssueStatus): ActionResult | null {
+  return status === "COMPLETED"
+    ? { ok: false, error: "This item is completed, so its record can no longer be changed" }
+    : null;
+}
+
 export async function saveRca(input: unknown): Promise<ActionResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
@@ -68,6 +85,8 @@ export async function saveRca(input: unknown): Promise<ActionResult> {
 
   const scoped = await loadScopedItem(user, parsed.data.actionItemId);
   if (!scoped) return { ok: false, error: "Action item not found" };
+  const closed = closedRecordError(scoped.issue.status);
+  if (closed) return closed;
 
   const values = {
     actionItemId: parsed.data.actionItemId,
@@ -119,6 +138,8 @@ export async function saveActionPlan(input: unknown): Promise<ActionResult> {
 
   const scoped = await loadScopedItem(user, parsed.data.actionItemId);
   if (!scoped) return { ok: false, error: "Action item not found" };
+  const closed = closedRecordError(scoped.issue.status);
+  if (closed) return closed;
 
   const values = {
     actionItemId: parsed.data.actionItemId,
@@ -371,6 +392,24 @@ export async function addRcaNote(input: unknown): Promise<ActionResult> {
     .limit(1);
   if (!rca) return { ok: false, error: "Record the root cause before adding notes to it" };
 
+  // The form offers only the weeks the item was evaluated; the server held
+  // that line by date format alone, so a crafted request could file a note
+  // against a week the item never covered — one the employee page would
+  // never mark, since its note dots sit on evaluated weeks.
+  const [evaluated] = await db
+    .select({ id: weeklyIssueHistory.id })
+    .from(weeklyIssueHistory)
+    .where(
+      and(
+        eq(weeklyIssueHistory.performanceIssueId, scoped.issue.id),
+        eq(weeklyIssueHistory.week, parsed.data.week),
+      ),
+    )
+    .limit(1);
+  if (!evaluated && parsed.data.week !== scoped.issue.openedWeek) {
+    return { ok: false, error: "Pick one of the weeks this item was evaluated" };
+  }
+
   await db.insert(rcaNotes).values({
     actionItemId: parsed.data.actionItemId,
     week: parsed.data.week,
@@ -391,11 +430,25 @@ export async function addRcaNote(input: unknown): Promise<ActionResult> {
   return { ok: true };
 }
 
+/**
+ * Four hours a segment: past any real call, so a long hold or an escalation
+ * that ran over the old one-hour cap no longer fails with zod's own wording.
+ */
+const SEGMENT_MAX_SECONDS = 4 * 3600;
+
 const timeMotionSegmentSchema = z.object({
   code: z.string().min(1),
   label: z.string().min(1),
-  baselineSeconds: z.number().int().min(0).max(3600),
-  actualSeconds: z.number().int().min(0).max(3600),
+  baselineSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(SEGMENT_MAX_SECONDS, "A baseline cannot exceed four hours"),
+  actualSeconds: z
+    .number()
+    .int()
+    .min(0)
+    .max(SEGMENT_MAX_SECONDS, "A segment cannot run longer than four hours"),
 });
 
 const timeMotionStudySchema = z.object({

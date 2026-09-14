@@ -717,6 +717,45 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Development plan audit follow-ups (feature branch, 14 Sep).** The
+  rest of what the audit found, none of it a data change:
+  - *Development Hub totals are no longer capped.* `getDevelopmentBoard`
+    asked `getActionItems` for at most 1,000 open items and summed the
+    rows into the stat cards, so a whole-floor board (admin, trainer,
+    SME) undercounted silently past that. `listActionItems` now takes
+    `limit: null` (the query is built with `$dynamic()` so the limit is
+    optional) and the board passes it; the page still renders 20 rows.
+  - *A completed item is a closed record.* `saveRca` and
+    `saveActionPlan` refuse on `COMPLETED` (`closedRecordError`: "This
+    item is completed, so its record can no longer be changed") and the
+    page renders both forms read-only with "Closed with the item" as the
+    subtitle. Notes stay allowed (append-only; a correction is another
+    note) and so does Time & Motion.
+  - *Reopened items say what they need.* A banner on the action-item
+    page (worded for the agent, the supervisor and a manager) explains
+    that passing weeks are logged but not counted until the plan is sent
+    again and acknowledged; the button reads "Send to agent again"; the
+    timeline says "opened the item" on the opening fail and "passed
+    before the plan was acknowledged — not counted" on a zero-count
+    pass (the Records print view too); the Hub's next step reads
+    "Reopened — update the plan and send it to the agent again".
+  - *The agent's Hub speaks to the agent.* `assess(items, forAgent)` in
+    `development.ts` (now exported and tested in `development.test.ts`)
+    phrases the next step as whose move it is ("Your supervisor is
+    recording the root cause", "Acknowledge your plan"); the stat cards
+    and the next-step colour only alarm on the agent's own step.
+  - *Note weeks are checked on the server.* `addRcaNote` accepts only a
+    week in the item's `weekly_issue_history` or its opening week ("Pick
+    one of the weeks this item was evaluated"); the form already offered
+    only those.
+  - *Time & Motion segments cap at four hours with a real message*
+    (was 3,600 s with zod's default wording).
+  - *Authorization tests* now cover `saveRca`, `saveActionPlan`,
+    `sendToAgent` and `acknowledge` (role gate, signed-out, pending,
+    malformed input before any database access, and the scope check
+    being reached) alongside the existing notes and Time & Motion ones.
+  - *Dead code removed:* `isDevelopmentItemStale` and
+    `SUSTAINED_PASS_WEEKS` with their test file.
 - **Age-out counts from the last failure, not the opening week (main,
   14 Sep).** Found by a functionality audit of the Development plan.
   `shouldAgeOut` measured the 60 days from `openedWeek` and only asked

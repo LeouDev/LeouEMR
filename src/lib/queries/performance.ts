@@ -47,20 +47,10 @@ export const OPEN_STATUSES = [
 ] as const;
 
 /**
- * Weeks of an unbroken pass, ending at the latest week — or with no data
- * recorded at all — before a row drops off the "Development item" table.
- * Unrelated to the 4-week counter that actually closes an open action item
- * (SUSTAINED_WEEKS in development.ts): that one changes the item's real
- * status; this one only governs whether its row is worth showing right now.
- * The KPI grid itself is never filtered by this — it stays the full history
- * regardless.
- */
-export const SUSTAINED_PASS_WEEKS = 8;
-
-/**
  * The development plan's KPI grid, in the order the business reads it: the
- * headline scorecard, whether or not a KPI opens items. The per-skill and
- * per-KPI work items are the development-item table beneath it.
+ * headline scorecard, whether or not a KPI opens items. The skills that open
+ * items of their own sit in the skill breakdown beneath it, and any figure
+ * an action item was tracking links to that item (item-links.ts).
  */
 export const PLAN_KPI_CODES = [
   "PRODUCTION_RATE",
@@ -325,7 +315,7 @@ function actionItemWhere(ids: string[] | "all", options: ActionItemFilter) {
 
 export async function getActionItems(
   user: CurrentUser,
-  options: ActionItemFilter & { limit?: number; oldestFirst?: boolean } = {},
+  options: ActionItemFilter & { limit?: number | null; oldestFirst?: boolean } = {},
 ): Promise<ActionItemListRow[]> {
   const ids = await scopedEmployeeIds(user);
   if (ids === null || (Array.isArray(ids) && ids.length === 0)) return [];
@@ -363,9 +353,14 @@ export async function getUnstartedActionItems(
 
 async function listActionItems(
   ids: string[] | "all",
-  options: ActionItemFilter & { limit?: number; oldestFirst?: boolean },
+  /**
+   * `limit: null` returns every row. The Development Hub adds its rows up
+   * into totals, and a cap there — it was 1,000 — silently undercounted a
+   * whole-floor board once the open work outgrew it.
+   */
+  options: ActionItemFilter & { limit?: number | null; oldestFirst?: boolean },
 ): Promise<ActionItemListRow[]> {
-  const rows = await db
+  const query = db
     .select({
       actionItemId: actionItems.id,
       actionItemCode: actionItems.code,
@@ -391,7 +386,8 @@ async function listActionItems(
       options.oldestFirst ? asc(performanceIssues.openedWeek) : desc(performanceIssues.openedWeek),
       employees.name,
     )
-    .limit(options.limit ?? 200);
+    .$dynamic();
+  const rows = await (options.limit === null ? query : query.limit(options.limit ?? 200));
 
   return rows.map((row) => ({
     actionItemId: row.actionItemId,
@@ -731,33 +727,6 @@ export interface MatrixCell {
   /** Null where the figure carries no target, so nothing passes or fails it. */
   status: "pass" | "warning" | "fail" | null;
   sampleSize: number | null;
-}
-
-/**
- * Whether a row on the "Development item" table has stopped needing a
- * supervisor's attention right now: an unbroken pass across the exact most
- * recent `SUSTAINED_PASS_WEEKS` weeks, or nothing recorded against it at
- * all in that same window. The first means it is resolved; the second means
- * it has gone stale, sitting with no new weeks of tracking to show — the
- * KPI grid above this table is the full history regardless and is never
- * filtered by this, only the item list is.
- *
- * Requires the full window to be present before judging either way: fewer
- * weeks than that in the whole plan (too new to judge), or a mix of some
- * weeks with data and some without, both keep the row visible rather than
- * risk hiding something still actually in progress.
- */
-export function isDevelopmentItemStale(
-  weeks: string[],
-  history: Map<string, { result: "pass" | "fail"; consecutiveCountAfter: number }>,
-): boolean {
-  const recentWeeks = weeks.slice(-SUSTAINED_PASS_WEEKS);
-  if (recentWeeks.length < SUSTAINED_PASS_WEEKS) return false;
-
-  const points = recentWeeks.map((week) => history.get(week));
-  const noRecentData = points.every((point) => point === undefined);
-  const passedThroughout = points.every((point) => point?.result === "pass");
-  return noRecentData || passedThroughout;
 }
 
 export interface EmployeeMatrix {

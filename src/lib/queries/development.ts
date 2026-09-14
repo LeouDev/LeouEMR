@@ -45,14 +45,45 @@ export interface DevelopmentBoard {
  * writes one, while an item three weeks into monitoring is already working.
  * A development board that sorted by severity would bury the items that are
  * actually stuck.
+ *
+ * The wording depends on who is reading. A leader's board names what they
+ * owe ("Record root cause"); an agent reading their own plan was shown the
+ * same words, in red, as though the root cause were theirs to write. Their
+ * column says whose move it is instead — and the one step that is theirs,
+ * acknowledging the plan, is put to them directly.
  */
-function assess(items: ActionItemListRow[]): Pick<DevelopmentRow, "nextStep" | "urgency"> {
-  if (items.some((i) => !i.hasRca)) return { nextStep: "Record root cause", urgency: 0 };
-  if (items.some((i) => !i.hasActionPlan)) return { nextStep: "Write action plan", urgency: 1 };
-  if (items.some((i) => i.status === "AWAITING_AGENT_ACKNOWLEDGEMENT")) {
-    return { nextStep: "Awaiting agent acknowledgement", urgency: 2 };
+export function assess(
+  items: ActionItemListRow[],
+  forAgent = false,
+): Pick<DevelopmentRow, "nextStep" | "urgency"> {
+  if (items.some((i) => !i.hasRca)) {
+    return {
+      nextStep: forAgent ? "Your supervisor is recording the root cause" : "Record root cause",
+      urgency: 0,
+    };
   }
-  if (items.some((i) => i.status === "REOPENED")) return { nextStep: "Reopened — revisit plan", urgency: 3 };
+  if (items.some((i) => !i.hasActionPlan)) {
+    return {
+      nextStep: forAgent ? "Your supervisor is writing the action plan" : "Write action plan",
+      urgency: 1,
+    };
+  }
+  if (items.some((i) => i.status === "AWAITING_AGENT_ACKNOWLEDGEMENT")) {
+    return {
+      nextStep: forAgent ? "Acknowledge your plan" : "Awaiting agent acknowledgement",
+      urgency: 2,
+    };
+  }
+  if (items.some((i) => i.status === "REOPENED")) {
+    // A reopened item does not count passing weeks again until the plan has
+    // been sent again and acknowledged — the button alone did not say so.
+    return {
+      nextStep: forAgent
+        ? "Reopened — your supervisor will update the plan"
+        : "Reopened — update the plan and send it to the agent again",
+      urgency: 3,
+    };
+  }
 
   const best = Math.max(...items.map((i) => i.consecutivePassingWeeks));
   if (best >= SUSTAINED_WEEKS - 1) {
@@ -70,7 +101,10 @@ function assess(items: ActionItemListRow[]): Pick<DevelopmentRow, "nextStep" | "
  * open items needs one conversation rather than three.
  */
 export async function getDevelopmentBoard(user: CurrentUser): Promise<DevelopmentBoard> {
-  const items = await getActionItems(user, { openOnly: true, limit: 1000 });
+  // Every open item, uncapped: the totals below are counts of the whole
+  // board, and the page itself decides how many rows to render.
+  const items = await getActionItems(user, { openOnly: true, limit: null });
+  const forAgent = user.role === "agent";
 
   const byEmployee = new Map<string, ActionItemListRow[]>();
   for (const item of items) {
@@ -80,7 +114,7 @@ export async function getDevelopmentBoard(user: CurrentUser): Promise<Developmen
 
   const rows: DevelopmentRow[] = [...byEmployee.entries()]
     .map(([employeeId, list]) => {
-      const { nextStep, urgency } = assess(list);
+      const { nextStep, urgency } = assess(list, forAgent);
       return {
         employeeId,
         employeeName: list[0].employeeName,
