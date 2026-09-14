@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canReview, changedSinceReview, errorWindow, monthEndOf, monthStartOf, reviewOpensOn } from "./review";
+import { canReview, changedSinceReview, errorWindow, monthEndOf, monthStartOf, reviewOpensOn, todayInManila } from "./review";
 
 describe("the review lock", () => {
   it("opens ten days after the month ends", () => {
@@ -36,5 +36,12 @@ describe("changedSinceReview", () => {
     expect(changedSinceReview(4.12, 4.13)).toBe(true);
     expect(changedSinceReview(4.12, null)).toBe(true);
     expect(changedSinceReview(null, null)).toBe(false);
+  });
+});
+
+describe("todayInManila", () => {
+  it("is already the next day in Manila while UTC is still on the evening before", () => {
+    expect(todayInManila(new Date("2026-10-09T17:30:00Z"))).toBe("2026-10-10");
+    expect(todayInManila(new Date("2026-10-09T15:59:00Z"))).toBe("2026-10-09");
   });
 });

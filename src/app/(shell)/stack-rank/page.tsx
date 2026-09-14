@@ -8,6 +8,7 @@ import { periodContaining, periodsBetween } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getStackRanks } from "@/lib/queries/stack-rank";
 import { MINIMUM_SCORE } from "@/lib/scorecard/engine";
+import { todayInManila } from "@/lib/scorecard/review";
 import { NavLink } from "@/components/nav-link";
 import { abridge, RankTable, SupervisorRankTable } from "./rank-table";
 
@@ -52,7 +53,7 @@ export default async function StackRankPage({
   // shared period cookie (see period-picker.tsx) is honoured when it names a
   // month; an explicit URL param still wins.
   const granularity = "month" as const;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayInManila();
   const periods = range ? periodsBetween(granularity, range.first, today > range.last ? today : range.last) : [];
   const period =
     periods.find((p) => p.start === params.period) ??

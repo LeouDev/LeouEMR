@@ -375,7 +375,10 @@ function readMonthlySheet(
   let noFigure = 0;
 
   for (const row of rows) {
-    const eid = toText(cols.eid ? row[cols.eid] : undefined);
+    // Padded to nine digits: this sheet is typed by hand, and Excel keeps
+    // an all-digit cell as a number, so 1919795 has to reach the stored
+    // 001919795 rather than create a second person.
+    const eid = normalizeEid(cols.eid ? row[cols.eid] : undefined);
     if (!eid) {
       missingEid += 1;
       continue;

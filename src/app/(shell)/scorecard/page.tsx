@@ -11,17 +11,13 @@ import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorOfRe
 import { periodsBetween, type Period } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
 import { getScorecardFor } from "@/lib/scorecard/load";
-import { canReview, monthStartOf, reviewOpensOn } from "@/lib/scorecard/review";
+import { canReview, monthStartOf, reviewOpensOn, todayInManila } from "@/lib/scorecard/review";
 import { signedAt } from "@/lib/scorecard/signature";
 import { PrintButton } from "@/app/(shell)/records/[actionItemId]/print-button";
 import { ScorecardPickers } from "./pickers";
 import { ScorecardTable } from "./scorecard-table";
 import { SignatureImage } from "./signature-image";
 import { AcknowledgeButton, ReviewButton } from "./stamps";
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function longDate(value: Date | string): string {
   const d = typeof value === "string" ? new Date(`${value}T00:00:00Z`) : value;
@@ -78,7 +74,7 @@ export default async function ScorecardPage({
 
   const isAgent = user.role === "agent";
   const [params, range] = await Promise.all([searchParams, getFactDateRange()]);
-  const today = todayIso();
+  const today = todayInManila();
 
   // Every month from the first fact to today, newest first: the current
   // month is on the list as a running month-to-date card even before its

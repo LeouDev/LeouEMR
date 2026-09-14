@@ -717,6 +717,18 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard audit follow-ups (main, 14 Sep).** A read-through after the
+  scorecard went live found two small things. "Today" for the review
+  lock, the "running month to date" label and the month lists (Scorecard
+  and Stack Rank) was the server's UTC date, which would open a month's
+  review at 8 AM Manila on the tenth and keep a new month off the list
+  until 8 AM on the first; `todayInManila()` in `review.ts` (tested) is
+  the calendar now. And the Monthly sheet read the agent EID as typed
+  (`toText`, like the weekly sheets): a hand-typed sheet with an
+  all-digit cell would carry 1919795 and create a second person instead
+  of reaching 001919795, so `readMonthlySheet` pads it with
+  `normalizeEid` (tested with a numeric cell). The weekly sheets are
+  unchanged: the workbook keeps their EIDs as text.
 - **Scorecard table hides its dash rows (feature branch, 14 Sep).**
   Asked for: a row with nothing to show — `no-weight` (no hours on that
   side: Phone Quality and NPS for a pure ancillary agent) or `no-data`

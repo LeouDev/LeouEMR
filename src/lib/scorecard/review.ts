@@ -7,6 +7,16 @@
 /** Days after the month ends before its scorecard can be reviewed — time for the month's data to land. */
 export const REVIEW_GRACE_DAYS = 10;
 
+/**
+ * Today's date where the team works. The review lock and "which month is
+ * current" are calendar questions for people in Manila; the server's UTC
+ * clock would open a month's review eight hours late and keep the new
+ * month off the list until 8 AM on the first.
+ */
+export function todayInManila(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: "Asia/Manila" });
+}
+
 function utc(date: string): Date {
   return new Date(`${date}T00:00:00Z`);
 }

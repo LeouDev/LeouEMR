@@ -9,7 +9,7 @@ import { auditLog, employees, notifications, scorecardReviews, users } from "@/l
 import { reportingScopeIds } from "@/lib/queries/org-history";
 import { periodContaining } from "@/lib/queries/period";
 import { computeScorecards } from "@/lib/scorecard/load";
-import { canReview, reviewOpensOn } from "@/lib/scorecard/review";
+import { canReview, reviewOpensOn, todayInManila } from "@/lib/scorecard/review";
 import { signatureSchema } from "@/lib/scorecard/signature";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
@@ -23,10 +23,6 @@ const monthSchema = z.string().regex(/^\d{4}-\d{2}-01$/, "Pick the month");
 // Every stamp carries a drawn signature; the schema refuses an empty pad.
 const reviewSchema = z.object({ employeeId: z.string().uuid(), month: monthSchema, signature: signatureSchema });
 const acknowledgeSchema = z.object({ month: monthSchema, signature: signatureSchema });
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 function opensOnLabel(monthStart: string): string {
   return new Date(`${reviewOpensOn(monthStart)}T00:00:00Z`).toLocaleDateString("en-US", {
@@ -51,7 +47,7 @@ export async function reviewScorecard(input: unknown): Promise<ActionResult> {
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid request" };
   const { employeeId, month, signature } = parsed.data;
 
-  if (!canReview(month, todayIso())) {
+  if (!canReview(month, todayInManila())) {
     return {
       ok: false,
       error: `The ${periodContaining("month", month).label} scorecard opens for review on ${opensOnLabel(month)}`,

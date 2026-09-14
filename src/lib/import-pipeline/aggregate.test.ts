@@ -738,34 +738,35 @@ describe("the Monthly sheet", () => {
   it("reads one row per employee per month with a column per metric", () => {
     const result = aggregateWorkbook({
       Monthly: [
-        { EID: "1", "Employee Name": "A", "Current Sup EID": "9", Month: "2026-09", IRE: 0, PKT: 95, "LH Utilization": 82.38 },
-        { EID: "2", "Employee Name": "B", Month: "September 2026", IRE: 2, PKT: 0.9, "LH Utilization": 0.7 },
+        { EID: "001919795", "Employee Name": "A", "Current Sup EID": "9", Month: "2026-09", IRE: 0, PKT: 95, "LH Utilization": 82.38 },
+        // A numeric cell, as Excel keeps an all-digit EID: padded back to the stored form.
+        { EID: 1919796, "Employee Name": "B", Month: "September 2026", IRE: 2, PKT: 0.9, "LH Utilization": 0.7 },
       ],
     });
     expect(result.monthlyMetrics).toEqual([
-      { eid: "1", month: "2026-09-01", metric: "IRE", value: 0 },
-      { eid: "1", month: "2026-09-01", metric: "PKT", value: 95 },
-      { eid: "1", month: "2026-09-01", metric: "LH_UTILIZATION", value: 82.38 },
-      { eid: "2", month: "2026-09-01", metric: "IRE", value: 2 },
-      { eid: "2", month: "2026-09-01", metric: "PKT", value: 90 },
-      { eid: "2", month: "2026-09-01", metric: "LH_UTILIZATION", value: 70 },
+      { eid: "001919795", month: "2026-09-01", metric: "IRE", value: 0 },
+      { eid: "001919795", month: "2026-09-01", metric: "PKT", value: 95 },
+      { eid: "001919795", month: "2026-09-01", metric: "LH_UTILIZATION", value: 82.38 },
+      { eid: "001919796", month: "2026-09-01", metric: "IRE", value: 2 },
+      { eid: "001919796", month: "2026-09-01", metric: "PKT", value: 90 },
+      { eid: "001919796", month: "2026-09-01", metric: "LH_UTILIZATION", value: 70 },
     ]);
     expect(result.sheets).toContainEqual({ sheet: "Monthly", rowsRead: 2, rowsUsed: 2, rowsSkipped: 0 });
     expect(result.unrecognizedSheets).toEqual([]);
-    expect(result.employees.map((e) => e.eid)).toEqual(["1", "2"]);
+    expect(result.employees.map((e) => e.eid)).toEqual(["001919795", "001919796"]);
   });
 
   it("reads the long shape too — one row per metric", () => {
     const result = aggregateWorkbook({
       "Monthly Metrics": [
-        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "IRE", Value: 1 },
-        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "LH Utilisation", Value: 71.42 },
-        { EID: "1", "Employee Name": "A", Month: "09/2026", Metric: "Attendance", Value: 100 },
+        { EID: "001919795", "Employee Name": "A", Month: "09/2026", Metric: "IRE", Value: 1 },
+        { EID: "001919795", "Employee Name": "A", Month: "09/2026", Metric: "LH Utilisation", Value: 71.42 },
+        { EID: "001919795", "Employee Name": "A", Month: "09/2026", Metric: "Attendance", Value: 100 },
       ],
     });
     expect(result.monthlyMetrics).toEqual([
-      { eid: "1", month: "2026-09-01", metric: "IRE", value: 1 },
-      { eid: "1", month: "2026-09-01", metric: "LH_UTILIZATION", value: 71.42 },
+      { eid: "001919795", month: "2026-09-01", metric: "IRE", value: 1 },
+      { eid: "001919795", month: "2026-09-01", metric: "LH_UTILIZATION", value: 71.42 },
     ]);
     expect(result.issues).toContainEqual(
       expect.objectContaining({ sheet: "Monthly Metrics", message: expect.stringContaining("no IRE, PKT or LH"), count: 1 }),
@@ -779,7 +780,7 @@ describe("the Monthly sheet", () => {
     expect(weekly.monthlyMetrics).toEqual([]);
     expect(weekly.issues.map((i) => i.sheet)).not.toContain("monthly");
 
-    const monthlyOnly = aggregateWorkbook({ Monthly: [{ EID: "1", Month: "2026-09", IRE: 0 }] });
+    const monthlyOnly = aggregateWorkbook({ Monthly: [{ EID: "001919795", Month: "2026-09", IRE: 0 }] });
     expect(monthlyOnly.weeks).toEqual([]);
   });
 
@@ -787,8 +788,8 @@ describe("the Monthly sheet", () => {
     const result = aggregateWorkbook({
       Monthly: [
         { EID: "", Month: "2026-09", IRE: 0 },
-        { EID: "1", Month: "Q3", IRE: 0 },
-        { EID: "1", Month: "2026-09", Notes: "x" },
+        { EID: "001919795", Month: "Q3", IRE: 0 },
+        { EID: "001919795", Month: "2026-09", Notes: "x" },
       ],
     });
     expect(result.monthlyMetrics).toEqual([]);
