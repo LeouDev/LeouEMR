@@ -717,6 +717,13 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard build fix (main, 14 Sep).** The first merge of the
+  scorecard failed the Vercel build and CI: `scorecard/actions.ts` is a
+  `"use server"` module and exported two string constants, which Next
+  rejects ("only async functions may be exported"). Typecheck, lint and
+  vitest all pass on such a file, so `npm run build` is the check that
+  catches it — run it before merging anything that adds a server-action
+  module. The constants are now module-private.
 - **Scorecard, step 5: the stack rank ranks on it (feature branch,
   14 Sep).** `getStackRanks` now scores the roster with
   `computeScorecards(ids, monthStartOf(period.start))` alongside the

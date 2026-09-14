@@ -13,8 +13,9 @@ import { canReview, reviewOpensOn } from "@/lib/scorecard/review";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
-export const NOT_A_TEAM_LEADER = "Only the team leader reviews a scorecard";
-export const NOT_AN_AGENT = "Only the agent named on a scorecard acknowledges it";
+// Module-private: a "use server" file may export only async functions.
+const NOT_A_TEAM_LEADER = "Only the team leader reviews a scorecard";
+const NOT_AN_AGENT = "Only the agent named on a scorecard acknowledges it";
 
 const monthSchema = z.string().regex(/^\d{4}-\d{2}-01$/, "Pick the month");
 
