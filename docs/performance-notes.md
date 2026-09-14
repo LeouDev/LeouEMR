@@ -717,6 +717,23 @@ from every environment this project gets worked on in.
   a skill KPI is found the same way. `isDevelopmentItemStale` in
   `performance.ts` is no longer used by the UI (its tests still pin it);
   remove both when convenient.
+- **Scorecard, step 3: the engine (feature branch, 14 Sep).**
+  `src/lib/scorecard/engine.ts` (`computeScorecard`, pure, pinned by
+  `engine.test.ts` against the business's own August 2026 card: 4.12)
+  and `bands.ts` (the fixed rate tables, `rateOn`, pinned boundary by
+  boundary). Weights: Productivity 20, Quality 20 split Ancillary/Phone
+  by the month's hour share, Errors 20 split Critical (ancillary) / NPS
+  (phone) the same way, Standard Error 10, IRE 10, PKT 10, Attendance 5,
+  LH Utilization 5; `MINIMUM_SCORE` 3. Productivity is the PAR rating
+  (each skill on its own R1-R5 curve via `computeSkillRating`, weighted
+  by hours; `skillBandLabels` prints the sheet's "127.27%-Higher"
+  columns). Phone = `skillGroupOf`: metric `aht` or lower-is-better;
+  everything else ancillary. Row statuses: `scored`, `defaulted` (IRE 0,
+  PKT 100, LH 100 stand in until the Monthly sheet arrives —
+  `MONTHLY_DEFAULTS`), `no-weight` (zero hour share: a dash, not a gap),
+  `no-data` (weight but nothing measured: dropped, the final score read
+  over `weightScored`, `rescaled` true). Critical and Standard Errors
+  are six-month counts (the loader's job); a count of 7 rates 1.
 - **Scorecard, steps 1-2: the import learns its inputs (feature branch,
   14 Sep).** First slice of the monthly OptumRx scorecard (see the
   scorecard bullets that follow for the engine and pages). Migration
