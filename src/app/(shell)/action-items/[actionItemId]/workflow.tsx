@@ -174,41 +174,59 @@ export function RcaForm({
   );
 }
 
+/** The two flags a trainer or SME owns on a plan: whether coaching and training are required. */
+function SupportFlags({
+  values,
+  onChange,
+}: {
+  values: Pick<PlanValues, "coachingRequired" | "trainingRequired">;
+  onChange: (next: Pick<PlanValues, "coachingRequired" | "trainingRequired">) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-6">
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={values.coachingRequired}
+          onChange={(e) => onChange({ ...values, coachingRequired: e.target.checked })}
+          className="h-4 w-4 border-2 border-ink"
+        />
+        Coaching required
+      </label>
+      <label className="flex items-center gap-2 text-sm text-ink">
+        <input
+          type="checkbox"
+          checked={values.trainingRequired}
+          onChange={(e) => onChange({ ...values, trainingRequired: e.target.checked })}
+          className="h-4 w-4 border-2 border-ink"
+        />
+        Training required
+      </label>
+    </div>
+  );
+}
+
 export function ActionPlanForm({
   actionItemId,
   initial,
   readOnly,
+  flagsOnly = false,
 }: {
   actionItemId: string;
   initial: PlanValues;
   readOnly: boolean;
+  /**
+   * A support role on a plan someone else wrote: the plan reads as a
+   * record, and only the coaching and training flags can be saved. The
+   * server applies just those two whatever else is submitted.
+   */
+  flagsOnly?: boolean;
 }) {
   const router = useRouter();
   const [values, setValues] = useState(initial);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  if (readOnly) {
-    return (
-      <dl className="space-y-3 px-6 py-5 text-sm">
-        <Readonly term="Corrective action" value={values.correctiveAction} />
-        <Readonly term="Expected behavior" value={values.expectedBehavior} />
-        <Readonly term="Target" value={`${values.targetMetric} → ${values.targetValue}`} />
-        <Readonly term="Due date" value={values.dueDate} />
-        <Readonly term="Follow-up date" value={values.followUpDate} />
-        <Readonly
-          term="Support"
-          value={
-            [values.coachingRequired && "Coaching", values.trainingRequired && "Training"]
-              .filter(Boolean)
-              .join(", ") || "None"
-          }
-        />
-        <Readonly term="Supervisor notes" value={values.supervisorNotes} />
-      </dl>
-    );
-  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -238,11 +256,50 @@ export function ActionPlanForm({
     }
 
     if (result.ok) {
-      setSaved("Action plan saved");
+      setSaved(flagsOnly ? "Training and coaching saved" : "Action plan saved");
       router.refresh();
     } else {
       setError(result.error);
     }
+  }
+
+  if (readOnly || flagsOnly) {
+    return (
+      <div>
+        <dl className="space-y-3 px-6 py-5 text-sm">
+          <Readonly term="Corrective action" value={values.correctiveAction} />
+          <Readonly term="Expected behavior" value={values.expectedBehavior} />
+          <Readonly term="Target" value={`${values.targetMetric} → ${values.targetValue}`} />
+          <Readonly term="Due date" value={values.dueDate} />
+          <Readonly term="Follow-up date" value={values.followUpDate} />
+          {!flagsOnly && (
+            <Readonly
+              term="Support"
+              value={
+                [values.coachingRequired && "Coaching", values.trainingRequired && "Training"]
+                  .filter(Boolean)
+                  .join(", ") || "None"
+              }
+            />
+          )}
+          <Readonly term="Supervisor notes" value={values.supervisorNotes} />
+        </dl>
+        {flagsOnly && (
+          <form onSubmit={submit} className="space-y-4 border-t-2 border-line px-6 py-5">
+            <p className="text-xs text-muted">
+              Whether training or coaching is required is yours to change; the rest of the plan
+              stays as its author wrote it.
+            </p>
+            <SupportFlags values={values} onChange={(next) => setValues({ ...values, ...next })} />
+            <Feedback message={error} tone="error" />
+            <Feedback message={saved} tone="ok" />
+            <button type="submit" disabled={saving} className="btn-secondary px-5 py-3 text-sm">
+              {saving ? "Saving…" : "Save training and coaching"}
+            </button>
+          </form>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -313,26 +370,7 @@ export function ActionPlanForm({
         </label>
       </div>
 
-      <div className="flex flex-wrap gap-6">
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={values.coachingRequired}
-            onChange={(e) => setValues({ ...values, coachingRequired: e.target.checked })}
-            className="h-4 w-4 border-2 border-ink"
-          />
-          Coaching required
-        </label>
-        <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={values.trainingRequired}
-            onChange={(e) => setValues({ ...values, trainingRequired: e.target.checked })}
-            className="h-4 w-4 border-2 border-ink"
-          />
-          Training required
-        </label>
-      </div>
+      <SupportFlags values={values} onChange={(next) => setValues({ ...values, ...next })} />
 
       <label className="block">
         <span className={label}>Supervisor notes</span>
