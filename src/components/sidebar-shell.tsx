@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BrandMark } from "./brand";
 import { SidebarContext } from "./sidebar-context";
 import { SidebarNav, type NavItem } from "./sidebar-nav";
+import { SidebarScene } from "./sidebar-scene";
 
 /** The cookie that remembers a collapsed rail, so the server renders it collapsed and nothing jumps on load. */
 export const SIDEBAR_COOKIE = "sidebar";
@@ -102,7 +103,8 @@ export function SidebarShell({
           drawer ? "translate-x-0" : "-translate-x-full"
         } ${EXPANDED} ${open ? "" : COLLAPSED}`}
       >
-        <div className="flex items-center gap-2.5 border-b-2 border-navy-500 px-4 py-[18px]">
+        {/* Folded, the brand and the toggle stack; the row has no room for both. */}
+        <div className={`flex items-center gap-2.5 border-b-2 border-navy-500 px-4 py-[18px] ${open ? "" : "md:flex-col md:gap-3 md:px-0"}`}>
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5" aria-label="Dashboard">
             <BrandMark className="h-8 w-8 shrink-0" id="sidebar" />
             <span className={`min-w-0 whitespace-nowrap ${label}`}>
@@ -110,6 +112,16 @@ export function SidebarShell({
               <span className="block text-[9px] font-semibold tracking-[0.1em] text-cream/50 uppercase">Command Center</span>
             </span>
           </Link>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={open ? "Collapse navigation" : "Expand navigation"}
+            aria-expanded={open}
+            title={open ? "Collapse" : "Expand"}
+            className={`hidden h-7 w-7 items-center justify-center text-cream/60 transition hover:text-orange-brand md:inline-flex ${open ? "ml-auto" : ""}`}
+          >
+            <PanelIcon />
+          </button>
           <button
             type="button"
             onClick={closeDrawer}
@@ -120,9 +132,15 @@ export function SidebarShell({
           </button>
         </div>
 
-        <nav className={`flex flex-1 flex-col gap-0.5 py-2.5 ${open ? "px-3" : "px-3 md:px-1.5"}`}>
+        <nav className={`flex flex-col gap-0.5 py-2.5 ${open ? "px-3" : "px-3 md:px-1.5"}`}>
           <SidebarNav items={items} />
         </nav>
+
+        {/* The spare height, whatever the viewport leaves: the scene scales
+            to fit and gives way entirely on a short screen. Not while folded. */}
+        <div aria-hidden="true" className={`min-h-0 flex-1 overflow-hidden px-3 py-2 ${label}`}>
+          <SidebarScene />
+        </div>
 
         <div className="flex flex-col gap-2.5 border-t-2 border-navy-500 px-3 py-3.5">
           {profile}
@@ -163,5 +181,15 @@ export function SidebarShell({
         </div>
       </aside>
     </SidebarContext.Provider>
+  );
+}
+
+/** The "side panel" glyph: a frame with a narrow left pane. */
+function PanelIcon() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <rect x={3} y={5} width={18} height={14} />
+      <path d="M9 5v14" />
+    </svg>
   );
 }

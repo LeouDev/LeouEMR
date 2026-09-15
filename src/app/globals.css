@@ -303,6 +303,15 @@ img:not([data-keep-color]) {
   78%, 90% { transform: translateX(690px); }
   100% { transform: translateX(760px); }
 }
+/* The sidebar's re-hosting of the scene: the same stops, down the rail
+   instead of across the header (planet spacing 100 in the scene's viewBox). */
+@keyframes sb-travel {
+  0%, 6% { transform: translateY(0); }
+  22%, 34% { transform: translateY(100px); }
+  50%, 62% { transform: translateY(200px); }
+  78%, 90% { transform: translateY(300px); }
+  100% { transform: translateY(330px); }
+}
 @keyframes hdr-jab {
   0%, 4% { transform: translateY(0); }
   8% { transform: translateY(5px); }
