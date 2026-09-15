@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
+import { describeDbError } from "@/lib/db/query-error";
 import { importBatches } from "@/lib/db/schema";
 import { commitImport } from "@/lib/import-pipeline/commit";
 import { parseWorkbookBuffer } from "@/lib/import-pipeline/parse-workbook";
@@ -224,9 +225,9 @@ export async function runImport(storagePath: string, fileName: string): Promise<
   } catch (error) {
     await db
       .update(importBatches)
-      .set({ status: "failed", validationSummary: { error: (error as Error).message } })
+      .set({ status: "failed", validationSummary: { error: describeDbError(error) } })
       .where(eq(importBatches.id, batch.id));
-    return { ok: false, error: `Import failed: ${(error as Error).message}` };
+    return { ok: false, error: `Import failed: ${describeDbError(error)}` };
   } finally {
     // Best-effort: an orphaned upload just sits in storage, it doesn't corrupt anything.
     // Nothing here may throw — a throw out of `finally` replaces the return

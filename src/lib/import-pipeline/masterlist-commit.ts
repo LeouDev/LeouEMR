@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lte, ne, or } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { auditLog, employeeAssignments, employees } from "@/lib/db/schema";
 import { closeIssuesOnSeparationFor } from "@/lib/action-item-engine/persistence";
@@ -197,6 +197,13 @@ export interface MasterlistCommitSummary {
   issuesClosed: number;
   /** People the roster lists again after an earlier month had closed them. */
   reactivated: number;
+  /**
+   * Attrited people who still hold an assignment starting inside or after
+   * this month — the weekly data says they are working, the masterlist does
+   * not list them. Their later interval is left as it stands for an
+   * administrator to settle.
+   */
+  contestedAttrition: Array<{ eid: string; name: string }>;
 }
 
 /**
@@ -240,6 +247,7 @@ export async function commitMasterlist(
 
   let issuesClosed = 0;
   let reactivated = 0;
+  let contestedAttrition: string[] = [];
   await db.transaction(async (tx) => {
     if (plan.employeeIdsToReplace.length > 0) {
       await tx.delete(employeeAssignments).where(inArray(employeeAssignments.employeeId, plan.employeeIdsToReplace));
@@ -268,12 +276,41 @@ export async function commitMasterlist(
       }
     }
     if (plan.employeeIdsToClose.length > 0) {
+      // Only an interval that had already started may be closed on
+      // `closedBefore`. Someone counts as active-before through an interval
+      // that covers that day, but the one open interval they are allowed
+      // (the no-overlap constraint permits no more) can be a later one: an
+      // org change effective this month splits their history into a closed
+      // interval ending on `closedBefore` and a new open one starting the
+      // day after. Closing that one here would set effective_to before its
+      // own effective_from, which employee_assignments_dates_ordered
+      // rejects — it failed the whole import rather than any one row.
       await tx
         .update(employeeAssignments)
         .set({ effectiveTo: plan.closedBefore })
         .where(
-          and(isNull(employeeAssignments.effectiveTo), inArray(employeeAssignments.employeeId, plan.employeeIdsToClose)),
+          and(
+            isNull(employeeAssignments.effectiveTo),
+            lte(employeeAssignments.effectiveFrom, plan.closedBefore),
+            inArray(employeeAssignments.employeeId, plan.employeeIdsToClose),
+          ),
         );
+      // What the clause above deliberately leaves alone: an interval that
+      // starts inside or after this month says the weekly data still has
+      // them working while the masterlist does not list them. That is a
+      // conflict, not a clean separation, so it is reported rather than
+      // resolved by guesswork in either direction.
+      const contested = await tx
+        .select({ employeeId: employeeAssignments.employeeId })
+        .from(employeeAssignments)
+        .where(
+          and(
+            isNull(employeeAssignments.effectiveTo),
+            gt(employeeAssignments.effectiveFrom, plan.closedBefore),
+            inArray(employeeAssignments.employeeId, plan.employeeIdsToClose),
+          ),
+        );
+      contestedAttrition = [...new Set(contested.map((row) => row.employeeId))];
       const gone = await tx
         .update(employees)
         .set({ status: "separated", updatedAt: new Date() })
@@ -305,11 +342,16 @@ export async function commitMasterlist(
     await syncEmployeeSnapshots(tx, plan.employeeIdsToReplace);
   });
 
+  const byId = new Map(activeBefore.map((e) => [e.id, e]));
   return {
     agentsWritten: plan.agentsWritten,
     unknownEids: plan.unknownEids,
     attritedClosed: plan.attritedClosed,
     issuesClosed,
     reactivated,
+    contestedAttrition: contestedAttrition
+      .map((id) => byId.get(id))
+      .filter((e) => e !== undefined)
+      .map((e) => ({ eid: e.eid, name: e.name })),
   };
 }

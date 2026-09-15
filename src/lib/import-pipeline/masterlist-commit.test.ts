@@ -166,3 +166,52 @@ describe("planMasterlistCommit", () => {
     expect(plan.values.every((v) => v.sourceImportId === IMPORT_BATCH_ID)).toBe(true);
   });
 });
+
+describe("the day attrition closes on", () => {
+  /**
+   * The rule behind commitMasterlist's close clause. An agent counts as
+   * active-before through whichever interval covers `closedBefore`, and
+   * that need not be the one open interval they are allowed — an org change
+   * effective this month leaves the covering interval closed and opens a
+   * new one on monthStart. Closing that one on `closedBefore` would put
+   * effective_to before its own effective_from, which the database's
+   * employee_assignments_dates_ordered check rejects, failing the whole
+   * import. So the close is restricted to intervals that had already
+   * started, and a later one is reported instead.
+   */
+  it("always falls before the month, so an interval starting in it can never be closed on it", () => {
+    const plan = planMasterlistCommit(
+      [row({ agentEid: "001895123" })],
+      MONTH_START,
+      MONTH_END,
+      [{ id: "emp-1", eid: "001895123" }],
+      [],
+      [{ id: "emp-2", eid: "001999999", name: "Gone, Agent" }],
+      IMPORT_BATCH_ID,
+    );
+
+    expect(plan.closedBefore).toBe("2026-07-31");
+    expect(plan.closedBefore < MONTH_START).toBe(true);
+    expect(plan.employeeIdsToClose).toEqual(["emp-2"]);
+  });
+
+  it("closes everyone the file leaves out, which is the whole roster when it matches nobody", () => {
+    const plan = planMasterlistCommit(
+      [row({ agentEid: "000000001" })],
+      MONTH_START,
+      MONTH_END,
+      [],
+      [],
+      [
+        { id: "emp-1", eid: "001895123", name: "One, Agent" },
+        { id: "emp-2", eid: "001895124", name: "Two, Agent" },
+      ],
+      IMPORT_BATCH_ID,
+    );
+
+    // Why runMasterlistImport refuses a file matching nobody before it ever
+    // reaches here: the plan itself is happy to attrite the entire floor.
+    expect(plan.agentsWritten).toBe(0);
+    expect(plan.employeeIdsToClose).toEqual(["emp-1", "emp-2"]);
+  });
+});

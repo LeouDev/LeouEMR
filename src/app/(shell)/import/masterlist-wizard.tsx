@@ -176,7 +176,7 @@ export function MasterlistWizard() {
                 setResult(null);
                 setError(null);
               }}
-              className="block flex-1 text-sm text-ink file:mr-3 file: file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
+              className="block flex-1 text-sm text-ink file:mr-3 file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
             />
           </div>
 
@@ -205,7 +205,7 @@ export function MasterlistWizard() {
               {busy === "uploading" ? "Uploading…" : busy === "analyzing" ? "Analyzing…" : "Analyze"}
             </button>
 
-            {preview && (
+            {preview && preview.matchedCount > 0 && (
               <button
                 type="button"
                 onClick={commit}
@@ -220,6 +220,19 @@ export function MasterlistWizard() {
           </div>
         </div>
       </div>
+
+      {preview && preview.matchedCount === 0 && (
+        <div role="alert" className="border-2 border-fail bg-fail-bg px-6 py-5">
+          <h2 className="text-base font-semibold text-fail">This file cannot be imported</h2>
+          <p className="mt-1 text-sm text-ink">
+            None of its Agent EIDs match anyone on record, so every one of the{" "}
+            {preview.missingEids.length} agents active before {preview.monthLabel} would be marked
+            attrited and their open action items closed. Check this is the filled-in roster rather
+            than the blank template, and that the Agent EID column kept its leading zeros — format
+            that column as Text in Excel.
+          </p>
+        </div>
+      )}
 
       {preview && (
         <div className="overflow-hidden border-2 border-ink bg-surface">
@@ -314,6 +327,14 @@ export function MasterlistWizard() {
                 <li className="text-warn">
                   {result.unknownEids.length} unknown EID{result.unknownEids.length === 1 ? "" : "s"} skipped:{" "}
                   {result.unknownEids.join(", ")}
+                </li>
+              )}
+              {result.contestedAttrition.length > 0 && (
+                <li className="text-warn">
+                  {result.contestedAttrition.length} of them still hold an assignment starting in{" "}
+                  {result.monthLabel} or later, from a weekly file — that later assignment was left as
+                  it stands. Check whether they really left:{" "}
+                  {result.contestedAttrition.map((e) => `${e.eid} ${e.name}`).join(", ")}
                 </li>
               )}
             </ul>
