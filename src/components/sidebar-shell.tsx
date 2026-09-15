@@ -73,7 +73,7 @@ export function SidebarShell({
       <div className="flex items-center justify-between border-b-2 border-orange-brand bg-navy-800 px-4 py-2.5 md:hidden print:hidden">
         <Link href="/dashboard" className="flex items-center gap-2.5">
           <BrandMark className="h-8 w-8" id="bar" />
-          <span className="text-sm font-extrabold tracking-[0.02em] text-cream">LEOU EMR</span>
+          <span className="text-sm font-extrabold tracking-[0.02em] text-cream">EMR</span>
         </Link>
         <button
           type="button"
@@ -108,7 +108,7 @@ export function SidebarShell({
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5" aria-label="Dashboard">
             <BrandMark className="h-8 w-8 shrink-0" id="sidebar" />
             <span className={`min-w-0 whitespace-nowrap ${label}`}>
-              <span className="block text-sm font-extrabold tracking-[0.02em] text-cream">LEOU EMR</span>
+              <span className="block text-sm font-extrabold tracking-[0.02em] text-cream">EMR</span>
               <span className="block text-[9px] font-semibold tracking-[0.1em] text-cream/50 uppercase">Command Center</span>
             </span>
           </Link>
