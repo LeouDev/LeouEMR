@@ -2,6 +2,7 @@
 
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
+import { NavIcon } from "./nav-icons";
 import { useNavigation } from "./navigation-progress";
 import { useSidebarOpen } from "./sidebar-context";
 
@@ -41,11 +42,16 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
             onNavigate={start}
             aria-current={active ? "page" : undefined}
             title={item.label}
-            className={`block overflow-hidden py-[9px] text-xs tracking-[0.03em] text-ellipsis whitespace-nowrap transition ${
-              open ? "px-3.5" : "px-3.5 md:px-2"
+            // Folded, the glyph stands in for the label — centred in the
+            // rail, a touch larger — and the title carries the name.
+            className={`flex items-center gap-2.5 py-[9px] text-xs tracking-[0.03em] whitespace-nowrap transition ${
+              open ? "px-3.5" : "px-3.5 md:justify-center md:px-0"
             } ${active ? "bg-orange-brand font-bold text-navy-800" : "font-semibold text-cream/60 hover:bg-navy-700 hover:text-cream"}`}
           >
-            <NavLabel label={item.label} />
+            <NavIcon href={item.href} className={open ? "h-4 w-4" : "h-4 w-4 md:h-5 md:w-5"} />
+            <span className={open ? "" : "md:hidden"}>
+              <NavLabel label={item.label} />
+            </span>
           </Link>
         );
       })}
