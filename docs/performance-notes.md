@@ -980,6 +980,18 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Folded rail shows icons, not truncated labels (15 Sep, feature
+  branch).** "Da…", "An…", "Act…" told nobody anything. `NavIcon`
+  (`src/components/nav-icons.tsx`) draws one line glyph per destination
+  in the app's stroke style (1.8, square corners, `currentColor`), keyed
+  by href since the label varies by role (Skills reads "My Tools" for a
+  team leader) and the destination does not; 21 glyphs, all distinct, a
+  centred dot as the fallback for any href added without one. The links
+  show icon + label while expanded and, folded, the icon alone — centred,
+  a size up (`md:h-5 md:w-5`), the label in `title` — so the folded rail
+  reads like an activity bar and the expanded one teaches what each glyph
+  means. Checked by a render pass: every href resolves to its own glyph
+  and every folded link is centred.
 - **Sidebar: a toggle at the top and the astronaut back (15 Sep, feature
   branch).** Two asks on seeing the rail live. (1) A second fold toggle
   in the brand row, drawn as the browser's own side-panel glyph
