@@ -980,6 +980,23 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Sidebar: a toggle at the top and the astronaut back (15 Sep, feature
+  branch).** Two asks on seeing the rail live. (1) A second fold toggle
+  in the brand row, drawn as the browser's own side-panel glyph
+  (`PanelIcon`: a frame with a narrow left pane), beside the foot one the
+  design specified; folded, the brand mark and the glyph stack, since a
+  64px row has no room for both. (2) The header's scene comes back in the
+  rail's spare height as `SidebarScene` (`src/components/sidebar-scene.tsx`):
+  the same four planets, `hdr-fill`/`hdr-pulse`/`hdr-jab`/`hdr-hop`
+  keyframes and 14s loop, turned on their side — planets stacked down a
+  200×400 viewBox, the astronaut (the shared `AstronautFigure` plus the
+  syringe arm rotated −90° so the jab's downward nudge becomes a sideways
+  one) walking down beside them on the new `sb-travel` keyframe (the
+  hdr-travel stops, in Y, planet spacing 100). The nav no longer takes the
+  spare height; a `min-h-0 flex-1 overflow-hidden` box does, the SVG
+  scales to fit it (`preserveAspectRatio meet`) and gives way entirely on
+  a short viewport, so the foot never moves. Hidden while folded and,
+  like every inline animation, under reduced motion.
 - **Profile dialog trapped in the sidebar (15 Sep, bug, main).** With
   its trigger moved into the rail, the profile panel's fixed overlay
   opened as a 300px strip clipped inside the sidebar: the rail carries a
