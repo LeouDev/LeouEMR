@@ -980,6 +980,14 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Handoff brief and deploy poller in the repo (15 Sep, main).**
+  `docs/HANDOFF.md` is the read-first brief for a new session: what the
+  app is, the owner's standing rules, the exact git and deploy routine,
+  the verification set, the migration routine, roles, where things live,
+  what was built in September, open items and the gotchas. Keep it
+  current when the routine changes; the per-change history stays here.
+  `scripts/deploy-status.py` is the one-shot deploy/CI check that lived
+  only in a session scratchpad before (full sha required).
 - **Users page: search, editable email, table that fits (15 Sep,
   feature branch).** Three asks from the Users page in use. (1) A search
   box in the filter bar (`?q=`, applied on Enter or blur like the
