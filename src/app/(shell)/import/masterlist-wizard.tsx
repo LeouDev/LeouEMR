@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { describeActionError } from "@/lib/ui/action-error";
 import { createUploadTicket } from "./actions";
 import {
   previewMasterlist,
@@ -56,7 +57,12 @@ export function MasterlistWizard() {
 
       return { path: ticket.path, name: file.name };
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The upload did not go through — the connection dropped or the request timed out. Nothing was imported; try again.",
+        ),
+      );
       return null;
     } finally {
       setBusy(null);
@@ -84,7 +90,12 @@ export function MasterlistWizard() {
       }
     } catch (cause) {
       setPreview(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The analysis did not finish — the connection dropped or the request timed out. Nothing was imported; try Analyze again.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -107,7 +118,15 @@ export function MasterlistWizard() {
         setError(response.error ?? "Import failed");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // Unlike the weekly import, commitMasterlist does its whole roster
+      // splice and attrition pass in one transaction, so a throw here
+      // really does leave the roster untouched — say so.
+      setError(
+        describeActionError(
+          cause,
+          "The masterlist did not finish — the connection dropped or the request timed out. The roster is written in one transaction, so nothing was half-applied; upload the same file for this month again.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -157,7 +176,7 @@ export function MasterlistWizard() {
                 setResult(null);
                 setError(null);
               }}
-              className="block flex-1 text-sm text-ink file:mr-3 file: file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
+              className="block flex-1 text-sm text-ink file:mr-3 file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
             />
           </div>
 
@@ -186,7 +205,7 @@ export function MasterlistWizard() {
               {busy === "uploading" ? "Uploading…" : busy === "analyzing" ? "Analyzing…" : "Analyze"}
             </button>
 
-            {preview && (
+            {preview && preview.matchedCount > 0 && (
               <button
                 type="button"
                 onClick={commit}
@@ -201,6 +220,19 @@ export function MasterlistWizard() {
           </div>
         </div>
       </div>
+
+      {preview && preview.matchedCount === 0 && (
+        <div role="alert" className="border-2 border-fail bg-fail-bg px-6 py-5">
+          <h2 className="text-base font-semibold text-fail">This file cannot be imported</h2>
+          <p className="mt-1 text-sm text-ink">
+            None of its Agent EIDs match anyone on record, so every one of the{" "}
+            {preview.missingEids.length} agents active before {preview.monthLabel} would be marked
+            attrited and their open action items closed. Check this is the filled-in roster rather
+            than the blank template, and that the Agent EID column kept its leading zeros — format
+            that column as Text in Excel.
+          </p>
+        </div>
+      )}
 
       {preview && (
         <div className="overflow-hidden border-2 border-ink bg-surface">
@@ -295,6 +327,14 @@ export function MasterlistWizard() {
                 <li className="text-warn">
                   {result.unknownEids.length} unknown EID{result.unknownEids.length === 1 ? "" : "s"} skipped:{" "}
                   {result.unknownEids.join(", ")}
+                </li>
+              )}
+              {result.contestedAttrition.length > 0 && (
+                <li className="text-warn">
+                  {result.contestedAttrition.length} of them still hold an assignment starting in{" "}
+                  {result.monthLabel} or later, from a weekly file — that later assignment was left as
+                  it stands. Check whether they really left:{" "}
+                  {result.contestedAttrition.map((e) => `${e.eid} ${e.name}`).join(", ")}
                 </li>
               )}
             </ul>

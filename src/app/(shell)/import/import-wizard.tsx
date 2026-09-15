@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { describeActionError } from "@/lib/ui/action-error";
 import { createUploadTicket, previewImport, runImport, type CommitResponse, type PreviewResult } from "./actions";
 
 export function ImportWizard() {
@@ -49,7 +50,12 @@ export function ImportWizard() {
       // A dropped connection or an unhandled server error throws rather
       // than returning — without this the UI would sit on "Uploading…"
       // forever with no explanation.
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The upload did not go through — the connection dropped or the request timed out. Nothing was imported; try again.",
+        ),
+      );
       return null;
     } finally {
       setBusy(null);
@@ -77,7 +83,12 @@ export function ImportWizard() {
       }
     } catch (cause) {
       setPreview(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The analysis did not finish — the connection dropped or the request timed out. Nothing was imported; try Analyze again.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -100,7 +111,16 @@ export function ImportWizard() {
         setError(response.error ?? "Import failed");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // Unlike every other action in the app, a throw here is not proof that
+      // nothing was written: commitImport writes in chunks rather than one
+      // transaction, so the platform time limit can cut it off part-way.
+      // Say so, rather than the default "Nothing was changed".
+      setError(
+        describeActionError(
+          cause,
+          "The import may not have finished — the connection dropped or the function hit its time limit. Some weeks may already be written. Check Recent imports below, then re-import the same file: a week that was already written is replaced, not duplicated.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -131,7 +151,7 @@ export function ImportWizard() {
               setResult(null);
               setError(null);
             }}
-            className="block w-full text-sm text-ink file:mr-3 file: file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
+            className="block w-full text-sm text-ink file:mr-3 file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
           />
 
           {fileName && <p className="text-sm text-muted">Selected: {fileName}</p>}

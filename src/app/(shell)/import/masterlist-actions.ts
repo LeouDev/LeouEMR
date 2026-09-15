@@ -1,10 +1,11 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db/client";
+import { describeDbError } from "@/lib/db/query-error";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
-import { importBatches } from "@/lib/db/schema";
+import { employees, importBatches } from "@/lib/db/schema";
 import { commitMasterlist, diffMasterlist, resolveMasterlistMonth } from "@/lib/import-pipeline/masterlist-commit";
 import { parseMasterlistBuffer, type MasterlistParseResult } from "@/lib/import-pipeline/masterlist";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -66,6 +67,14 @@ export async function previewMasterlist(
   };
 }
 
+/** How many of these EIDs belong to someone on record. */
+async function countKnownEids(eids: string[]): Promise<number> {
+  const unique = [...new Set(eids)];
+  if (unique.length === 0) return 0;
+  const known = await db.select({ eid: employees.eid }).from(employees).where(inArray(employees.eid, unique));
+  return known.length;
+}
+
 export interface MasterlistCommitResponse {
   ok: boolean;
   error?: string;
@@ -76,6 +85,7 @@ export interface MasterlistCommitResponse {
     attritedClosed: Array<{ eid: string; name: string }>;
     issuesClosed: number;
     reactivated: number;
+    contestedAttrition: Array<{ eid: string; name: string }>;
   };
 }
 
@@ -96,6 +106,23 @@ export async function runMasterlistImport(
 
   if (parsed.rows.length === 0) {
     return { ok: false, error: "No usable rows found in this masterlist" };
+  }
+
+  // A roster that matches nobody on record is never a real roster — it is
+  // the blank template with its example row, or a file whose EID column did
+  // not survive Excel. Committing one is not a small mistake: every agent
+  // active last month counts as missing from it, so the attrition pass
+  // would mark the whole floor separated and close their open action items.
+  // Refuse it here rather than rely on the preview being read.
+  const matched = await countKnownEids(parsed.rows.map((r) => r.agentEid));
+  if (matched === 0) {
+    return {
+      ok: false,
+      error:
+        "None of the Agent EIDs in this file match anyone on record, so importing it would mark every agent " +
+        "attrited. Check that it is the filled-in roster rather than the blank template, and that the Agent EID " +
+        "column kept its leading zeros — format that column as Text in Excel.",
+    };
   }
 
   const { start, end, label } = resolveMasterlistMonth(monthStart);
@@ -130,11 +157,17 @@ export async function runMasterlistImport(
   } catch (error) {
     await db
       .update(importBatches)
-      .set({ status: "failed", validationSummary: { error: (error as Error).message } })
+      .set({ status: "failed", validationSummary: { error: describeDbError(error) } })
       .where(eq(importBatches.id, batch.id));
-    return { ok: false, error: `Import failed: ${(error as Error).message}` };
+    return { ok: false, error: `Import failed: ${describeDbError(error)}` };
   } finally {
-    const admin = createSupabaseAdminClient();
-    await admin.storage.from(BUCKET).remove([storagePath]).catch(() => {});
+    // Best-effort, exactly as in actions.ts: nothing here may throw, because
+    // a throw out of `finally` replaces the return above and would report a
+    // completed import as a failure.
+    try {
+      await createSupabaseAdminClient().storage.from(BUCKET).remove([storagePath]);
+    } catch {
+      // leave it in the bucket
+    }
   }
 }

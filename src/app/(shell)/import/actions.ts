@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
+import { describeDbError } from "@/lib/db/query-error";
 import { importBatches } from "@/lib/db/schema";
 import { commitImport } from "@/lib/import-pipeline/commit";
 import { parseWorkbookBuffer } from "@/lib/import-pipeline/parse-workbook";
@@ -73,8 +74,13 @@ export async function createUploadTicket(fileName: string, fileSize: number): Pr
     return { ok: false, error: `Unsupported file type — use ${ALLOWED.join(", ")}` };
   }
 
-  const admin = createSupabaseAdminClient();
+  // Constructing the client is part of the guarded work: an unset
+  // SUPABASE_SERVICE_ROLE_KEY throws here, and a server action that throws
+  // reaches the browser in production as an opaque "unexpected response"
+  // rather than as something an administrator can act on.
+  let admin: ReturnType<typeof createSupabaseAdminClient>;
   try {
+    admin = createSupabaseAdminClient();
     await ensureBucket(admin);
   } catch (error) {
     return { ok: false, error: `Could not prepare storage: ${(error as Error).message}` };
@@ -118,7 +124,13 @@ export async function downloadUpload(storagePath: string): Promise<DownloadedUpl
   const auth = await requireAdmin();
   if (!auth.ok) return auth;
 
-  const admin = createSupabaseAdminClient();
+  let admin: ReturnType<typeof createSupabaseAdminClient>;
+  try {
+    admin = createSupabaseAdminClient();
+  } catch (error) {
+    return { ok: false, error: (error as Error).message };
+  }
+
   const { data, error } = await admin.storage.from(BUCKET).download(storagePath);
   if (error || !data) {
     return { ok: false, error: `Could not read the uploaded file: ${error?.message ?? "not found"}` };
@@ -213,12 +225,17 @@ export async function runImport(storagePath: string, fileName: string): Promise<
   } catch (error) {
     await db
       .update(importBatches)
-      .set({ status: "failed", validationSummary: { error: (error as Error).message } })
+      .set({ status: "failed", validationSummary: { error: describeDbError(error) } })
       .where(eq(importBatches.id, batch.id));
-    return { ok: false, error: `Import failed: ${(error as Error).message}` };
+    return { ok: false, error: `Import failed: ${describeDbError(error)}` };
   } finally {
     // Best-effort: an orphaned upload just sits in storage, it doesn't corrupt anything.
-    const admin = createSupabaseAdminClient();
-    await admin.storage.from(BUCKET).remove([storagePath]).catch(() => {});
+    // Nothing here may throw — a throw out of `finally` replaces the return
+    // above, which would report a completed import as a failure.
+    try {
+      await createSupabaseAdminClient().storage.from(BUCKET).remove([storagePath]);
+    } catch {
+      // leave it in the bucket
+    }
   }
 }
