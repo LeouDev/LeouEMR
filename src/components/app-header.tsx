@@ -39,6 +39,13 @@ const NAV = [
 const RECORDS_NAV = { href: "/records", label: "Records" };
 
 /**
+ * A leader's own daily board — to dos, decisions, ideas, what to let go
+ * of — beside the work it is about. Every role but the agent, whose day is
+ * on their action items; the page refuses an agent by URL as well.
+ */
+const MY_SPACE_NAV = { href: "/my-space", label: "My Space" };
+
+/**
  * An agent works from their own numbers, not the shared configuration: the
  * skill reference is a scoring policy table they cannot change, so their
  * slot goes to their own stats instead.
@@ -169,7 +176,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
       // their own leave is not filed here.
       .filter((item) => item.href !== "/pto" || !support)
       .flatMap((item) =>
-        item.href === "/action-items" && user.role !== "agent" ? [item, RECORDS_NAV] : [item],
+        item.href === "/action-items" && user.role !== "agent" ? [item, RECORDS_NAV, MY_SPACE_NAV] : [item],
       ),
     ...(user.role === "agent"
       ? AGENT_NAV

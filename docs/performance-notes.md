@@ -980,6 +980,46 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **My Space (15 Sep, feature branch).** A leader's personal daily
+  board at `/my-space`, from the supplied design (My Space.dc.html +
+  handoff README): four boxes — To Dos, Decisions, Ideas, Let Go — with
+  add (Enter or the button, optional note behind "+ note"), a checkbox
+  on every box but Ideas, in-place edit (empty text cancels), delete
+  without confirmation; "Save day" archives the board as today's
+  snapshot (Manila's today, `todayInManila`) and clears it, with a toast;
+  "History" slides in a panel with a month calendar marking saved days,
+  the same days as a list with a "X done · Y decided · Z ideas · W let
+  go" summary, and the picked day read-only beneath. The progress rail
+  stacks the header's planets, one per box, filling as that box's
+  percentage climbs (complete ÷ total for the three checkbox boxes, count
+  ÷ `IDEAS_DAILY_GOAL` (5) for ideas, overall the plain average), with
+  the astronaut walking the line between them as far as the overall
+  figure has come. Who: every role but the agent (`canUseMySpace`) — the
+  brief named team leaders, managers and trainer/SME; an administrator
+  has it too, as they have every page. Private to the account: both
+  tables carry `user_id` and every read and write is scoped by it, so
+  nobody's reporting scope reaches another leader's board. Storage:
+  migration 0053 (`drizzle/0053_my_space.sql`, one-paste
+  `APPLY_0053_MY_SPACE.sql`, rehearsed twice on the scratch database):
+  enum `my_space_box`, `my_space_items` (the live board) and
+  `my_space_days` (jsonb snapshot, unique per user and day — saving twice
+  on one day replaces). Code: pure parts in `src/lib/my-space/board.ts`
+  (box meta, percentages, rail geometry, calendar cells, snapshot parse,
+  role check; tested), the read in `src/lib/queries/my-space.ts`, the
+  five actions in `my-space/actions.ts` (agent refused before any read,
+  text ≤ 500 / note ≤ 300, an idea cannot be toggled, "Save day" refuses
+  an empty board and deletes only the items it snapshotted, so one added
+  mid-save survives; authorization tests), and the client in
+  `my-space-board.tsx` (ticks and deletes are optimistic and undone on
+  refusal; adds and edits wait for the server; errors are a fail-tone
+  toast). The astronaut figure is now a shared component
+  (`src/components/astronaut-figure.tsx`) used by the rail; the header
+  scene keeps its own copy with the syringe arm, untouched. Nav: "My
+  Space" after Records for every non-agent role. Departures from the
+  brief, on purpose: the 2×2 grid collapses to one column below `md`
+  (the handoff flagged mobile as unresolved), and the board persists
+  server-side instead of localStorage (the handoff asked for exactly
+  that). Not audited: private notes, not a record.
 - **Approving an account confirms its email address (14 Sep, feature
   branch).** People approved on the Users page were still refused at
   sign-in with "Confirm your email using the link we sent you": company

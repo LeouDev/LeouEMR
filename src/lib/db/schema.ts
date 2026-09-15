@@ -632,6 +632,55 @@ export const scorecardReviews = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// My Space: a leader's personal daily board
+// ---------------------------------------------------------------------------
+
+/** The four boxes on the board; an idea has no completion state. */
+export const mySpaceBoxEnum = pgEnum("my_space_box", ["todos", "decisions", "ideas", "letgo"]);
+
+/**
+ * What is on someone's board right now. Private to the account that wrote
+ * it: every read and write is scoped by user_id, and nobody else's role
+ * reaches it. "Save day" moves the lot into my_space_days and deletes it.
+ */
+export const mySpaceItems = pgTable(
+  "my_space_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    box: mySpaceBoxEnum("box").notNull(),
+    text: text("text").notNull(),
+    note: text("note").notNull().default(""),
+    /** Never set on an idea, which has nothing to complete. */
+    complete: boolean("complete").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("my_space_items_user_idx").on(table.userId)],
+);
+
+/**
+ * A saved day: the four boxes frozen as they stood when "Save day" was
+ * pressed (shape in src/lib/my-space/board.ts), one per account per Manila
+ * calendar day — saving twice on one day replaces the earlier snapshot.
+ */
+export const mySpaceDays = pgTable(
+  "my_space_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    day: date("day").notNull(),
+    boxes: jsonb("boxes").notNull(),
+    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("my_space_days_user_day_idx").on(table.userId, table.day)],
+);
+
+// ---------------------------------------------------------------------------
 // Action item engine: performance issues, action items, RCA, action plans
 // ---------------------------------------------------------------------------
 
