@@ -134,7 +134,13 @@ export async function runMasterlistImport(
       .where(eq(importBatches.id, batch.id));
     return { ok: false, error: `Import failed: ${(error as Error).message}` };
   } finally {
-    const admin = createSupabaseAdminClient();
-    await admin.storage.from(BUCKET).remove([storagePath]).catch(() => {});
+    // Best-effort, exactly as in actions.ts: nothing here may throw, because
+    // a throw out of `finally` replaces the return above and would report a
+    // completed import as a failure.
+    try {
+      await createSupabaseAdminClient().storage.from(BUCKET).remove([storagePath]);
+    } catch {
+      // leave it in the bucket
+    }
   }
 }

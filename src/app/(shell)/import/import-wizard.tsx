@@ -131,7 +131,7 @@ export function ImportWizard() {
               setResult(null);
               setError(null);
             }}
-            className="block w-full text-sm text-ink file:mr-3 file: file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
+            className="block w-full text-sm text-ink file:mr-3 file:border-0 file:bg-navy-800 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-navy-900"
           />
 
           {fileName && <p className="text-sm text-muted">Selected: {fileName}</p>}
