@@ -980,6 +980,17 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Profile dialog trapped in the sidebar (15 Sep, bug, main).** With
+  its trigger moved into the rail, the profile panel's fixed overlay
+  opened as a 300px strip clipped inside the sidebar: the rail carries a
+  CSS transform for the drawer animation (`translate-x-0` is still a
+  transform), and a transformed ancestor becomes the containing block of
+  every fixed descendant, which the rail's `overflow-hidden` then clips.
+  The dialog and its backdrop are now portalled to `document.body`
+  (`createPortal`; `open` is only ever true after a click, so there is no
+  server render to worry about) and sit at `z-[60]`/`z-[61]`, above the
+  drawer's `z-50`. Lesson for any overlay placed inside the rail: portal
+  it, or it inherits the rail's transform.
 - **Left sidebar replaces the top nav (15 Sep, feature branch).** From
   the revised My Space handoff, whose real trigger was the chrome: the
   single-row header's dozen tabs had outgrown one line. `AppSidebar`

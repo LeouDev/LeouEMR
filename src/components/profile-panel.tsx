@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { removeMyAvatar, updateMyAvatar, updateMyProfile } from "@/app/(shell)/profile/actions";
 import { AVATAR_SIZE, AVATAR_TYPES, avatarUrl } from "@/lib/profile/avatar";
 import { NO_PROFILE, initialsOf, validateProfileForm, type ProfileForm } from "@/lib/profile/panel";
@@ -223,169 +224,175 @@ export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion 
         </span>
       </button>
 
-      {open && (
-        <>
-          <div
-            onClick={close}
-            aria-hidden
-            className="fixed inset-0 z-40 animate-[fadeIn_0.15s_ease-out] bg-navy-900/60 motion-reduce:animate-none"
-          />
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Your profile"
-            className="fixed top-0 right-0 bottom-0 z-50 flex w-[min(420px,100vw)] animate-[slideInRight_0.22s_ease-out] flex-col border-l-2 border-ink bg-surface motion-reduce:animate-none"
-          >
-            <div className="flex shrink-0 items-start gap-3.5 border-b-2 border-orange-brand bg-navy-800 p-5">
-              <Avatar name={account.name} version={avatar} className="h-14 w-14 shrink-0 rounded-full border-2 border-orange-brand bg-navy-500 text-lg" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[17px] font-bold text-cream">{account.name}</p>
-                <p className="mt-1 text-[10px] font-bold tracking-[0.12em] text-orange-brand uppercase">{account.roleLabel}</p>
-                <p className="mt-1 truncate text-xs text-cream/70">{account.email}</p>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-                  <button
-                    type="button"
-                    onClick={() => photoInput.current?.click()}
-                    className="text-[10px] font-bold tracking-[0.08em] text-cream/80 uppercase underline-offset-4 transition hover:text-orange-brand hover:underline"
-                  >
-                    {avatar === null ? "Add photo" : "Change photo"}
-                  </button>
-                  {avatar !== null && (
+      {/* The dialog is portalled to the body: its trigger now sits inside the
+          sidebar, whose drawer transform would otherwise make this fixed
+          overlay position and clip against the rail instead of the viewport.
+          `open` is only ever true after a click, so `document` exists. */}
+      {open &&
+        createPortal(
+          <>
+            <div
+              onClick={close}
+              aria-hidden
+              className="fixed inset-0 z-[60] animate-[fadeIn_0.15s_ease-out] bg-navy-900/60 motion-reduce:animate-none"
+            />
+            <aside
+              role="dialog"
+              aria-modal="true"
+              aria-label="Your profile"
+              className="fixed top-0 right-0 bottom-0 z-[61] flex w-[min(420px,100vw)] animate-[slideInRight_0.22s_ease-out] flex-col border-l-2 border-ink bg-surface motion-reduce:animate-none"
+            >
+              <div className="flex shrink-0 items-start gap-3.5 border-b-2 border-orange-brand bg-navy-800 p-5">
+                <Avatar name={account.name} version={avatar} className="h-14 w-14 shrink-0 rounded-full border-2 border-orange-brand bg-navy-500 text-lg" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[17px] font-bold text-cream">{account.name}</p>
+                  <p className="mt-1 text-[10px] font-bold tracking-[0.12em] text-orange-brand uppercase">{account.roleLabel}</p>
+                  <p className="mt-1 truncate text-xs text-cream/70">{account.email}</p>
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
                     <button
                       type="button"
-                      onClick={removePhoto}
+                      onClick={() => photoInput.current?.click()}
                       className="text-[10px] font-bold tracking-[0.08em] text-cream/80 uppercase underline-offset-4 transition hover:text-orange-brand hover:underline"
                     >
-                      Remove
+                      {avatar === null ? "Add photo" : "Change photo"}
+                    </button>
+                    {avatar !== null && (
+                      <button
+                        type="button"
+                        onClick={removePhoto}
+                        className="text-[10px] font-bold tracking-[0.08em] text-cream/80 uppercase underline-offset-4 transition hover:text-orange-brand hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <input
+                      ref={photoInput}
+                      type="file"
+                      accept={AVATAR_TYPES.join(",")}
+                      hidden
+                      onChange={(event) => {
+                        void choosePhoto(event.target.files?.[0]);
+                        event.target.value = "";
+                      }}
+                    />
+                  </div>
+                  {photoStatus && (
+                    <p role={photoStatus.tone === "fail" ? "alert" : undefined} className={`mt-1.5 text-xs ${photoStatus.tone === "fail" ? "text-orange-brand" : "text-cream/70"}`}>
+                      {photoStatus.text}
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={close}
+                  aria-label="Close"
+                  className="shrink-0 px-1 text-xl leading-none text-cream transition hover:text-orange-brand"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                <section className="border-b-2 border-line px-5 py-4.5">
+                  <h2 className={heading}>Profile</h2>
+                  {form ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {field("firstName", "First name")}
+                      {field("lastName", "Last name")}
+                      <div className="col-span-2">{field("middleName", "Middle name", { placeholder: "—" })}</div>
+                    </div>
+                  ) : (
+                    <p className="text-[13px] text-ink-muted">{NO_PROFILE}</p>
+                  )}
+                  <div className="mt-3.5 grid grid-cols-2 gap-3">
+                    {readOnly("Employee ID", account.employeeEid ?? profile?.employeeEid)}
+                    {readOnly("Position", profile?.position)}
+                    {readOnly("Team leader", org?.supervisorName)}
+                    {readOnly("Manager", org?.managerName)}
+                  </div>
+                  <p className="mt-3 text-[11px] text-ink-faint">
+                    Employee ID, position, team leader and manager come from the roster import — ask an administrator to change them.
+                  </p>
+                </section>
+
+                {form && (
+                  <>
+                    <section className="border-b-2 border-line px-5 py-4.5">
+                      <h2 className={heading}>Contact</h2>
+                      <div className="flex flex-col gap-3">
+                        {field("phoneNumber", "Phone number", { type: "tel", inputMode: "tel" })}
+                        {field("addressLine1", "Address line 1")}
+                        {field("addressLine2", "Address line 2", { placeholder: "Apt, suite, unit…" })}
+                        <div className="grid grid-cols-2 gap-3">
+                          {field("cityProvince", "City / province")}
+                          {field("zipcode", "Zipcode", { inputMode: "numeric" })}
+                        </div>
+                        {field("country", "Country")}
+                      </div>
+                    </section>
+
+                    <section className="border-b-2 border-line px-5 py-4.5">
+                      <h2 className={heading}>Emergency contact</h2>
+                      <div className="flex flex-col gap-3">
+                        {field("emergencyContactName", "Name")}
+                        <div className="grid grid-cols-2 gap-3">
+                          {field("emergencyContactNumber", "Phone number", { type: "tel", inputMode: "tel" })}
+                          {field("emergencyContactRelationship", "Relationship")}
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
+
+                <section className="border-b-2 border-line px-5 py-4.5">
+                  <h2 className={heading}>Security</h2>
+                  <p className="mb-3 text-[13px] text-ink-muted">Password and the authenticator app are managed on their own page.</p>
+                  <Link href="/mfa" prefetch={false} onClick={close} className={linkButton}>
+                    Manage security &amp; MFA <span aria-hidden>→</span>
+                  </Link>
+                </section>
+
+                {quickLinks.length > 0 && (
+                  <section className="px-5 py-4.5">
+                    <h2 className={heading}>Quick links</h2>
+                    <div className="flex flex-col gap-2.5">
+                      {quickLinks.map((item) => (
+                        <Link key={item.href} href={item.href} prefetch={false} onClick={close} className={linkButton}>
+                          {item.label} <span aria-hidden>→</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+
+              <div className="flex shrink-0 items-center justify-between gap-3 border-t-2 border-ink bg-surface px-5 py-3.5">
+                <p className="min-w-0 text-xs font-semibold" aria-live="polite">
+                  {error ? (
+                    <span role="alert" className="text-fail">
+                      {error}
+                    </span>
+                  ) : confirmed ? (
+                    <span className="text-pass">Saved</span>
+                  ) : dirty ? (
+                    <span className="text-ink-muted">Unsaved changes</span>
+                  ) : null}
+                </p>
+                <div className="flex shrink-0 gap-2.5">
+                  <button type="button" onClick={close} className="btn-secondary px-4 py-2.5 text-[13px]">
+                    Cancel
+                  </button>
+                  {form && (
+                    <button type="button" onClick={save} disabled={saving || !dirty} className="btn-primary px-4 py-2.5 text-[13px]">
+                      {saving ? "Saving…" : "Save changes"}
                     </button>
                   )}
-                  <input
-                    ref={photoInput}
-                    type="file"
-                    accept={AVATAR_TYPES.join(",")}
-                    hidden
-                    onChange={(event) => {
-                      void choosePhoto(event.target.files?.[0]);
-                      event.target.value = "";
-                    }}
-                  />
                 </div>
-                {photoStatus && (
-                  <p role={photoStatus.tone === "fail" ? "alert" : undefined} className={`mt-1.5 text-xs ${photoStatus.tone === "fail" ? "text-orange-brand" : "text-cream/70"}`}>
-                    {photoStatus.text}
-                  </p>
-                )}
               </div>
-              <button
-                type="button"
-                onClick={close}
-                aria-label="Close"
-                className="shrink-0 px-1 text-xl leading-none text-cream transition hover:text-orange-brand"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto">
-              <section className="border-b-2 border-line px-5 py-4.5">
-                <h2 className={heading}>Profile</h2>
-                {form ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    {field("firstName", "First name")}
-                    {field("lastName", "Last name")}
-                    <div className="col-span-2">{field("middleName", "Middle name", { placeholder: "—" })}</div>
-                  </div>
-                ) : (
-                  <p className="text-[13px] text-ink-muted">{NO_PROFILE}</p>
-                )}
-                <div className="mt-3.5 grid grid-cols-2 gap-3">
-                  {readOnly("Employee ID", account.employeeEid ?? profile?.employeeEid)}
-                  {readOnly("Position", profile?.position)}
-                  {readOnly("Team leader", org?.supervisorName)}
-                  {readOnly("Manager", org?.managerName)}
-                </div>
-                <p className="mt-3 text-[11px] text-ink-faint">
-                  Employee ID, position, team leader and manager come from the roster import — ask an administrator to change them.
-                </p>
-              </section>
-
-              {form && (
-                <>
-                  <section className="border-b-2 border-line px-5 py-4.5">
-                    <h2 className={heading}>Contact</h2>
-                    <div className="flex flex-col gap-3">
-                      {field("phoneNumber", "Phone number", { type: "tel", inputMode: "tel" })}
-                      {field("addressLine1", "Address line 1")}
-                      {field("addressLine2", "Address line 2", { placeholder: "Apt, suite, unit…" })}
-                      <div className="grid grid-cols-2 gap-3">
-                        {field("cityProvince", "City / province")}
-                        {field("zipcode", "Zipcode", { inputMode: "numeric" })}
-                      </div>
-                      {field("country", "Country")}
-                    </div>
-                  </section>
-
-                  <section className="border-b-2 border-line px-5 py-4.5">
-                    <h2 className={heading}>Emergency contact</h2>
-                    <div className="flex flex-col gap-3">
-                      {field("emergencyContactName", "Name")}
-                      <div className="grid grid-cols-2 gap-3">
-                        {field("emergencyContactNumber", "Phone number", { type: "tel", inputMode: "tel" })}
-                        {field("emergencyContactRelationship", "Relationship")}
-                      </div>
-                    </div>
-                  </section>
-                </>
-              )}
-
-              <section className="border-b-2 border-line px-5 py-4.5">
-                <h2 className={heading}>Security</h2>
-                <p className="mb-3 text-[13px] text-ink-muted">Password and the authenticator app are managed on their own page.</p>
-                <Link href="/mfa" prefetch={false} onClick={close} className={linkButton}>
-                  Manage security &amp; MFA <span aria-hidden>→</span>
-                </Link>
-              </section>
-
-              {quickLinks.length > 0 && (
-                <section className="px-5 py-4.5">
-                  <h2 className={heading}>Quick links</h2>
-                  <div className="flex flex-col gap-2.5">
-                    {quickLinks.map((item) => (
-                      <Link key={item.href} href={item.href} prefetch={false} onClick={close} className={linkButton}>
-                        {item.label} <span aria-hidden>→</span>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              )}
-            </div>
-
-            <div className="flex shrink-0 items-center justify-between gap-3 border-t-2 border-ink bg-surface px-5 py-3.5">
-              <p className="min-w-0 text-xs font-semibold" aria-live="polite">
-                {error ? (
-                  <span role="alert" className="text-fail">
-                    {error}
-                  </span>
-                ) : confirmed ? (
-                  <span className="text-pass">Saved</span>
-                ) : dirty ? (
-                  <span className="text-ink-muted">Unsaved changes</span>
-                ) : null}
-              </p>
-              <div className="flex shrink-0 gap-2.5">
-                <button type="button" onClick={close} className="btn-secondary px-4 py-2.5 text-[13px]">
-                  Cancel
-                </button>
-                {form && (
-                  <button type="button" onClick={save} disabled={saving || !dirty} className="btn-primary px-4 py-2.5 text-[13px]">
-                    {saving ? "Saving…" : "Save changes"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </aside>
-        </>
-      )}
+            </aside>
+          </>,
+          document.body,
+        )}
     </>
   );
 }
