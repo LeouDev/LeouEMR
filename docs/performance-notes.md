@@ -980,6 +980,28 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Users page: search, editable email, table that fits (15 Sep,
+  feature branch).** Three asks from the Users page in use. (1) A search
+  box in the filter bar (`?q=`, applied on Enter or blur like the
+  archive's, so no navigation per keystroke): any part of a name, email
+  or employee ID, case-insensitive, filtered in memory with the other
+  two filters; the empty state names the term. (2) The email is an input
+  in the User cell (read-only text on the administrator's own row, which
+  `updateUser` refuses anyway). `updateUser` takes an optional `email`
+  (trimmed, lower-cased as Supabase Auth stores it); when it differs from
+  the row: company domains only, the same `SIGNUP_EMAIL_DOMAINS` rule as
+  sign-up, since an account's address is also where the EOD report may
+  be relayed; not another account's; then Supabase Auth first
+  (`changeSignInEmail`: `auth.admin.updateUserById(id, { email,
+  email_confirm: true })`, a refusal returned as the error with nothing
+  written) and only then the users row, so the two can never disagree
+  because the second write failed; before/after in the audit row carry
+  the address. (3) The page is `max-w-7xl` (was 6xl) and the cells are
+  tighter (`px-2`, EID `w-28`, span select `max-w-44`, Save `px-3`) so
+  the seven columns, email input included, sit inside the page beside
+  the sidebar with Save in view. Tests: the six email cases (set +
+  confirmed, unchanged whatever the case, wrong domain, taken, invalid,
+  Supabase refusal writes nothing); the fake `db` maps `email` too.
 - **Sidebar wordmark reads "EMR" (15 Sep, feature branch).** The rail's
   header and the small-screen bar said "LEOU EMR / Command Center" from
   the handoff; the user asked for "EMR" alone, matching the login
