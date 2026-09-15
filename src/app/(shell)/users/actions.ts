@@ -4,6 +4,8 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
+import { signupDomainAllowed } from "@/lib/auth/signup-availability";
+import { parseDomainList } from "@/lib/mail/recipients";
 import { db } from "@/lib/db/client";
 import { auditLog, employeeAssignments, employees, users } from "@/lib/db/schema";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -19,6 +21,8 @@ const updateSchema = z.object({
   status: z.enum(["active", "pending", "disabled"]),
   employeeEid: z.string().trim().max(64).optional(),
   managerName: z.string().trim().max(200).optional(),
+  /** The sign-in address; absent leaves it as it is. Lower-cased, as Supabase Auth stores it. */
+  email: z.string().trim().toLowerCase().max(254).email("Enter a valid email address").optional(),
 });
 
 /**
@@ -96,9 +100,28 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
     }
   }
 
+  // A new sign-in address goes to Supabase Auth first — that is what they
+  // sign in with — and only then to the users row, so the two can never
+  // disagree because the second write failed. Company domains only, the
+  // same rule as sign-up: an account's address is also where the app's
+  // own mail (the end-of-day report) may be relayed.
+  const email = parsed.data.email !== undefined && parsed.data.email !== before.email.toLowerCase() ? parsed.data.email : null;
+  if (email) {
+    const domains = parseDomainList(process.env.SIGNUP_EMAIL_DOMAINS);
+    if (!signupDomainAllowed(email, domains)) {
+      return { ok: false, error: `Use a company email address (${domains.map((d) => `@${d}`).join(" or ")}).` };
+    }
+    const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    if (taken && taken.id !== parsed.data.userId) {
+      return { ok: false, error: "That email address belongs to another account" };
+    }
+    const changed = await changeSignInEmail(parsed.data.userId, email);
+    if (changed !== null) return { ok: false, error: changed };
+  }
+
   await db
     .update(users)
-    .set({ role: parsed.data.role, status: parsed.data.status, employeeEid, managerName })
+    .set({ role: parsed.data.role, status: parsed.data.status, employeeEid, managerName, ...(email ? { email } : {}) })
     .where(eq(users.id, parsed.data.userId));
   await recordRoleInToken(parsed.data.userId, parsed.data.role);
 
@@ -118,12 +141,14 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
       status: before.status,
       employeeEid: before.employeeEid,
       managerName: before.managerName,
+      ...(email ? { email: before.email } : {}),
     },
     after: {
       role: parsed.data.role,
       status: parsed.data.status,
       employeeEid,
       managerName,
+      ...(email ? { email } : {}),
       ...(approving ? { emailConfirmed } : {}),
     },
   });
@@ -187,6 +212,21 @@ export async function approvePendingUsers(
 
   revalidatePath("/users");
   return { ok: true, approved: approved.length, unconfirmed: confirmed.filter((ok) => !ok).length };
+}
+
+/**
+ * Sets the account's sign-in address in Supabase Auth, confirmed — an
+ * administrator setting it is the check, as with an approval. Returns
+ * what to tell the administrator when Supabase refuses (an address
+ * already registered there, say), null when it went through.
+ */
+async function changeSignInEmail(userId: string, email: string): Promise<string | null> {
+  try {
+    const { error } = await createSupabaseAdminClient().auth.admin.updateUserById(userId, { email, email_confirm: true });
+    return error ? `Could not change their sign-in email: ${error.message}` : null;
+  } catch {
+    return "Could not reach the sign-in service to change their email. Nothing was changed — try again in a moment.";
+  }
 }
 
 /**

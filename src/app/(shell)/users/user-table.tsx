@@ -63,16 +63,18 @@ export function UserTable({
 }) {
   return (
     <div className="overflow-x-auto">
+      {/* Tight cells: the row has to carry seven columns, the email input
+          among them, inside the page's width with the Save button in view. */}
       <table className="w-full min-w-[760px] border-collapse text-sm">
         <thead>
           <tr className="border-b-2 border-ink bg-cream">
-            <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">User</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Role</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee ID</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Manager span / cluster</th>
-            <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Authenticator</th>
-            <th className="px-6 py-2.5 font-semibold text-ink">Save</th>
+            <th className="px-4 py-2.5 text-left text-xs font-semibold tracking-[0.08em] text-ink uppercase">User</th>
+            <th className="px-2 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Role</th>
+            <th className="px-2 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
+            <th className="px-2 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee ID</th>
+            <th className="px-2 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Span / cluster</th>
+            <th className="px-2 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Authenticator</th>
+            <th className="px-3 py-2.5 font-semibold text-ink">Save</th>
           </tr>
         </thead>
         <tbody>
@@ -103,6 +105,7 @@ function UserRowEditor({
   const [role, setRole] = useState(user.role);
   const [status, setStatus] = useState(user.status);
   const [eid, setEid] = useState(user.employeeEid ?? "");
+  const [email, setEmail] = useState(user.email);
   const [managerName, setManagerName] = useState(user.managerName ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -117,6 +120,7 @@ function UserRowEditor({
     role !== user.role ||
     status !== user.status ||
     eid !== (user.employeeEid ?? "") ||
+    email.trim().toLowerCase() !== user.email.toLowerCase() ||
     managerValue !== (user.managerName ?? "");
 
   async function save() {
@@ -133,6 +137,7 @@ function UserRowEditor({
         status,
         employeeEid: eid,
         managerName: managerValue,
+        email,
       });
     } catch (cause) {
       setError(describeActionError(cause));
@@ -152,14 +157,24 @@ function UserRowEditor({
 
   return (
     <tr className="border-b border-line/70 last:border-0">
-      <td className="px-6 py-2">
+      <td className="px-4 py-2 text-left">
         <p className="font-medium text-ink">{user.name}</p>
-        <p className="text-xs text-muted">{user.email}</p>
+        {isSelf ? (
+          <p className="text-xs text-muted">{user.email}</p>
+        ) : (
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-label={`Email address for ${user.name}`}
+            className={`${control} mt-1 w-full min-w-52 text-xs`}
+          />
+        )}
         {error && <p className="mt-1 text-xs text-fail">{error}</p>}
         {saved && !error && !warning && <p className="mt-1 text-xs text-pass">Saved</p>}
         {saved && !error && warning && <p className="mt-1 text-xs text-warn">{warning}</p>}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         <select
           value={role}
           disabled={isSelf}
@@ -187,7 +202,7 @@ function UserRowEditor({
           </p>
         )}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         <select
           value={status}
           disabled={isSelf}
@@ -201,14 +216,14 @@ function UserRowEditor({
           ))}
         </select>
       </td>
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         <input
           type="text"
           value={eid}
           disabled={isSelf}
           placeholder="Not linked"
           onChange={(e) => setEid(e.target.value)}
-          className={`${control} w-32 font-mono`}
+          className={`${control} w-28 font-mono`}
         />
         {/* Only shown for the untouched, already-saved value — the save
             action itself is what validates whatever is typed next. */}
@@ -216,13 +231,13 @@ function UserRowEditor({
           <p className="mt-1 text-[10px] font-bold text-fail">Not on the roster</p>
         )}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         {role === "manager" || role === "supervisor" ? (
           <select
             value={managerName}
             disabled={isSelf}
             onChange={(e) => setManagerName(e.target.value)}
-            className={`${control} max-w-56`}
+            className={`${control} max-w-44`}
             aria-label={role === "manager" ? `Manager span for ${user.name}` : `Cluster for ${user.name}`}
           >
             {/* A team leader's cluster normally comes from the roster; the
@@ -238,10 +253,10 @@ function UserRowEditor({
           <span className="text-xs text-muted">—</span>
         )}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-2 py-2">
         <MfaCell user={user} role={role} />
       </td>
-      <td className="px-6 py-2">
+      <td className="px-3 py-2">
         {isSelf ? (
           <span className="text-xs text-muted">Your account</span>
         ) : (
@@ -249,7 +264,7 @@ function UserRowEditor({
             type="button"
             onClick={save}
             disabled={!dirty || saving}
-            className="btn-primary px-4 py-2 text-sm"
+            className="btn-primary px-3 py-2 text-sm"
           >
             {saving ? "Saving…" : "Save"}
           </button>

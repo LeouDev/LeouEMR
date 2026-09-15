@@ -16,7 +16,7 @@ const isStatus = (value: string | undefined): value is Status =>
 export default async function UsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; position?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; position?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -24,6 +24,7 @@ export default async function UsersPage({
   if (user.role !== "admin") redirect("/dashboard");
 
   const params = await searchParams;
+  const q = params.q?.trim().toLowerCase() ?? "";
   const status = isStatus(params.status) ? params.status : undefined;
   const positions = positionEnum.enumValues;
   const position =
@@ -96,9 +97,14 @@ export default async function UsersPage({
     (row) =>
       (status === undefined || row.status === status) &&
       (position === undefined ||
-        (position === NO_POSITION ? row.signedUpAs === null : row.signedUpAs === position)),
+        (position === NO_POSITION ? row.signedUpAs === null : row.signedUpAs === position)) &&
+      // Name, email or employee ID, any part of it.
+      (q === "" ||
+        row.name.toLowerCase().includes(q) ||
+        row.email.toLowerCase().includes(q) ||
+        (row.employeeEid ?? "").toLowerCase().includes(q)),
   );
-  const filtered = status !== undefined || position !== undefined;
+  const filtered = q !== "" || status !== undefined || position !== undefined;
   const pendingShown = shown.filter((row) => row.status === "pending" && row.id !== user.id);
   const pendingTotal = rows.filter((row) => row.status === "pending").length;
 
@@ -106,7 +112,7 @@ export default async function UsersPage({
     <>
       <PageBand title="Users" subtitle="Accounts, roles and employee links" />
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <p className="max-w-2xl text-sm text-muted">
             New signups arrive as pending agents. Assign a role, activate the account, and link it to
@@ -115,7 +121,7 @@ export default async function UsersPage({
           </p>
         </div>
 
-        <UsersFilters positions={positions} value={{ status: status ?? "", position: position ?? "" }} />
+        <UsersFilters positions={positions} value={{ q: params.q?.trim() ?? "", status: status ?? "", position: position ?? "" }} />
 
         <Card className="mt-6">
           <CardHeader
@@ -133,8 +139,8 @@ export default async function UsersPage({
           />
           {shown.length === 0 ? (
             <EmptyState
-              title="No accounts match these filters"
-              description="Try another status or position, or clear the filters."
+              title={q ? `No accounts match "${params.q?.trim()}"` : "No accounts match these filters"}
+              description={q ? "Search by any part of a name, email or employee ID, or clear the search." : "Try another status or position, or clear the filters."}
             />
           ) : (
             <UserTable users={shown as UserRow[]} currentUserId={user.id} managerNames={managerNames} />

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser } from "@/lib/auth/session";
 
 /**
@@ -91,6 +91,7 @@ vi.mock("@/lib/db/client", () => ({
             if ("status" in values) mapped.status = values.status;
             if ("employeeEid" in values) mapped.employee_eid = values.employeeEid;
             if ("managerName" in values) mapped.manager_name = values.managerName;
+            if ("email" in values) mapped.email = values.email;
             usersRows = usersRows.map((row) => {
               if (!pred(row)) return row;
               const next = { ...row, ...mapped };
@@ -139,14 +140,24 @@ beforeEach(() => {
     managerName: null,
   };
   usersRows = [
-    { id: ADMIN_ID, name: "Test Admin", employee_eid: null, role: "admin", status: "active", manager_name: null },
-    { id: TARGET_ID, name: "Pending Agent", employee_eid: null, role: "agent", status: "pending", manager_name: null },
+    { id: ADMIN_ID, name: "Test Admin", email: "admin@example.test", employee_eid: null, role: "admin", status: "active", manager_name: null },
+    { id: TARGET_ID, name: "Pending Agent", email: "pending@example.test", employee_eid: null, role: "agent", status: "pending", manager_name: null },
   ];
   employeesRows = [{ id: "employee-1", eid: REAL_EID, supervisor_eid: LEADER_EID }];
   assignmentsRows = [];
   auditRows.length = 0;
   adminApi.calls.length = 0;
   adminApi.refuse = false;
+});
+
+const signedInAsAdmin = (): CurrentUser => ({
+  id: ADMIN_ID,
+  email: "admin@example.test",
+  name: "Test Admin",
+  role: "admin",
+  status: "active",
+  employeeEid: null,
+  managerName: null,
 });
 
 const input = (over: Partial<Record<string, unknown>> = {}) => ({
@@ -290,5 +301,65 @@ describe("approval confirms the email address", () => {
     expect(result).toEqual({ ok: true, approved: 1, unconfirmed: 1 });
     expect(usersRows[1]?.status).toBe("active");
     expect(auditRows[0]?.after).toMatchObject({ status: "active", emailConfirmed: false });
+  });
+});
+
+/**
+ * An administrator may change an account's sign-in address. It goes to
+ * Supabase Auth first, confirmed, and only then to the users row; a
+ * company domain when the deployment names them; never another account's.
+ */
+describe("changing an account's email address", () => {
+  const original = process.env.SIGNUP_EMAIL_DOMAINS;
+  beforeEach(() => {
+    currentUser.value = signedInAsAdmin();
+    process.env.SIGNUP_EMAIL_DOMAINS = "example.test";
+  });
+  afterEach(() => {
+    process.env.SIGNUP_EMAIL_DOMAINS = original;
+  });
+
+  it("sets the new address in Supabase Auth, confirmed, then on the row", async () => {
+    const result = await updateUser(input({ email: " New.Agent@Example.test " }));
+    expect(result).toEqual({ ok: true });
+    const call = adminApi.calls.find((c) => "email" in c.attributes);
+    expect(call).toEqual({ userId: TARGET_ID, attributes: { email: "new.agent@example.test", email_confirm: true } });
+    expect(usersRows[1]?.email).toBe("new.agent@example.test");
+    expect(auditRows[0]?.before).toMatchObject({ email: "pending@example.test" });
+    expect(auditRows[0]?.after).toMatchObject({ email: "new.agent@example.test" });
+  });
+
+  it("leaves the address alone when it is unchanged, whatever the case", async () => {
+    await updateUser(input({ email: "PENDING@example.test" }));
+    expect(adminApi.calls.some((c) => "email" in c.attributes)).toBe(false);
+    expect(usersRows[1]?.email).toBe("pending@example.test");
+  });
+
+  it("refuses an address outside the company domains", async () => {
+    expect(await updateUser(input({ email: "agent@gmail.com" }))).toEqual({
+      ok: false,
+      error: "Use a company email address (@example.test).",
+    });
+    expect(usersRows[1]?.email).toBe("pending@example.test");
+  });
+
+  it("refuses another account's address", async () => {
+    expect(await updateUser(input({ email: "admin@example.test" }))).toEqual({
+      ok: false,
+      error: "That email address belongs to another account",
+    });
+  });
+
+  it("refuses an address that is not one", async () => {
+    expect(await updateUser(input({ email: "not-an-address" }))).toEqual({ ok: false, error: "Enter a valid email address" });
+  });
+
+  it("writes nothing when Supabase refuses the change", async () => {
+    adminApi.refuse = true;
+    const result = await updateUser(input({ email: "new@example.test" }));
+    expect(result).toEqual({ ok: false, error: "Could not change their sign-in email: refused" });
+    expect(usersRows[1]?.email).toBe("pending@example.test");
+    expect(usersRows[1]?.status).toBe("pending");
+    expect(auditRows).toHaveLength(0);
   });
 });
