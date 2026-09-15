@@ -1,17 +1,14 @@
 import { and, count, eq, isNull } from "drizzle-orm";
-import Link from "next/link";
-import { BrandMark, BrandWordmark } from "@/components/brand";
-import { HeaderScene } from "@/components/header-scene";
-import { NavTabs } from "@/components/nav-tabs";
 import { ProfilePanel } from "@/components/profile-panel";
-import { db } from "@/lib/db/client";
-import { employeeProfiles, employees, notifications, userAvatars } from "@/lib/db/schema";
+import { SidebarShell } from "@/components/sidebar-shell";
+import { SignOutButton } from "@/components/sign-out-button";
 import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
+import { db } from "@/lib/db/client";
+import { employeeProfiles, employees, notifications, userAvatars } from "@/lib/db/schema";
 import { formFromProfile } from "@/lib/profile/panel";
-import { SignOutButton } from "@/components/sign-out-button";
 
-/** Kept short: a wrapping role label was the widest thing in the header. */
+/** Kept short: a wrapping role label was the widest thing in the old header. */
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrator",
   manager: "Manager",
@@ -101,24 +98,17 @@ const ADMIN_NAV = [
 ];
 
 /**
- * The application header: identity on top, navigation beneath.
- *
- * The tabs sit on their own row at every width rather than competing with the
- * mark and the account block for one line. With up to ten destinations they
- * could not fit beside the logo, and squeezing them made the row wrap into a
- * ragged two-line block. A single full-width strip scrolls sideways when it
- * has to and stays one clean line the rest of the time.
- *
- * Rendered once by the (shell) layout rather than by each page — which tab
- * is active comes from NavTabs reading the pathname itself, so this
- * component (and the animated scene inside it) never depends on the route
- * and is never recreated by navigating.
+ * The application's chrome: a left rail with the brand, every destination
+ * stacked, and the person at the foot — in place of the old single-row
+ * header, whose dozen tabs had outgrown one line. Rendered once by the
+ * (shell) layout, so navigating never recreates it; which link is active
+ * comes from the links reading the pathname themselves.
  */
-export async function AppHeader({ user }: { user: CurrentUser }) {
-  // One round trip for everything the header carries: the unread count,
-  // the person's own personnel record (the profile panel is seeded from
-  // it here rather than fetched when opened) and, for a linked account,
-  // the roster's team leader and manager.
+export async function AppSidebar({ user, initialOpen }: { user: CurrentUser; initialOpen: boolean }) {
+  // One round trip for everything the rail carries: the unread count, the
+  // person's own personnel record (the profile panel is seeded from it
+  // here rather than fetched when opened) and, for a linked account, the
+  // roster's team leader and manager.
   const [[unread], [profileRow], [orgRow], [avatarRow]] = await Promise.all([
     db
       .select({ n: count() })
@@ -150,9 +140,7 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   // specifically, while a manager or admin still sees "Skills".
   const support = isSupportRole(user);
   const leaderNav = LEADER_ONLY_NAV.map((item) =>
-    item.href === "/skills" && user.role === "supervisor"
-      ? { ...item, label: "My Tools" }
-      : item,
+    item.href === "/skills" && user.role === "supervisor" ? { ...item, label: "My Tools" } : item,
   );
 
   const items = [
@@ -192,78 +180,20 @@ export async function AppHeader({ user }: { user: CurrentUser }) {
   ];
 
   return (
-    /*
-     * Pinned to the top: the tabs and the account controls are wanted at any
-     * scroll depth, and these pages are long — an agent table runs to forty
-     * rows, the trend charts sit below the fold, and getting back to the nav
-     * meant scrolling all the way up.
-     *
-     * z-30 clears the z-20 the long tables use for their own sticky headers.
-     * Those stick inside their own overflow containers rather than to the
-     * viewport, so the two never compete for the same line — they just need
-     * to pass under this one rather than through it. The background is opaque
-     * for the same reason.
-     */
-    <header className="sticky top-0 z-30 border-b-2 border-orange-brand bg-navy-800 print:hidden">
-      <div className="relative mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-2.5">
-        {/* Purely decorative, sits behind the logo and the identity/actions
-            cluster (both given their own stacking order below) and never
-            intercepts a click — hidden below 1280px, where there is no room
-            for it between the two anyway. */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-[260px] right-[420px] hidden overflow-hidden xl:block"
-        >
-          <HeaderScene />
-        </div>
-
-        <Link href="/dashboard" className="relative z-10 flex shrink-0 items-center gap-3">
-          <BrandMark className="h-9 w-9" id="header" />
-          <BrandWordmark tone="light" />
-        </Link>
-
-        <div className="relative z-10 flex shrink-0 items-center gap-4">
-          {/* Identity leads, actions follow as one cluster — the name used to
-              sit between Inbox and Sign out, reading as if it belonged to
-              neither. One line each, never wrapped: this block was three
-              lines tall before. */}
-          <ProfilePanel
-            account={{ name: user.name, email: user.email, roleLabel: ROLE_LABELS[user.role] ?? user.role, employeeEid: user.employeeEid }}
-            profile={profile}
-            org={orgRow ?? null}
-            quickLinks={quickLinks}
-            avatarVersion={avatarRow ? avatarRow.updatedAt.getTime() : null}
-          />
-
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              href="/notifications"
-              prefetch={false}
-              aria-label={`Notifications${unread.n > 0 ? `, ${unread.n} unread` : ""}`}
-              className="relative border-2 border-navy-500 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cream uppercase transition hover:border-orange-brand hover:text-orange-brand"
-            >
-              Inbox
-              {unread.n > 0 && (
-                <span className="absolute -top-2 -right-2 flex h-5 min-w-5 items-center justify-center bg-orange-brand px-1 text-[10px] font-bold text-white">
-                  {unread.n > 99 ? "99+" : unread.n}
-                </span>
-              )}
-            </Link>
-
-            {/* Security (password, authenticator) lives in the profile panel behind the name. */}
-            <SignOutButton />
-          </div>
-        </div>
-      </div>
-
-      <nav
-        aria-label="Sections"
-        className="border-t-2 border-navy-500 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <div className="mx-auto flex max-w-7xl overflow-x-auto px-6">
-          <NavTabs items={items} />
-        </div>
-      </nav>
-    </header>
+    <SidebarShell
+      items={items}
+      unread={unread.n}
+      initialOpen={initialOpen}
+      profile={
+        <ProfilePanel
+          account={{ name: user.name, email: user.email, roleLabel: ROLE_LABELS[user.role] ?? user.role, employeeEid: user.employeeEid }}
+          profile={profile}
+          org={orgRow ?? null}
+          quickLinks={quickLinks}
+          avatarVersion={avatarRow ? avatarRow.updatedAt.getTime() : null}
+        />
+      }
+      signOut={<SignOutButton tone="sidebar" />}
+    />
   );
 }

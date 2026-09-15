@@ -6,6 +6,7 @@ import { removeMyAvatar, updateMyAvatar, updateMyProfile } from "@/app/(shell)/p
 import { AVATAR_SIZE, AVATAR_TYPES, avatarUrl } from "@/lib/profile/avatar";
 import { NO_PROFILE, initialsOf, validateProfileForm, type ProfileForm } from "@/lib/profile/panel";
 import { describeActionError } from "@/lib/ui/action-error";
+import { useSidebarOpen } from "./sidebar-context";
 
 export interface ProfilePanelProps {
   account: { name: string; email: string; roleLabel: string; employeeEid: string | null };
@@ -75,6 +76,7 @@ function Avatar({ name, version, className }: { name: string; version: number | 
  * layout read on the server, so opening the panel costs no round trip.
  */
 export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion }: ProfilePanelProps) {
+  const sidebarOpen = useSidebarOpen();
   const [open, setOpen] = useState(false);
   const [avatar, setAvatar] = useState<number | null>(avatarVersion);
   const [photoStatus, setPhotoStatus] = useState<{ tone: "muted" | "fail"; text: string } | null>(null);
@@ -202,18 +204,20 @@ export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion 
 
   return (
     <>
+      {/* The person block at the foot of the sidebar: avatar always, name
+          and role only while the rail is expanded (or in the drawer). */}
       <button
         type="button"
         onClick={() => setOpen(true)}
         aria-haspopup="dialog"
         aria-expanded={open}
         title="Your profile"
-        className="hidden items-center gap-2.5 border-2 border-transparent px-1.5 py-0.5 text-right leading-tight transition hover:border-orange-brand sm:flex"
+        className="flex w-full items-center gap-2 border-2 border-transparent px-1 py-1 text-left leading-tight transition hover:border-orange-brand"
       >
-        <Avatar name={account.name} version={avatar} className="h-8 w-8 shrink-0 rounded-full border-2 border-navy-500 bg-navy-500 text-[11px]" />
-        <span className="block">
-          <span className="block text-sm font-semibold whitespace-nowrap text-cream">{account.name}</span>
-          <span className="block text-[10px] font-bold tracking-[0.12em] whitespace-nowrap text-orange-brand uppercase">
+        <Avatar name={account.name} version={avatar} className="h-[26px] w-[26px] shrink-0 rounded-full border-2 border-orange-brand bg-navy-500 text-[10px]" />
+        <span className={`min-w-0 ${sidebarOpen ? "" : "md:hidden"}`}>
+          <span className="block truncate text-xs font-bold text-cream">{account.name}</span>
+          <span className="block text-[10px] font-bold tracking-[0.06em] whitespace-nowrap text-orange-brand uppercase">
             {account.roleLabel}
           </span>
         </span>

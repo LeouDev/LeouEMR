@@ -266,7 +266,7 @@ export function AuditForm({
 
       {form && current && score && outcome && (
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <aside className="flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-24 lg:w-64">
+          <aside className="flex w-full shrink-0 flex-col gap-3 lg:sticky lg:top-6 lg:w-64">
             <div className="border-2 border-ink bg-surface p-4 text-center">
               <p className="text-[11px] font-bold tracking-[0.16em] text-orange-brand uppercase">Live score</p>
               <p className={`mt-2 text-4xl leading-none font-extrabold tabular-nums ${SCORE_COLOR[outcome]}`}>{Math.round(score.scorePct)}%</p>
