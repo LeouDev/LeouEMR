@@ -980,6 +980,16 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Attention table honours the action-item flag (15 Sep, bug, main).**
+  The dashboard's "Attention required" table joined `performance_issues`
+  on employee, KPI and an open status only, so an MBO item opened before
+  0041 switched MBO off still showed as OPEN beside that week's MBO
+  failure — the one list that ignored `generates_action_items` while the
+  Action Items page, the status counts and the development timeline all
+  read it (`OPENS_ACTION_ITEMS`). The join now carries the same flag: the
+  failure still lists (the table is "metrics that failed this week"), the
+  Action item and Status cells read "—" like every other MBO or PAR row,
+  and the historical rows stay in the database untouched.
 - **Folded rail shows icons, not truncated labels (15 Sep, feature
   branch).** "Da…", "An…", "Act…" told nobody anything. `NavIcon`
   (`src/components/nav-icons.tsx`) draws one line glyph per destination

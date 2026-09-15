@@ -240,6 +240,11 @@ export async function getAttentionRows(
         eq(performanceIssues.employeeId, weeklyMetricResults.employeeId),
         eq(performanceIssues.kpiId, weeklyMetricResults.kpiId),
         inArray(performanceIssues.status, [...OPEN_STATUSES]),
+        // The same flag every other list reads: an item opened for a KPI
+        // that no longer opens them (MBO, since 0041) is history, not an
+        // open thread — without this, the attention table was the one
+        // place such an item still showed as OPEN beside the failure.
+        OPENS_ACTION_ITEMS,
       ),
     )
     .leftJoin(actionItems, eq(actionItems.performanceIssueId, performanceIssues.id))
