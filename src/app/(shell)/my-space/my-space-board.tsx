@@ -177,7 +177,7 @@ export function MySpaceBoard({
             />
           ))}
         </div>
-        <div className="w-full md:sticky md:top-24 md:w-[220px] md:flex-none">
+        <div className="w-full md:sticky md:top-6 md:w-[220px] md:flex-none">
           <ProgressRail progress={progress} />
         </div>
       </main>

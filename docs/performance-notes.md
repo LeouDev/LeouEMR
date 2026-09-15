@@ -980,6 +980,39 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Left sidebar replaces the top nav (15 Sep, feature branch).** From
+  the revised My Space handoff, whose real trigger was the chrome: the
+  single-row header's dozen tabs had outgrown one line. `AppSidebar`
+  (`src/components/app-sidebar.tsx`, server: the same data fetch and the
+  same per-role nav composition the header had) renders `SidebarShell`
+  (client): brand mark + "LEOU EMR / Command Center" on top, every
+  destination stacked (`SidebarNav`, the old NavTabs' active and pending
+  states in a column; active = orange fill, navy text), and at the foot
+  the person (the ProfilePanel trigger, now a row: avatar always, name and
+  role only while expanded), Inbox with the unread badge beside Sign out
+  (`SignOutButton tone="sidebar"`), and a ‹/› toggle that folds the rail
+  to 64px. The folded state is a cookie (`sidebar=collapsed`,
+  `SIDEBAR_COOKIE`) rather than the handoff's localStorage so the layout
+  renders it folded from the server and nothing snaps shut on load; when
+  folded, labels truncate with a title tooltip and the unread count stays
+  as one orange strip. Below `md` the rail is a drawer: a slim bar (brand
+  + Menu with the unread count) opens it over the page, the backdrop,
+  Escape or navigating closes it (the drawer remembers the path it opened
+  on, so a new path closes it with no effect — the React Compiler lint
+  refuses a setState in an effect). The shell layout is now
+  `flex-col md:flex-row` with the page in its own `min-w-0` column; the
+  MFA grace banner and the navigation progress bar sit at the top of that
+  column, the bar in a `sticky top-0` wrapper since there is no sticky
+  header to hang under any more. Pages are untouched: `PageBand` and
+  `max-w-7xl mx-auto` centre within the page column. Sticky offsets that
+  assumed the 96px header dropped to `top-6` (the audit form's aside, the
+  My Space rail); table headers stick inside their own scroll boxes and
+  needed nothing. Retired: `app-header.tsx`, `nav-tabs.tsx` and
+  `header-scene.tsx` (the header's astronaut scene had no home left; the
+  `hdr-*` keyframes stay, the My Space rail uses them, and the figure
+  itself lives on as `astronaut-figure.tsx`). Print hides the rail and
+  the bar. Smoke-rendered expanded and folded with a stubbed app router
+  and pathname (one active link, badge, toggle labels).
 - **My Space (15 Sep, feature branch).** A leader's personal daily
   board at `/my-space`, from the supplied design (My Space.dc.html +
   handoff README): four boxes — To Dos, Decisions, Ideas, Let Go — with
