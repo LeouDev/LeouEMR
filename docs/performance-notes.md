@@ -980,6 +980,10 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Sidebar wordmark reads "EMR" (15 Sep, feature branch).** The rail's
+  header and the small-screen bar said "LEOU EMR / Command Center" from
+  the handoff; the user asked for "EMR" alone, matching the login
+  wordmark. Copy only, in `sidebar-shell.tsx`.
 - **Attention table honours the action-item flag (15 Sep, bug, main).**
   The dashboard's "Attention required" table joined `performance_issues`
   on employee, KPI and an open status only, so an MBO item opened before
