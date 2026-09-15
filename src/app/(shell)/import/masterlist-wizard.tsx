@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { describeActionError } from "@/lib/ui/action-error";
 import { createUploadTicket } from "./actions";
 import {
   previewMasterlist,
@@ -56,7 +57,12 @@ export function MasterlistWizard() {
 
       return { path: ticket.path, name: file.name };
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The upload did not go through — the connection dropped or the request timed out. Nothing was imported; try again.",
+        ),
+      );
       return null;
     } finally {
       setBusy(null);
@@ -84,7 +90,12 @@ export function MasterlistWizard() {
       }
     } catch (cause) {
       setPreview(null);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(
+        describeActionError(
+          cause,
+          "The analysis did not finish — the connection dropped or the request timed out. Nothing was imported; try Analyze again.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
@@ -107,7 +118,15 @@ export function MasterlistWizard() {
         setError(response.error ?? "Import failed");
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // Unlike the weekly import, commitMasterlist does its whole roster
+      // splice and attrition pass in one transaction, so a throw here
+      // really does leave the roster untouched — say so.
+      setError(
+        describeActionError(
+          cause,
+          "The masterlist did not finish — the connection dropped or the request timed out. The roster is written in one transaction, so nothing was half-applied; upload the same file for this month again.",
+        ),
+      );
     } finally {
       setBusy(null);
     }
