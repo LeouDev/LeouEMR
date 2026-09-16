@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, ilike, inArray, isNotNull, max, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, max, notInArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
@@ -32,6 +32,20 @@ import type { CurrentUser } from "@/lib/auth/session";
  * its weekly items should stop counting everywhere at once rather than being
  * filtered out at each call site by hand, or deleted irreversibly.
  */
+/**
+ * The KPIs Attention required leaves out: the monthly MBO composite and the
+ * three gates on it (0013, 0041).
+ *
+ * Deliberately a named list rather than `generates_action_items`. That flag
+ * is wider — it also covers AHT, CPH and Case Rate (followed skill by skill
+ * since 0042) and Standard Errors (0050) — but those are still weekly
+ * measures a team leader acts on, so they belong here even though the item
+ * itself is opened per skill or carried on the scorecard. The MBO family is
+ * different in kind: it is assessed monthly and reported on the scorecard,
+ * so its weekly rows are never the week's work.
+ */
+export const ATTENTION_EXCLUDED_KPIS = ["PRODUCTION_RATE", "DPU", "DPO", "MBO"];
+
 export const OPENS_ACTION_ITEMS = sql`exists (
   select 1 from kpi_definitions k
   where k.id = ${performanceIssues.kpiId} and k.generates_action_items
@@ -253,18 +267,11 @@ export async function getAttentionRows(
       and(
         eq(weeklyMetricResults.weekStart, week),
         eq(weeklyMetricResults.status, "fail"),
-        // Only KPIs that can open an action item belong in a table whose
-        // last three columns are the action item, its status and a review
-        // link. The PAR rating, DPU and DPO are gates on MBO (0013); MBO
-        // itself is assessed monthly (0041); AHT, CPH and Case Rate are
-        // followed skill by skill now (0042); Standard Errors feeds the
-        // scorecard only (0050). All of them still carry a weekly row, so
-        // each failure listed one line here with "—" under Action item and
-        // "—" under Status — nothing a leader could act on, crowding out
-        // the failures they could. This is the same predicate the "failing
-        // this week" count beside it already uses, so the table and that
-        // number now describe the same set.
-        eq(kpiDefinitions.generatesActionItems, true),
+        // The MBO family only — see ATTENTION_EXCLUDED_KPIS. Their weekly
+        // rows listed a line each with "—" under both Action item and
+        // Status, crowding out failures a leader can act on, and the same
+        // failures are already on the scorecard where they are assessed.
+        notInArray(kpiDefinitions.code, ATTENTION_EXCLUDED_KPIS),
         ids === "all" ? undefined : inArray(weeklyMetricResults.employeeId, ids),
       ),
     )
