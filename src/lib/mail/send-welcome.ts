@@ -9,18 +9,20 @@ export interface WelcomeRecipient {
   role: string;
 }
 
+/** Who a new joiner should write to when the app itself does not answer their question. */
+const DEFAULT_SUPPORT_EMAIL = "leou.comendador@optum.com";
+
 /**
  * Where the email points people for help.
  *
- * Neither value is invented. With no help centre configured the app itself
- * is the destination, and with no support mailbox the one that sent the
- * message stands in — both are addresses that actually reach someone,
- * which an empty href is not.
+ * The help link goes back to the app, which is the help centre until there
+ * is a separate one; `HELP_URL` takes over when there is. Both values are
+ * addresses that reach someone, which an empty href is not.
  */
-function helpLinks(siteUrl: string, fallbackSupport: string) {
+function helpLinks(siteUrl: string) {
   return {
     helpUrl: process.env.HELP_URL?.trim() || siteUrl,
-    supportEmail: process.env.SUPPORT_EMAIL?.trim() || fallbackSupport,
+    supportEmail: process.env.SUPPORT_EMAIL?.trim() || DEFAULT_SUPPORT_EMAIL,
   };
 }
 
@@ -55,7 +57,7 @@ export async function sendWelcomeEmails(
   }
 
   const from = mailFromAddress(smtp);
-  const { helpUrl, supportEmail } = helpLinks(siteUrl, from);
+  const { helpUrl, supportEmail } = helpLinks(siteUrl);
   const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim();
 
   const results: boolean[] = [];

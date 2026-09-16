@@ -1166,8 +1166,9 @@ from every environment this project gets worked on in.
   comma when the name follows the workbook's "Last, First".
   Four optional variables, each with a working fallback (`.env.example`):
   `APP_URL` — **set this in production**, or a preview deployment's own
-  throwaway host becomes the sign-in link — `HELP_URL`, `SUPPORT_EMAIL` and
-  `MAIL_POSTAL_ADDRESS`. With no postal address the footer line is dropped
+  throwaway host becomes the sign-in link — `HELP_URL` (the app itself until
+  there is a separate help site), `SUPPORT_EMAIL` (defaults to
+  `leou.comendador@optum.com`) and `MAIL_POSTAL_ADDRESS`. With no postal address the footer line is dropped
   rather than mailed as `[company address goes here]`; CAN-SPAM wants a real
   one, so set it before this is used at any volume.
 - **Attention required lists the week's work, not every failed measure

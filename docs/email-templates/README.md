@@ -40,6 +40,7 @@ Its `{{ .Field }}` markers are filled by `renderWelcomeEmail`, not by
 Supabase: `.FirstName` (derived from the account name, "Last, First"
 included), `.Role` (the sidebar's label for it), `.Email`, `.SiteURL`
 (`APP_URL`, else the request's host), `.HelpURL` (`HELP_URL`, else the app
-itself) and `.SupportEmail` (`SUPPORT_EMAIL`, else the sending mailbox).
+itself — where it should point until there is a separate help site) and
+`.SupportEmail` (`SUPPORT_EMAIL`, else `leou.comendador@optum.com`).
 The footer's address comes from `MAIL_POSTAL_ADDRESS`; with none set the
 line is dropped rather than mailed as a placeholder.
