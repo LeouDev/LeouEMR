@@ -16,8 +16,11 @@ from any device, not only the one the request was made on.
 | Confirm signup | `confirm-signup.html` | `type=signup`, lands on /pending for an administrator's approval |
 | Reset password | `reset-password.html` | `type=recovery`, lands on /reset-password |
 
-Both footers already carry the postal address, so they are ready to paste
-as they stand. Suggested subjects: "Confirm your Leou EMR account"
+These two are left exactly as Supabase is sending them, `[company address
+goes here]` included — the copies here are a record of what was pasted, and
+editing one changes nothing until someone pastes it again. Fill the address
+in at that point, not before, so this file and the live template never
+disagree. Suggested subjects: "Confirm your Leou EMR account"
 and "Choose a new Leou EMR password". The "expires after an hour" line
 matches Supabase's default email link expiry; change both if that setting
 is changed.

@@ -1174,11 +1174,18 @@ from every environment this project gets worked on in.
   there is a separate help site), `SUPPORT_EMAIL` (defaults to
   `leou.comendador@optum.com`) and `MAIL_POSTAL_ADDRESS` (defaults to the
   Cebu IT Park office; a newline starts a new footer line, and the value is
-  escaped before the break goes in, so it can never carry markup). The same
-  address was written into `confirm-signup.html` and `reset-password.html`,
-  which a human pastes into Supabase where no variable can reach —
-  `welcome-approved.html` keeps the `[company address goes here]` marker on
-  purpose, because the app fills that one at send time.
+  escaped before the break goes in, so it can never carry markup).
+  Only this email got the address. `confirm-signup.html` and
+  `reset-password.html` are Supabase's own, sent by Supabase from HTML stored
+  in its dashboard; nothing in the repository reads them, so the copies under
+  `docs/` are a record of what was pasted and changing one changes nothing
+  until it is pasted again. They were briefly given the address and it was
+  taken back out (16 Sep, owner's call): those two work, and a repo copy that
+  says something the live template does not is worse than a placeholder in
+  both. Fill the address in when next pasting. The Management API can push
+  them from the repo (PATCH /v1/projects/<ref>/config/auth,
+  `mailer_templates_*_content`, with a personal access token) if that chore
+  ever becomes worth automating — it was considered and declined.
 - **Attention required lists the week's work, not every failed measure
   (16 Sep, main).** The table's last three columns are the action item, its
   status and a review link, so the PAR rating and MBO took a row each with
