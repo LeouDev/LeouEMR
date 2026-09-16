@@ -19,7 +19,10 @@ export interface WelcomeEmailValues {
   siteUrl: string;
   helpUrl: string;
   supportEmail: string;
-  /** Printed above the legal line. The line is dropped when this is empty. */
+  /**
+   * Printed above the legal line, one HTML line per line of text. The whole
+   * line is dropped when this is empty.
+   */
   postalAddress?: string;
 }
 
@@ -96,9 +99,12 @@ export function renderWelcomeEmail(values: WelcomeEmailValues): RenderedEmail {
   // Required on a bulk-ish transactional send, but never invented here: with
   // no address configured the line goes rather than shipping a placeholder
   // to a real inbox.
+  const address = values.postalAddress?.trim();
   html = html.replace(
     "[company address goes here]<br>\n",
-    values.postalAddress?.trim() ? `${escapeHtml(values.postalAddress.trim())}<br>\n` : "",
+    // Escaped before the line breaks go in, so the address is text and the
+    // <br> between its lines is the only markup it can contribute.
+    address ? `${escapeHtml(address).replace(/\r?\n/g, "<br>")}<br>\n` : "",
   );
 
   // Plain-text alternative, for clients that refuse HTML and for spam

@@ -79,6 +79,19 @@ describe("renderWelcomeEmail", () => {
     );
   });
 
+  it("keeps a two-line address on two lines, without letting it carry markup", () => {
+    const { html } = renderWelcomeEmail({
+      ...VALUES,
+      postalAddress: "Filinvest Cebu Cyberzone, Tower 4\nCebu IT Park, Apas, Cebu City, Cebu 6000",
+    });
+    expect(html).toContain("Filinvest Cebu Cyberzone, Tower 4<br>Cebu IT Park, Apas, Cebu City, Cebu 6000");
+
+    // The break is the renderer's, never the value's.
+    const injected = renderWelcomeEmail({ ...VALUES, postalAddress: "<b>1 Market St</b>" }).html;
+    expect(injected).not.toContain("<b>1 Market St</b>");
+    expect(injected).toContain("&lt;b&gt;1 Market St&lt;/b&gt;");
+  });
+
   it("carries a plain-text alternative", () => {
     const { subject, text } = renderWelcomeEmail(VALUES);
     expect(subject).toBe("Your PA Command Center account is approved");

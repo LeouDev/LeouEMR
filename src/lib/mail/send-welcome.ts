@@ -9,18 +9,31 @@ export interface WelcomeRecipient {
   role: string;
 }
 
+/** Who a new joiner should write to when the app itself does not answer their question. */
+const DEFAULT_SUPPORT_EMAIL = "leou.comendador@optum.com";
+
+/**
+ * The footer's postal address, which bulk mail is required to carry.
+ *
+ * A default rather than configuration-only: the address of the site the
+ * team works from changes about as often as the company does, and leaving
+ * it to an unset variable is how the footer ended up with no address at
+ * all. MAIL_POSTAL_ADDRESS still overrides it, and a newline starts a new
+ * line in the footer.
+ */
+const DEFAULT_POSTAL_ADDRESS = "Filinvest Cebu Cyberzone, Tower 4\nCebu IT Park, Apas, Cebu City, Cebu 6000";
+
 /**
  * Where the email points people for help.
  *
- * Neither value is invented. With no help centre configured the app itself
- * is the destination, and with no support mailbox the one that sent the
- * message stands in — both are addresses that actually reach someone,
- * which an empty href is not.
+ * The help link goes back to the app, which is the help centre until there
+ * is a separate one; `HELP_URL` takes over when there is. Both values are
+ * addresses that reach someone, which an empty href is not.
  */
-function helpLinks(siteUrl: string, fallbackSupport: string) {
+function helpLinks(siteUrl: string) {
   return {
     helpUrl: process.env.HELP_URL?.trim() || siteUrl,
-    supportEmail: process.env.SUPPORT_EMAIL?.trim() || fallbackSupport,
+    supportEmail: process.env.SUPPORT_EMAIL?.trim() || DEFAULT_SUPPORT_EMAIL,
   };
 }
 
@@ -55,8 +68,8 @@ export async function sendWelcomeEmails(
   }
 
   const from = mailFromAddress(smtp);
-  const { helpUrl, supportEmail } = helpLinks(siteUrl, from);
-  const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim();
+  const { helpUrl, supportEmail } = helpLinks(siteUrl);
+  const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim() || DEFAULT_POSTAL_ADDRESS;
 
   const results: boolean[] = [];
   for (const person of recipients) {
