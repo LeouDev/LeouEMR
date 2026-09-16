@@ -494,7 +494,7 @@ export default async function DashboardPage({
             title="Attention required"
             subtitle={
               week
-                ? "Failures this week on the KPIs that open action items — the PAR rating, MBO and the other component measures are on the scorecard"
+                ? "Metrics that failed their threshold this week — the PAR rating, MBO, DPU and DPO are on the scorecard instead"
                 : "Import performance data to populate this view"
             }
             action={
@@ -515,7 +515,7 @@ export default async function DashboardPage({
                   ? "No performance data was recorded for this period, so nothing could be evaluated."
                   : thinCoverage
                     ? `Only ${evaluatedKpis.join(" and ")} had data for this period, so this is not an all-clear — try a wider range.`
-                    : "No KPI that opens an action item failed for the selected week."
+                    : "Every metric listed here met its threshold for the selected week."
               }
             />
           ) : (
