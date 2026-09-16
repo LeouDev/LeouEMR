@@ -1,4 +1,5 @@
 import {
+  CASE_DECISIONS,
   progressPercent,
   summarizeDay,
   toCsv,
@@ -59,6 +60,26 @@ export function caseLogCsv(entries: LoggedCase[], targets: Map<string, SkillTarg
   return toCsv(rows);
 }
 
+/**
+ * The day's decisions as one cell: "Pend: 3; Approved: 1".
+ *
+ * A column per decision would be twelve of them, mostly zeros, on a file a
+ * team lead reads at a glance. Only what actually happened is listed, in
+ * the order the form offers it — and anything else after that, so a day
+ * still holding a retired decision reports it rather than dropping it: the
+ * cases live in the browser's own storage and are never migrated (see
+ * tracker.ts).
+ */
+export function decisionTally(cases: LoggedCase[]): string {
+  const counts = new Map<string, number>();
+  for (const one of cases) counts.set(one.decision, (counts.get(one.decision) ?? 0) + 1);
+
+  const known: string[] = CASE_DECISIONS.filter((decision) => counts.has(decision));
+  const rest = [...counts.keys()].filter((decision) => !known.includes(decision)).sort();
+
+  return [...known, ...rest].map((decision) => `${decision}: ${counts.get(decision)}`).join("; ");
+}
+
 /** One row per date, oldest first. */
 export function summaryCsv(
   dates: string[],
@@ -67,7 +88,7 @@ export function summaryCsv(
   targets: Map<string, SkillTarget>,
 ): string {
   const rows: Array<Array<unknown>> = [
-    ["Date", "Cases", "Pend", "Deny", "Approved", "Cancel", "ProductionHours", "CasesPerHour", "TargetCases"],
+    ["Date", "Cases", "Decisions", "ProductionHours", "CasesPerHour", "TargetCases"],
   ];
 
   for (const date of [...dates].sort()) {
@@ -76,10 +97,7 @@ export function summaryCsv(
     rows.push([
       date,
       day.totalCases,
-      onDate.filter((c) => c.decision === "Pend").length,
-      onDate.filter((c) => c.decision === "Deny").length,
-      onDate.filter((c) => c.decision === "Approved").length,
-      onDate.filter((c) => c.decision === "Cancel").length,
+      decisionTally(onDate),
       two(day.totalHours),
       day.pace === null ? "" : two(day.pace),
       day.totalRequired === 0 ? "" : Math.ceil(day.totalRequired),

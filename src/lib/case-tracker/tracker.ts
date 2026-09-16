@@ -28,6 +28,36 @@ export interface ActivityBlock {
   skillCode: string | null;
 }
 
+/**
+ * The decisions a logged case may carry, in the order the form offers them.
+ *
+ * One list rather than three: the form's options, the `decision` type and
+ * the end-of-day summary's per-decision columns are all derived from it, so
+ * adding or retiring one cannot leave the report counting a value the form
+ * no longer offers.
+ *
+ * Retiring a value does not rewrite what is already logged — cases live in
+ * the browser's own storage (see case-tracker.tsx) and are never migrated.
+ * A day still holding a retired decision exports it verbatim in the case
+ * log; it just has no column of its own in the summary beside it.
+ */
+export const CASE_DECISIONS = [
+  "Pend",
+  "Deny",
+  "Approved",
+  "Fax for Appls",
+  "Merged",
+  "RARA",
+  "RAFA",
+  "RAFC-C",
+  "NEITAP",
+  "NEITP",
+  "DNF",
+  "MNF",
+] as const;
+
+export type CaseDecision = (typeof CASE_DECISIONS)[number];
+
 /** One logged prior-authorization case. */
 export interface LoggedCase {
   id: string;
@@ -35,7 +65,7 @@ export interface LoggedCase {
   caseNumber: string;
   /** Which skill it was worked on, so it lands in the same bucket as its hours. */
   skillCode: string | null;
-  decision: "Pend" | "Deny" | "Approved" | "Cancel";
+  decision: CaseDecision;
   activeApproval: "Y" | "N";
   cancellationNote: "Y" | "N";
   urgent: "Y" | "N";
