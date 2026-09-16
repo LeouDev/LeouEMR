@@ -1,0 +1,102 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { WELCOME_APPROVED_HTML } from "./welcome-approved-template";
+import { firstNameOf, renderWelcomeEmail, WELCOME_PLACEHOLDERS } from "./welcome-email";
+
+const VALUES = {
+  name: "Dela Cruz, Juan",
+  email: "juan.delacruz@example.com",
+  role: "supervisor",
+  siteUrl: "https://prior-auth-emr.vercel.app",
+  helpUrl: "https://help.example.com",
+  supportEmail: "support@example.com",
+};
+
+describe("firstNameOf", () => {
+  it("reads the workbook's 'Last, First' the right way round", () => {
+    expect(firstNameOf("Dela Cruz, Juan")).toBe("Juan");
+    expect(firstNameOf("Aniban, Brandon")).toBe("Brandon");
+  });
+
+  it("takes the first word when the name is written plainly", () => {
+    expect(firstNameOf("Juan Dela Cruz")).toBe("Juan");
+    expect(firstNameOf("Madonna")).toBe("Madonna");
+  });
+
+  it("falls back rather than greeting nobody", () => {
+    expect(firstNameOf("   ")).toBe("there");
+    expect(firstNameOf(",")).toBe("there");
+  });
+});
+
+describe("renderWelcomeEmail", () => {
+  it("leaves no marker behind", () => {
+    const { html } = renderWelcomeEmail(VALUES);
+    expect(html).not.toMatch(/\{\{\s*\./);
+    for (const key of WELCOME_PLACEHOLDERS) {
+      expect(WELCOME_APPROVED_HTML).toContain(`{{ .${key} }}`);
+    }
+  });
+
+  it("greets by first name and names the role as the sidebar does", () => {
+    const { html, text } = renderWelcomeEmail(VALUES);
+    expect(html).toContain("You're in, Juan!");
+    expect(html).toContain("<strong>Team Leader</strong>");
+    expect(text).toContain("the Team Leader role");
+  });
+
+  it("points the button at the sign-in page, without doubling the slash", () => {
+    const { html } = renderWelcomeEmail({ ...VALUES, siteUrl: "https://prior-auth-emr.vercel.app/" });
+    expect(html).toContain('href="https://prior-auth-emr.vercel.app/login"');
+    expect(html).not.toContain("//login");
+  });
+
+  it("escapes the values that reach the template whole", () => {
+    // An unknown role is passed through verbatim, and the address is printed
+    // as given — both land in markup, one of them inside an href.
+    const { html } = renderWelcomeEmail({
+      ...VALUES,
+      role: "<script>alert(1)</script>",
+      email: 'a"><b>x</b>@example.com',
+    });
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain('a"><b>');
+    expect(html).toContain("&quot;&gt;&lt;b&gt;");
+  });
+
+  it("keeps a first name to one word, so nothing else in the field is rendered", () => {
+    const { html } = renderWelcomeEmail({ ...VALUES, name: '<script>alert(1)</script> Bobby, "Drop"' });
+    expect(html).toContain("You're in, &quot;Drop&quot;!");
+    expect(html).not.toContain("alert(1)");
+  });
+
+  it("drops the address line rather than mailing a placeholder", () => {
+    expect(renderWelcomeEmail(VALUES).html).not.toContain("[company address goes here]");
+    expect(renderWelcomeEmail({ ...VALUES, postalAddress: "  " }).html).not.toContain("company address");
+    expect(renderWelcomeEmail({ ...VALUES, postalAddress: "1 Market St, Cebu" }).html).toContain(
+      "1 Market St, Cebu",
+    );
+  });
+
+  it("carries a plain-text alternative", () => {
+    const { subject, text } = renderWelcomeEmail(VALUES);
+    expect(subject).toBe("Your PA Command Center account is approved");
+    expect(text).toContain("https://prior-auth-emr.vercel.app/login");
+    expect(text).toContain(VALUES.email);
+  });
+
+  it("sends no external requests — no remote image can report who opened it", () => {
+    const { html } = renderWelcomeEmail(VALUES);
+    expect(html).not.toMatch(/<img\b/i);
+    expect(html).not.toMatch(/https?:\/\/(?!prior-auth-emr|help\.example|support)/i);
+  });
+});
+
+describe("the template module and the file an administrator pastes", () => {
+  it("are byte-identical, so neither can drift from the other", () => {
+    expect(WELCOME_APPROVED_HTML).toBe(
+      readFileSync("docs/email-templates/welcome-approved.html", "utf8"),
+    );
+  });
+});

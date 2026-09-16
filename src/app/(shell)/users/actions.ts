@@ -2,15 +2,41 @@
 
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { signupDomainAllowed } from "@/lib/auth/signup-availability";
 import { parseDomainList } from "@/lib/mail/recipients";
+import { sendWelcomeEmails } from "@/lib/mail/send-welcome";
 import { db } from "@/lib/db/client";
 import { auditLog, employeeAssignments, employees, users } from "@/lib/db/schema";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export type UserActionResult = { ok: true; warning?: string } | { ok: false; error: string };
+
+/**
+ * The base URL the welcome email's sign-in button points at.
+ *
+ * APP_URL wins where it is set, because it is the only value that is right
+ * on every deployment: a preview build's own host would send a new joiner
+ * to a throwaway URL. Falling back to the request's host keeps development
+ * and a single-environment deploy working with nothing to configure.
+ */
+async function appUrl(): Promise<string | null> {
+  const configured = process.env.APP_URL?.trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  try {
+    const headerList = await headers();
+    const host = headerList.get("x-forwarded-host") ?? headerList.get("host");
+    if (!host) return null;
+    return `${headerList.get("x-forwarded-proto") ?? "https"}://${host}`;
+  } catch {
+    // No request scope to read (a test, a background call). Not knowing the
+    // URL only costs the welcome email, which is best effort; it must never
+    // cost the approval itself.
+    return null;
+  }
+}
 
 const EMAIL_NOT_CONFIRMED_WARNING =
   "Saved, but their email address could not be marked confirmed. They can still use the link in the confirmation email.";
@@ -131,6 +157,25 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   const approving = before.status === "pending" && parsed.data.status === "active";
   const emailConfirmed = approving ? await confirmEmail(parsed.data.userId) : null;
 
+  // Welcome them the same way the bulk button does — an approval is an
+  // approval whichever control made it. Skipped when the address could not
+  // be confirmed: that account still owes the confirm-signup link, and
+  // "you're in, sign in now" would be wrong.
+  const [welcomeEmailed = false] =
+    approving && emailConfirmed
+      ? await sendWelcomeEmails(
+          [
+            {
+              id: parsed.data.userId,
+              name: before.name,
+              email: email ?? before.email,
+              role: parsed.data.role,
+            },
+          ],
+          await appUrl(),
+        )
+      : [];
+
   await db.insert(auditLog).values({
     actorId: actor.id,
     action: "user.updated",
@@ -149,7 +194,7 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
       employeeEid,
       managerName,
       ...(email ? { email } : {}),
-      ...(approving ? { emailConfirmed } : {}),
+      ...(approving ? { emailConfirmed, welcomeEmailed } : {}),
     },
   });
 
@@ -193,9 +238,17 @@ export async function approvePendingUsers(
         ne(users.id, actor.id),
       ),
     )
-    .returning({ id: users.id, role: users.role });
+    .returning({ id: users.id, role: users.role, name: users.name, email: users.email });
 
   const confirmed = await confirmEmails(approved.map((row) => row.id));
+
+  // Only those whose address is confirmed: anyone left unconfirmed still
+  // has to go through the confirm-signup link first, so telling them they
+  // can sign in now would be wrong. Best effort — see sendWelcomeEmails.
+  const welcomeBy = new Map<string, boolean>();
+  const welcomeTo = approved.filter((_, index) => confirmed[index]);
+  const sent = await sendWelcomeEmails(welcomeTo, await appUrl());
+  welcomeTo.forEach((row, index) => welcomeBy.set(row.id, sent[index] ?? false));
 
   if (approved.length > 0) {
     await db.insert(auditLog).values(
@@ -205,7 +258,12 @@ export async function approvePendingUsers(
         entityType: "user",
         entityId: row.id,
         before: { status: "pending" },
-        after: { status: "active", role: row.role, emailConfirmed: confirmed[index] },
+        after: {
+          status: "active",
+          role: row.role,
+          emailConfirmed: confirmed[index],
+          welcomeEmailed: welcomeBy.get(row.id) ?? false,
+        },
       })),
     );
   }

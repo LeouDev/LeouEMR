@@ -1020,10 +1020,10 @@ from every environment this project gets worked on in.
   0041 switched MBO off still showed as OPEN beside that week's MBO
   failure — the one list that ignored `generates_action_items` while the
   Action Items page, the status counts and the development timeline all
-  read it (`OPENS_ACTION_ITEMS`). The join now carries the same flag: the
-  failure still lists (the table is "metrics that failed this week"), the
-  Action item and Status cells read "—" like every other MBO or PAR row,
-  and the historical rows stay in the database untouched.
+  read it (`OPENS_ACTION_ITEMS`). The join now carries the same flag, and
+  the historical rows stay in the database untouched. *Superseded 16 Sep*:
+  an MBO or PAR failure is no longer listed at all — see "Attention
+  required lists the week's work" above.
 - **Folded rail shows icons, not truncated labels (15 Sep, feature
   branch).** "Da…", "An…", "Act…" told nobody anything. `NavIcon`
   (`src/components/nav-icons.tsx`) draws one line glyph per destination
@@ -1137,6 +1137,70 @@ from every environment this project gets worked on in.
   (the handoff flagged mobile as unresolved), and the board persists
   server-side instead of localStorage (the handoff asked for exactly
   that). Not audited: private notes, not a record.
+- **A welcome email when an account is approved (16 Sep, feature
+  branch).** Approved accounts were activated silently: the person learned
+  they were in only by trying to sign in again. Supabase cannot send this
+  one — its templates fire on its own auth events and there is none for "an
+  administrator approved this person" — so it goes from app code, through
+  the same relay the end-of-day report uses.
+  Sent from **both** approval paths in `users/actions.ts`, since the code
+  there already treats either control as the approval, and only to accounts
+  whose address was confirmed: anyone left unconfirmed still owes the
+  confirm-signup link, and "you're in, sign in now" would be wrong for
+  them. Best effort throughout — the account is active before the relay is
+  ever asked, so a refused send is logged, recorded on the approval's audit
+  row as `welcomeEmailed: false`, and never reported to the administrator
+  as a failed approval.
+  The transport moved to `src/lib/mail/transport.ts`. It lived inside
+  `my-stats/actions.ts`, which is `"use server"` and may export only async
+  functions, so a second sender could not have reached it without
+  duplicating the SMTP configuration.
+  Two copies of the template exist on purpose: `docs/email-templates/
+  welcome-approved.html` is the one a human edits, and
+  `src/lib/mail/welcome-approved-template.ts` holds the identical string the
+  app sends, because `docs/` is not traced into the serverless bundle and
+  the file simply would not exist on the deployed function.
+  `welcome-email.test.ts` compares them byte for byte, so they cannot drift.
+  Every filled value is HTML-escaped — an account name or address lands
+  inside an href — and the first name is one word, read from after the
+  comma when the name follows the workbook's "Last, First".
+  Four optional variables, each with a working fallback (`.env.example`):
+  `APP_URL` — **set this in production**, or a preview deployment's own
+  throwaway host becomes the sign-in link — `HELP_URL`, `SUPPORT_EMAIL` and
+  `MAIL_POSTAL_ADDRESS`. With no postal address the footer line is dropped
+  rather than mailed as `[company address goes here]`; CAN-SPAM wants a real
+  one, so set it before this is used at any volume.
+- **Attention required lists the week's work, not every failed measure
+  (16 Sep, main).** The table's last three columns are the action item, its
+  status and a review link, so the PAR rating and MBO took a row each with
+  "—" under two of them, crowding out failures a leader can act on. Asked
+  to drop those two, the first cut filtered on `generates_action_items` —
+  the flag the rest of the app reads — and took out four more than
+  intended. The flag means "opens no action item of its own", which is also
+  true of AHT, CPH and Case Rate (followed skill by skill since 0042) and
+  Standard Errors (scorecard only, 0050), yet a failure on any of those is
+  still a real weekly result someone acts on. Hiding them hid work, and
+  they were put back the same day.
+  The exclusion is now `ATTENTION_EXCLUDED_KPIS` in
+  `src/lib/queries/performance.ts`: the MBO composite and the three gates
+  on it (`PRODUCTION_RATE`, `DPU`, `DPO` from 0013, `MBO` from 0041), and
+  nothing else. It is deliberately a named list rather than the flag —
+  that distinction is the whole point of the fix, and
+  `attention-excluded.test.ts` pins it so it is not folded back into one.
+  Weekly rows are untouched either way and the scorecard still shows all of
+  them; this only governs which failures are offered as work.
+  The `Sample` column went the same day, for the related reason that it
+  could not be read. `weekly_metric_results.sample_size` is the source rows
+  behind a figure, but the unit is per KPI: cases for Case Rate and the
+  per-skill KPIs, audits for DPU, attributes for DPO, values averaged for a
+  mean, workbook rows for a summed one — and for PAR the number of skills
+  blended, for MBO the number of gates checked, neither of them a volume at
+  all, which is why those two sat permanently in the cell's `<= 2` amber
+  "very few source rows" badge. One column could not honestly label six
+  units, and two lines of the table could not be compared, so it was
+  removed rather than renamed; `AttentionRow` was its only reader. The
+  column is untouched in the database and still shown on the employee
+  progress matrix, where a cell is one KPI and the unit is not in question.
 - **A masterlist upload nearly attrited the whole floor, and said so in
   SQL (16 Sep, main).** An upload of `Copy of
   optumrx-emr-masterlist-template.xlsx` — the blank template, whose only

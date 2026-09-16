@@ -214,8 +214,6 @@ export interface AttentionRow {
   issueStatus: string | null;
   consecutivePassingWeeks: number | null;
   hasRca: boolean;
-  /** Rows behind the aggregate — a low count means a thin, easily misread week. */
-  sampleSize: number | null;
 }
 
 /** Failing metrics for the week, joined to their action item state. */
@@ -238,7 +236,6 @@ export async function getAttentionRows(
       actualValue: weeklyMetricResults.actualValue,
       targetValue: weeklyMetricResults.targetValue,
       status: weeklyMetricResults.status,
-      sampleSize: weeklyMetricResults.sampleSize,
       issueCode: performanceIssues.code,
       issueStatus: performanceIssues.status,
       consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
@@ -292,7 +289,6 @@ export async function getAttentionRows(
     issueStatus: row.issueStatus,
     consecutivePassingWeeks: row.consecutivePassingWeeks,
     hasRca: row.rcaId !== null,
-    sampleSize: row.sampleSize,
   }));
 }
 
