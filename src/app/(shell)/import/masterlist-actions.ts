@@ -113,7 +113,8 @@ export async function runMasterlistImport(
   // not survive Excel. Committing one is not a small mistake: every agent
   // active last month counts as missing from it, so the attrition pass
   // would mark the whole floor separated and close their open action items.
-  // Refuse it here rather than rely on the preview being read.
+  // Checked here as well as in commitMasterlist, which refuses outright: an
+  // administrator gets this sentence, not a raised error.
   const matched = await countKnownEids(parsed.rows.map((r) => r.agentEid));
   if (matched === 0) {
     return {

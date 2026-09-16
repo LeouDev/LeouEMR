@@ -10,5 +10,10 @@
  * Lives here rather than beside one feature's CSV helpers because both the
  * quality exports and the case tracker need it, and neither should have to
  * import from the other to get it.
+ *
+ * Spelled as an escape on purpose. Written as the character itself it is
+ * indistinguishable from an empty string in a diff, a review or most
+ * editors, and any formatter that strips zero-width characters would empty
+ * it with nothing failing.
  */
-export const CSV_BOM = "﻿";
+export const CSV_BOM = "\u{FEFF}";

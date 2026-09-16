@@ -1157,6 +1157,44 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **What a review of the day's own work found (16 Sep, bugs, main).** A
+  code review of everything shipped that day, after it had shipped. Two
+  of the findings were real defects in live behaviour.
+  (1) *A name could put the template's own markers into the message.*
+  `renderWelcomeEmail` filled placeholders with `replaceAll(marker,
+  value)`. The dollar forms in a **replacement string** are patterns, not
+  text, so a name of `Juan$& Cruz` rendered as `Juan{{ .FirstName }}amp;`
+  and a postal address carrying `$'` spliced the surrounding document into
+  the footer — the exact marker leak WELCOME_PLACEHOLDERS exists to
+  prevent, and reachable by anyone who can type their own name at sign-up.
+  Escaping did not help: `escapeHtml` leaves `$` alone, because in HTML it
+  is not special. Every fill is a **function** replacement now, which is
+  never reinterpreted. Worth knowing generally: this bites any
+  `replace`/`replaceAll` whose replacement is user data, and it bit the
+  patch script writing the test for it, an hour later.
+  (2) *Contested attrition was only half-honoured.* The masterlist fix
+  earlier that day spared a later-starting assignment but still marked the
+  same person separated and closed their open action items, while the
+  wizard told the administrator only "that later assignment was left as it
+  stands". The conflict is resolved for the whole person now — assignment,
+  status and open work — and the wording says so.
+  Also from that review: the welcome's postal address was in the HTML part
+  only, and the plain-text alternative is exactly who a CAN-SPAM
+  requirement is about; `CSV_BOM` had been written as a raw U+FEFF byte,
+  indistinguishable from an empty string in a diff and removable by any
+  formatter that strips zero-width characters (it is `\u{FEFF}` again, with
+  a test on its code point); the blank-roster guard moved from the action
+  into `commitMasterlist`, where a script or a scheduled re-import cannot
+  miss it; `OPENS_ACTION_ITEMS`' doc block had ended up above a constant
+  inserted beneath it.
+  And the one that is not a defect but a standing hazard: **a server
+  action must not await a mail relay.** The audit fix below moved the
+  record ahead of the send, but the action still waited on it, so a bulk
+  approval outlasting the function returned nothing and the administrator
+  read "Nothing was changed" over accounts that were all active and
+  audited. Both sends go through Next's `after()` now — it exists for
+  exactly this, runs once the response is done, and is the right tool for
+  any best-effort work hanging off an action.
 - **A bulk approval could lose its own audit trail (16 Sep, bug, main).**
   Found by an audit of the whole app, in code added hours earlier the same
   day. `approvePendingUsers` activates up to 500 accounts in one update,

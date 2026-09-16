@@ -3,6 +3,7 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
 import { signupDomainAllowed } from "@/lib/auth/signup-availability";
@@ -157,7 +158,6 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   const approving = before.status === "pending" && parsed.data.status === "active";
   const emailConfirmed = approving ? await confirmEmail(parsed.data.userId) : null;
 
-
   await db.insert(auditLog).values({
     actorId: actor.id,
     action: "user.updated",
@@ -186,10 +186,9 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   // could not be confirmed: that account still owes the confirm-signup
   // link, and "you're in, sign in now" would be wrong for it.
   if (approving && emailConfirmed) {
-    await sendWelcomeEmails(
-      [{ id: parsed.data.userId, name: before.name, email: email ?? before.email, role: parsed.data.role }],
-      await appUrl(),
-    );
+    const recipient = { id: parsed.data.userId, name: before.name, email: email ?? before.email, role: parsed.data.role };
+    const siteUrl = await appUrl();
+    after(() => sendWelcomeEmails([recipient], siteUrl));
   }
 
   revalidatePath("/users");
@@ -259,8 +258,16 @@ export async function approvePendingUsers(
 
   // Only those whose address is confirmed: anyone left unconfirmed still
   // has to go through the confirm-signup link first, so telling them they
-  // can sign in now would be wrong. Best effort — see sendWelcomeEmails.
-  await sendWelcomeEmails(approved.filter((_, index) => confirmed[index]), await appUrl());
+  // can sign in now would be wrong.
+  //
+  // Handed to `after` rather than awaited: the approval is complete and
+  // recorded by this point, and a relay that stalls must not decide what the
+  // administrator is told about it. Awaited, a bulk approval big enough to
+  // outlast the function reached them as "Nothing was changed" — with every
+  // account active, every audit row written and a retry reporting zero.
+  const welcomeTo = approved.filter((_, index) => confirmed[index]);
+  const siteUrl = await appUrl();
+  after(() => sendWelcomeEmails(welcomeTo, siteUrl));
 
   revalidatePath("/users");
   return { ok: true, approved: approved.length, unconfirmed: confirmed.filter((ok) => !ok).length };

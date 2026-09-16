@@ -235,6 +235,19 @@ export async function commitMasterlist(
     .from(employees)
     .where(inArray(employees.eid, fileEids));
 
+  // A roster that matches nobody on record is never a real roster — it is
+  // the blank template, or a file whose EID column lost its leading zeros.
+  // Committing one is not a small mistake: every agent active last month
+  // counts as missing from it, so the attrition pass below would mark the
+  // whole floor separated and close their open action items. Refused here
+  // rather than in the action, so a script or a scheduled re-import cannot
+  // reach it by not repeating the check.
+  if (knownEmployees.length === 0) {
+    throw new Error(
+      "None of the Agent EIDs in this file match anyone on record, so importing it would mark every agent attrited.",
+    );
+  }
+
   const candidateIds = knownEmployees.map((e) => e.id);
   const existingRows =
     candidateIds.length > 0
@@ -285,21 +298,12 @@ export async function commitMasterlist(
       // day after. Closing that one here would set effective_to before its
       // own effective_from, which employee_assignments_dates_ordered
       // rejects — it failed the whole import rather than any one row.
-      await tx
-        .update(employeeAssignments)
-        .set({ effectiveTo: plan.closedBefore })
-        .where(
-          and(
-            isNull(employeeAssignments.effectiveTo),
-            lte(employeeAssignments.effectiveFrom, plan.closedBefore),
-            inArray(employeeAssignments.employeeId, plan.employeeIdsToClose),
-          ),
-        );
-      // What the clause above deliberately leaves alone: an interval that
-      // starts inside or after this month says the weekly data still has
-      // them working while the masterlist does not list them. That is a
-      // conflict, not a clean separation, so it is reported rather than
-      // resolved by guesswork in either direction.
+      // Whom the masterlist's silence is contradicted for: an open interval
+      // starting inside or after this month says the weekly data still has
+      // them working. That is a conflict, not a clean separation, so they
+      // are left entirely alone — assignment, status and open work — and
+      // reported for an administrator to settle. Resolved first, because
+      // every statement below has to exclude them.
       const contested = await tx
         .select({ employeeId: employeeAssignments.employeeId })
         .from(employeeAssignments)
@@ -311,11 +315,32 @@ export async function commitMasterlist(
           ),
         );
       contestedAttrition = [...new Set(contested.map((row) => row.employeeId))];
-      const gone = await tx
-        .update(employees)
-        .set({ status: "separated", updatedAt: new Date() })
-        .where(and(inArray(employees.id, plan.employeeIdsToClose), ne(employees.status, "separated")))
-        .returning({ id: employees.id, was: employees.status });
+      const separating = plan.employeeIdsToClose.filter((id) => !contestedAttrition.includes(id));
+
+      if (separating.length > 0) {
+        await tx
+          .update(employeeAssignments)
+          .set({ effectiveTo: plan.closedBefore })
+          .where(
+            and(
+              isNull(employeeAssignments.effectiveTo),
+              // Belt and braces beside the exclusion above: only an interval
+              // that had already started can be closed on `closedBefore`, or
+              // effective_to lands before its own effective_from and
+              // employee_assignments_dates_ordered fails the whole import.
+              lte(employeeAssignments.effectiveFrom, plan.closedBefore),
+              inArray(employeeAssignments.employeeId, separating),
+            ),
+          );
+      }
+      const gone =
+        separating.length === 0
+          ? []
+          : await tx
+              .update(employees)
+              .set({ status: "separated", updatedAt: new Date() })
+              .where(and(inArray(employees.id, separating), ne(employees.status, "separated")))
+              .returning({ id: employees.id, was: employees.status });
       if (gone.length > 0) {
         await tx.insert(auditLog).values(
           gone.map((row) => ({
@@ -329,13 +354,14 @@ export async function commitMasterlist(
         );
       }
       // Resolved as of the last week they were on the roster. For everyone
-      // closed, not only the newly marked: someone an EWS tag had already
-      // separated may still carry open work from before that closed it.
-      issuesClosed = await closeIssuesOnSeparationFor(
-        tx,
-        plan.employeeIdsToClose,
-        periodContaining("week", plan.closedBefore).start,
-      );
+      // separated, not only the newly marked: someone an EWS tag had already
+      // separated may still carry open work from before that closed it. The
+      // contested keep theirs — their work is not finished if the weekly
+      // data still has them doing it.
+      issuesClosed =
+        separating.length === 0
+          ? 0
+          : await closeIssuesOnSeparationFor(tx, separating, periodContaining("week", plan.closedBefore).start);
     }
     // The roster of record is also the current structure for everyone it
     // lists: the employee rows (which the operational scope reads) follow it.
@@ -343,10 +369,15 @@ export async function commitMasterlist(
   });
 
   const byId = new Map(activeBefore.map((e) => [e.id, e]));
+  const contestedEids = new Set(
+    contestedAttrition.map((id) => byId.get(id)?.eid).filter((eid) => eid !== undefined),
+  );
   return {
     agentsWritten: plan.agentsWritten,
     unknownEids: plan.unknownEids,
-    attritedClosed: plan.attritedClosed,
+    // Only those actually closed out; the contested are reported separately
+    // and nothing about them was touched.
+    attritedClosed: plan.attritedClosed.filter((e) => !contestedEids.has(e.eid)),
     issuesClosed,
     reactivated,
     contestedAttrition: contestedAttrition

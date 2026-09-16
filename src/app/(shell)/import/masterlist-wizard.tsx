@@ -331,9 +331,11 @@ export function MasterlistWizard() {
               )}
               {result.contestedAttrition.length > 0 && (
                 <li className="text-warn">
-                  {result.contestedAttrition.length} of them still hold an assignment starting in{" "}
-                  {result.monthLabel} or later, from a weekly file — that later assignment was left as
-                  it stands. Check whether they really left:{" "}
+                  {result.contestedAttrition.length} agent
+                  {result.contestedAttrition.length === 1 ? "" : "s"} the file leaves out still hold an
+                  assignment starting in {result.monthLabel} or later, from a weekly file. Nothing about
+                  them was changed — not their assignment, not their status, not their open action items
+                  — because the weekly data says they are still working. Check whether they really left:{" "}
                   {result.contestedAttrition.map((e) => `${e.eid} ${e.name}`).join(", ")}
                 </li>
               )}
