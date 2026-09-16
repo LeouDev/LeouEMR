@@ -39,6 +39,17 @@ app actually sends, because `docs/` is not bundled into the deployed
 function. `welcome-email.test.ts` fails if the two drift, so edit this file
 and regenerate the module, or edit both together.
 
+Its artwork is **hosted PNG, not inline SVG**. Gmail strips `<svg>` from a
+message body outright, which left the header band showing the wordmark and
+an empty square where the astronaut should be. `public/email/astronaut.png`
+and `public/email/rocket.png` are served from the app itself — the
+middleware matcher excludes `.png`, so they need no session — and the
+`<img src>` is built from `{{ .SiteURL }}`. The source drawings are in
+`art/`; regenerate with sharp (`fit: "contain"`, flattened onto the colour
+each one sits on: navy `#0a1830` for the astronaut, white for the rocket)
+if either ever changes. Keep them same-origin: a third party serving an
+image in a transactional email is a read receipt for whoever owns that host.
+
 Its `{{ .Field }}` markers are filled by `renderWelcomeEmail`, not by
 Supabase: `.FirstName` (derived from the account name, "Last, First"
 included), `.Role` (the sidebar's label for it), `.Email`, `.SiteURL`

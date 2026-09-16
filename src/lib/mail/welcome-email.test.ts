@@ -99,10 +99,28 @@ describe("renderWelcomeEmail", () => {
     expect(text).toContain(VALUES.email);
   });
 
-  it("sends no external requests — no remote image can report who opened it", () => {
+  it("loads artwork from the app itself and nowhere else", () => {
+    // Gmail strips inline <svg>, so the astronaut and rocket are hosted PNGs
+    // under public/email. Every one must come from this deployment: a third
+    // party serving an image in a transactional email is a read receipt for
+    // whoever owns that host.
     const { html } = renderWelcomeEmail(VALUES);
-    expect(html).not.toMatch(/<img\b/i);
+    const sources = [...html.matchAll(/<img[^>]+src="([^"]+)"/gi)].map((m) => m[1]);
+
+    expect(sources).toEqual([
+      "https://prior-auth-emr.vercel.app/email/astronaut.png",
+      "https://prior-auth-emr.vercel.app/email/rocket.png",
+    ]);
     expect(html).not.toMatch(/https?:\/\/(?!prior-auth-emr|help\.example|support)/i);
+  });
+
+  it("carries no tracking pixel", () => {
+    const { html } = renderWelcomeEmail(VALUES);
+    // A 1x1 is the shape of a read receipt; both images are sized artwork.
+    for (const tag of html.match(/<img[^>]*>/gi) ?? []) {
+      expect(tag).not.toMatch(/width="1"|height="1"/);
+      expect(tag).toMatch(/width="\d{2,}" height="\d{2,}"/);
+    }
   });
 });
 
