@@ -30,6 +30,19 @@ vi.mock("@/lib/supabase/admin", () => ({
   createSupabaseAdminClient: () => ({ auth: { admin: { updateUserById: adminApi.updateUserById } } }),
 }));
 
+// The welcome email. The real one opens an SMTP connection, so only the
+// decision to send is exercised here — who it is asked to write to, and
+// what the action does when the relay will not take it.
+const welcomeMail = vi.hoisted(() => ({
+  batches: [] as Array<Array<{ id: string; email: string; role: string }>>,
+  deliver: true,
+  send: async (recipients: Array<{ id: string; email: string; role: string }>) => {
+    welcomeMail.batches.push(recipients);
+    return recipients.map(() => welcomeMail.deliver);
+  },
+}));
+vi.mock("@/lib/mail/send-welcome", () => ({ sendWelcomeEmails: welcomeMail.send }));
+
 // Real `eq` builds a SQL AST node for a real database to evaluate. Replacing
 // it with a row-predicate closure lets the fake `db` below actually filter
 // in-memory tables by whichever column the action really queried; `and`,
@@ -361,5 +374,75 @@ describe("changing an account's email address", () => {
     expect(usersRows[1]?.email).toBe("pending@example.test");
     expect(usersRows[1]?.status).toBe("pending");
     expect(auditRows).toHaveLength(0);
+  });
+});
+
+/**
+ * The welcome email goes out on approval, and only on approval. It is best
+ * effort by design: the account is already active by the time the relay is
+ * asked, so nothing it does may change what the administrator is told.
+ */
+describe("the welcome email on approval", () => {
+  const TARGET_ID = "22222222-2222-4222-8222-222222222222";
+  const ADMIN_ID = "11111111-1111-4111-8111-111111111111";
+
+  beforeEach(() => {
+    welcomeMail.batches = [];
+    welcomeMail.deliver = true;
+    adminApi.refuse = false;
+    currentUser.value = { id: ADMIN_ID, role: "admin", status: "active" } as CurrentUser;
+    usersRows = [
+      { id: ADMIN_ID, name: "Admin", employee_eid: null, role: "admin", status: "active", manager_name: null },
+      {
+        id: TARGET_ID,
+        name: "Dela Cruz, Juan",
+        email: "juan@example.com",
+        employee_eid: null,
+        role: "agent",
+        status: "pending",
+        manager_name: null,
+      },
+    ];
+    employeesRows = [];
+    assignmentsRows = [];
+    auditRows.length = 0;
+  });
+
+  it("writes to each account the bulk approval activated", async () => {
+    const { approvePendingUsers } = await import("./actions");
+    await approvePendingUsers({ userIds: [TARGET_ID] });
+
+    expect(welcomeMail.batches).toHaveLength(1);
+    expect(welcomeMail.batches[0].map((r) => r.id)).toEqual([TARGET_ID]);
+    expect(auditRows[0]?.after).toMatchObject({ welcomeEmailed: true });
+  });
+
+  it("skips anyone whose address could not be confirmed — they still owe the confirm link", async () => {
+    adminApi.refuse = true;
+    const { approvePendingUsers } = await import("./actions");
+    const result = await approvePendingUsers({ userIds: [TARGET_ID] });
+
+    expect(result).toEqual({ ok: true, approved: 1, unconfirmed: 1 });
+    expect(welcomeMail.batches[0] ?? []).toEqual([]);
+    expect(auditRows[0]?.after).toMatchObject({ welcomeEmailed: false });
+  });
+
+  it("approves anyway when the relay will not take the message", async () => {
+    welcomeMail.deliver = false;
+    const { approvePendingUsers } = await import("./actions");
+    const result = await approvePendingUsers({ userIds: [TARGET_ID] });
+
+    expect(result).toEqual({ ok: true, approved: 1, unconfirmed: 0 });
+    expect(usersRows.find((row) => row.id === TARGET_ID)?.status).toBe("active");
+    // Recorded as not delivered, so an administrator can tell later.
+    expect(auditRows[0]?.after).toMatchObject({ status: "active", welcomeEmailed: false });
+  });
+
+  it("stays quiet when a save is not an approval", async () => {
+    usersRows[1].status = "active";
+    const { updateUser } = await import("./actions");
+    await updateUser({ userId: TARGET_ID, role: "agent", status: "active", employeeEid: "", managerName: "" });
+
+    expect(welcomeMail.batches).toEqual([]);
   });
 });

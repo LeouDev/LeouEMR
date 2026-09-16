@@ -1137,6 +1137,39 @@ from every environment this project gets worked on in.
   (the handoff flagged mobile as unresolved), and the board persists
   server-side instead of localStorage (the handoff asked for exactly
   that). Not audited: private notes, not a record.
+- **A welcome email when an account is approved (16 Sep, feature
+  branch).** Approved accounts were activated silently: the person learned
+  they were in only by trying to sign in again. Supabase cannot send this
+  one — its templates fire on its own auth events and there is none for "an
+  administrator approved this person" — so it goes from app code, through
+  the same relay the end-of-day report uses.
+  Sent from **both** approval paths in `users/actions.ts`, since the code
+  there already treats either control as the approval, and only to accounts
+  whose address was confirmed: anyone left unconfirmed still owes the
+  confirm-signup link, and "you're in, sign in now" would be wrong for
+  them. Best effort throughout — the account is active before the relay is
+  ever asked, so a refused send is logged, recorded on the approval's audit
+  row as `welcomeEmailed: false`, and never reported to the administrator
+  as a failed approval.
+  The transport moved to `src/lib/mail/transport.ts`. It lived inside
+  `my-stats/actions.ts`, which is `"use server"` and may export only async
+  functions, so a second sender could not have reached it without
+  duplicating the SMTP configuration.
+  Two copies of the template exist on purpose: `docs/email-templates/
+  welcome-approved.html` is the one a human edits, and
+  `src/lib/mail/welcome-approved-template.ts` holds the identical string the
+  app sends, because `docs/` is not traced into the serverless bundle and
+  the file simply would not exist on the deployed function.
+  `welcome-email.test.ts` compares them byte for byte, so they cannot drift.
+  Every filled value is HTML-escaped — an account name or address lands
+  inside an href — and the first name is one word, read from after the
+  comma when the name follows the workbook's "Last, First".
+  Four optional variables, each with a working fallback (`.env.example`):
+  `APP_URL` — **set this in production**, or a preview deployment's own
+  throwaway host becomes the sign-in link — `HELP_URL`, `SUPPORT_EMAIL` and
+  `MAIL_POSTAL_ADDRESS`. With no postal address the footer line is dropped
+  rather than mailed as `[company address goes here]`; CAN-SPAM wants a real
+  one, so set it before this is used at any volume.
 - **Attention required lists the week's work, not every failed measure
   (16 Sep, main).** The table's last three columns are the action item, its
   status and a review link, so the PAR rating and MBO took a row each with
