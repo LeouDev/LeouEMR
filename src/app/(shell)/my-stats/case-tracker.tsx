@@ -5,6 +5,7 @@ import { Card, CardHeader, EmptyState } from "@/components/ui";
 import { EodSendingOverlay } from "@/components/eod-sending-overlay";
 import { ACTIVITY_SKILLS } from "@/lib/case-tracker/activities";
 import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "@/lib/case-tracker/report";
+import { CSV_BOM } from "@/lib/csv-bom";
 import { sendEodEmail, type SendEodResult } from "./actions";
 import { resolveTargets, stageFor, STANDARD, type TargetSkill } from "@/lib/case-tracker/targets";
 import { describeActionError } from "@/lib/ui/action-error";
@@ -151,7 +152,9 @@ const id = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${performance.now()}`;
 
 function download(filename: string, csv: string) {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  // The mark goes on here rather than inside the CSV builders, so the
+  // string those return stays the string the tests assert.
+  const blob = new Blob([CSV_BOM + csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -249,7 +252,7 @@ export function CaseTracker({
       subject: `EOD Report (${readable}) - ${yourName}`,
       html: eodHtml(day, yourName, tlName, readable),
       text: eodBody(day, yourName, tlName, readable),
-      csv: dayCases.length > 0 ? caseLogCsv(dayCases, targets) : undefined,
+      csv: dayCases.length > 0 ? CSV_BOM + caseLogCsv(dayCases, targets) : undefined,
       csvFilename: dayCases.length > 0 ? `case_log_${date}.csv` : undefined,
     });
     const animationDone = new Promise<void>((resolve) => {
