@@ -1164,6 +1164,10 @@ from every environment this project gets worked on in.
   Every filled value is HTML-escaped — an account name or address lands
   inside an href — and the first name is one word, read from after the
   comma when the name follows the workbook's "Last, First".
+  The email says **PA Command Center** throughout — sender name, subject,
+  both bodies and the header wordmark — while the sidebar says "EMR /
+  Command Center". That is the owner's decision (16 Sep), not an oversight:
+  leave it alone rather than aligning the two.
   Four optional variables, each with a working fallback (`.env.example`):
   `APP_URL` — **set this in production**, or a preview deployment's own
   throwaway host becomes the sign-in link — `HELP_URL` (the app itself until
