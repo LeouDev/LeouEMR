@@ -253,6 +253,18 @@ export async function getAttentionRows(
       and(
         eq(weeklyMetricResults.weekStart, week),
         eq(weeklyMetricResults.status, "fail"),
+        // Only KPIs that can open an action item belong in a table whose
+        // last three columns are the action item, its status and a review
+        // link. The PAR rating, DPU and DPO are gates on MBO (0013); MBO
+        // itself is assessed monthly (0041); AHT, CPH and Case Rate are
+        // followed skill by skill now (0042); Standard Errors feeds the
+        // scorecard only (0050). All of them still carry a weekly row, so
+        // each failure listed one line here with "—" under Action item and
+        // "—" under Status — nothing a leader could act on, crowding out
+        // the failures they could. This is the same predicate the "failing
+        // this week" count beside it already uses, so the table and that
+        // number now describe the same set.
+        eq(kpiDefinitions.generatesActionItems, true),
         ids === "all" ? undefined : inArray(weeklyMetricResults.employeeId, ids),
       ),
     )

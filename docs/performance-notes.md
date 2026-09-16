@@ -1137,6 +1137,58 @@ from every environment this project gets worked on in.
   (the handoff flagged mobile as unresolved), and the board persists
   server-side instead of localStorage (the handoff asked for exactly
   that). Not audited: private notes, not a record.
+- **A masterlist upload nearly attrited the whole floor, and said so in
+  SQL (16 Sep, main).** An upload of `Copy of
+  optumrx-emr-masterlist-template.xlsx` — the blank template, whose only
+  row is the example agent `001895123` — failed with a wall of SQL and 219
+  bound parameters. Two separate faults, and a third thing that saved it.
+  (1) *What it was trying to do.* A masterlist is a complete roster, so
+  every agent active before the month and missing from the file is
+  attrited. The template matches nobody, so the plan was all 219 agents:
+  assignments closed, `employees.status` set to separated, every open
+  action item closed. Only the database stopped it. `runMasterlistImport`
+  now refuses a file whose Agent EIDs match no employee at all, and the
+  wizard withholds the Import button and says why — a roster matching
+  nobody is the blank template or an EID column that lost its leading
+  zeros, never a real roster. The preview always showed "Would attrite
+  219"; a figure among three like it is not a stop.
+  (2) *Why it failed.* The attrition close set `effective_to` on **every**
+  open assignment of an attrited agent. But an agent counts as
+  active-before through whichever interval covers the day before the
+  month, and that need not be the one open interval they are allowed
+  (`employee_assignments_no_overlap` permits no more): an org change
+  effective this month leaves the covering interval closed on 31 Aug and
+  opens a new one on 1 Sep. Closing *that* on 31 Aug puts `effective_to`
+  before its own `effective_from`, which
+  `employee_assignments_dates_ordered` (migration 0034) rejects — failing
+  the whole import rather than one row. The close in `commitMasterlist` is
+  now restricted to intervals that had already started. A later interval
+  is a real conflict — the weekly data says they are working, the roster
+  does not list them — so it is returned as `contestedAttrition` and shown
+  in the summary, not deleted and not force-closed. Reproduced on
+  Postgres 16 with 0034's real constraints before and after.
+  (3) *Why it was unreadable.* drizzle-orm wraps a failed query in a
+  `DrizzleQueryError` whose own `message` is the statement followed by its
+  bound parameters; the reason Postgres gave sits in `cause`. Every
+  `(error as Error).message` in the import path therefore reported the
+  parameters and dropped the reason, on the page *and* in the
+  `import_batches.validation_summary` row it saved. `describeDbError`
+  (`src/lib/db/query-error.ts`) reaches past the wrapper and appends the
+  constraint name when Postgres named one. It deliberately leaves DETAIL
+  out: for a check violation that is the entire failing row, which here is
+  a named person's record, and this string is persisted.
+  Alongside: both import wizards predated `describeActionError` and showed
+  a thrown action's raw message, which in production is an opaque digest —
+  they use it now, with different fallbacks, because `commitImport` writes
+  in chunks (an interrupted weekly import may have written some weeks, so
+  it points at Recent imports) while `commitMasterlist` is one transaction
+  (the roster really is untouched). `createSupabaseAdminClient` checks its
+  own variables instead of letting supabase-js answer "supabaseKey is
+  required."; `.env.example` no longer calls the service-role key "not
+  currently required", which stopped being true when uploads moved to
+  Storage; and the best-effort `remove([storagePath])` in both imports'
+  `finally` could throw and replace the return above it, reporting a
+  *completed* import as a failure.
 - **Approving an account confirms its email address (14 Sep, feature
   branch).** People approved on the Users page were still refused at
   sign-in with "Confirm your email using the link we sent you": company
@@ -1726,6 +1778,18 @@ What the remote environment does offer:
 
 ## Local development gotchas
 
+- The container's clone is **shallow, with more than one graft**
+  (`.git/shallow` held two boundaries). Local `main` and `origin/main`
+  then have no visible common ancestor and every merge dies on "refusing
+  to merge unrelated histories", which looks like a corrupted checkout and
+  is not. `git fetch --unshallow origin` restores the real ancestry;
+  nothing is lost and no history is rewritten. Do that before concluding
+  anything about diverged branches.
+- `git push origin main:<branch>` — the branch-sync line in the deploy
+  routine — can be refused as destructive even when it is a strict
+  fast-forward. Check with `git merge-base --is-ancestor <branch>
+  origin/main`, then get the same result safely: check the branch out,
+  `git merge --ff-only main`, and push it normally.
 - `npm ci` fails behind a proxy that blocks `cdn.sheetjs.com` (the `xlsx`
   tarball). For local typecheck/lint/tests only, temporarily point `xlsx`
   at `0.18.5` from the npm registry, `npm install --no-package-lock`, then
