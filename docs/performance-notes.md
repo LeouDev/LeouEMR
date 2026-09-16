@@ -1137,6 +1137,26 @@ from every environment this project gets worked on in.
   (the handoff flagged mobile as unresolved), and the board persists
   server-side instead of localStorage (the handoff asked for exactly
   that). Not audited: private notes, not a record.
+- **A bulk approval could lose its own audit trail (16 Sep, bug, main).**
+  Found by an audit of the whole app, in code added hours earlier the same
+  day. `approvePendingUsers` activates up to 500 accounts in one update,
+  and the welcome email was then sent **one SMTP round trip at a time**,
+  serially, *before* the audit rows were written. The accounts are already
+  active at that point, so a large "Approve all pending" that reached the
+  platform's time limit mid-send would have left every one of them active
+  with nothing in `audit_log` saying who approved them, and shown the
+  administrator an error for an approval that had in fact succeeded.
+  `/users` sets no `maxDuration`, so the ceiling is the platform default.
+  Two changes. The audit insert now happens before any mail is attempted —
+  the approval's own record must not wait on a relay — and the sends run ten
+  at a time (`SEND_BATCH`), matching `confirmEmails` beside them, so a
+  couple of hundred joiners is seconds rather than minutes. The single-row
+  path was reordered the same way.
+  `welcomeEmailed` left the audit row with it: it cannot be known before
+  the send, and the approval's record is not worth delaying for it.
+  Delivery is in the platform log under `[welcome]`, per address, which is
+  where an administrator looks anyway. `actions.test.ts` pins the ordering
+  by counting audit rows at the moment the relay is first contacted.
 - **A welcome email when an account is approved (16 Sep, feature
   branch).** Approved accounts were activated silently: the person learned
   they were in only by trying to sign in again. Supabase cannot send this

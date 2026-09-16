@@ -36,7 +36,11 @@ vi.mock("@/lib/supabase/admin", () => ({
 const welcomeMail = vi.hoisted(() => ({
   batches: [] as Array<Array<{ id: string; email: string; role: string }>>,
   deliver: true,
+  /** How many audit rows existed when the relay was first contacted. */
+  auditRowsAtSendTime: -1,
+  countAuditRows: (): number => 0,
   send: async (recipients: Array<{ id: string; email: string; role: string }>) => {
+    welcomeMail.auditRowsAtSendTime = welcomeMail.countAuditRows();
     welcomeMail.batches.push(recipients);
     return recipients.map(() => welcomeMail.deliver);
   },
@@ -389,6 +393,8 @@ describe("the welcome email on approval", () => {
   beforeEach(() => {
     welcomeMail.batches = [];
     welcomeMail.deliver = true;
+    welcomeMail.auditRowsAtSendTime = -1;
+    welcomeMail.countAuditRows = () => auditRows.length;
     adminApi.refuse = false;
     currentUser.value = { id: ADMIN_ID, role: "admin", status: "active" } as CurrentUser;
     usersRows = [
@@ -414,7 +420,20 @@ describe("the welcome email on approval", () => {
 
     expect(welcomeMail.batches).toHaveLength(1);
     expect(welcomeMail.batches[0].map((r) => r.id)).toEqual([TARGET_ID]);
-    expect(auditRows[0]?.after).toMatchObject({ welcomeEmailed: true });
+    expect(auditRows[0]?.after).toMatchObject({ status: "active", emailConfirmed: true });
+  });
+
+  /**
+   * The accounts are already active before any mail is attempted, so every
+   * second spent on the relay is a second the approval could be lost to the
+   * platform's time limit with nothing in the log saying who did it. The
+   * audit row goes in first; delivery is recorded in the platform log.
+   */
+  it("records the approval before the relay is contacted, not after", async () => {
+    const { approvePendingUsers } = await import("./actions");
+    await approvePendingUsers({ userIds: [TARGET_ID] });
+
+    expect(welcomeMail.auditRowsAtSendTime).toBe(1);
   });
 
   it("skips anyone whose address could not be confirmed — they still owe the confirm link", async () => {
@@ -424,7 +443,7 @@ describe("the welcome email on approval", () => {
 
     expect(result).toEqual({ ok: true, approved: 1, unconfirmed: 1 });
     expect(welcomeMail.batches[0] ?? []).toEqual([]);
-    expect(auditRows[0]?.after).toMatchObject({ welcomeEmailed: false });
+    expect(auditRows[0]?.after).toMatchObject({ status: "active", emailConfirmed: false });
   });
 
   it("approves anyway when the relay will not take the message", async () => {
@@ -434,8 +453,8 @@ describe("the welcome email on approval", () => {
 
     expect(result).toEqual({ ok: true, approved: 1, unconfirmed: 0 });
     expect(usersRows.find((row) => row.id === TARGET_ID)?.status).toBe("active");
-    // Recorded as not delivered, so an administrator can tell later.
-    expect(auditRows[0]?.after).toMatchObject({ status: "active", welcomeEmailed: false });
+    // The approval stands on its own record regardless of the relay.
+    expect(auditRows[0]?.after).toMatchObject({ status: "active", emailConfirmed: true });
   });
 
   it("stays quiet when a save is not an approval", async () => {

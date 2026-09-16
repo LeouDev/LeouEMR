@@ -157,24 +157,6 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
   const approving = before.status === "pending" && parsed.data.status === "active";
   const emailConfirmed = approving ? await confirmEmail(parsed.data.userId) : null;
 
-  // Welcome them the same way the bulk button does — an approval is an
-  // approval whichever control made it. Skipped when the address could not
-  // be confirmed: that account still owes the confirm-signup link, and
-  // "you're in, sign in now" would be wrong.
-  const [welcomeEmailed = false] =
-    approving && emailConfirmed
-      ? await sendWelcomeEmails(
-          [
-            {
-              id: parsed.data.userId,
-              name: before.name,
-              email: email ?? before.email,
-              role: parsed.data.role,
-            },
-          ],
-          await appUrl(),
-        )
-      : [];
 
   await db.insert(auditLog).values({
     actorId: actor.id,
@@ -194,9 +176,21 @@ export async function updateUser(input: unknown): Promise<UserActionResult> {
       employeeEid,
       managerName,
       ...(email ? { email } : {}),
-      ...(approving ? { emailConfirmed, welcomeEmailed } : {}),
+      ...(approving ? { emailConfirmed } : {}),
     },
   });
+
+  // After the audit row, never before it — see approvePendingUsers. An
+  // approval is an approval whichever control made it, so this welcomes
+  // them the same way the bulk button does, and skips an address that
+  // could not be confirmed: that account still owes the confirm-signup
+  // link, and "you're in, sign in now" would be wrong for it.
+  if (approving && emailConfirmed) {
+    await sendWelcomeEmails(
+      [{ id: parsed.data.userId, name: before.name, email: email ?? before.email, role: parsed.data.role }],
+      await appUrl(),
+    );
+  }
 
   revalidatePath("/users");
   return emailConfirmed === false ? { ok: true, warning: EMAIL_NOT_CONFIRMED_WARNING } : { ok: true };
@@ -242,14 +236,14 @@ export async function approvePendingUsers(
 
   const confirmed = await confirmEmails(approved.map((row) => row.id));
 
-  // Only those whose address is confirmed: anyone left unconfirmed still
-  // has to go through the confirm-signup link first, so telling them they
-  // can sign in now would be wrong. Best effort — see sendWelcomeEmails.
-  const welcomeBy = new Map<string, boolean>();
-  const welcomeTo = approved.filter((_, index) => confirmed[index]);
-  const sent = await sendWelcomeEmails(welcomeTo, await appUrl());
-  welcomeTo.forEach((row, index) => welcomeBy.set(row.id, sent[index] ?? false));
-
+  // The record of the approval is written before any mail is attempted.
+  // The accounts are already active at this point, so anything between the
+  // update above and this insert is time the record can be lost to: a bulk
+  // approval that reached the platform's time limit mid-send would have
+  // left every one of them active with nothing in the audit log saying who
+  // did it. Delivery is recorded in the platform log by sendWelcomeEmails,
+  // which is where an administrator looks when someone says they never
+  // heard; it is not worth the approval's own record to carry it.
   if (approved.length > 0) {
     await db.insert(auditLog).values(
       approved.map((row, index) => ({
@@ -258,15 +252,15 @@ export async function approvePendingUsers(
         entityType: "user",
         entityId: row.id,
         before: { status: "pending" },
-        after: {
-          status: "active",
-          role: row.role,
-          emailConfirmed: confirmed[index],
-          welcomeEmailed: welcomeBy.get(row.id) ?? false,
-        },
+        after: { status: "active", role: row.role, emailConfirmed: confirmed[index] },
       })),
     );
   }
+
+  // Only those whose address is confirmed: anyone left unconfirmed still
+  // has to go through the confirm-signup link first, so telling them they
+  // can sign in now would be wrong. Best effort — see sendWelcomeEmails.
+  await sendWelcomeEmails(approved.filter((_, index) => confirmed[index]), await appUrl());
 
   revalidatePath("/users");
   return { ok: true, approved: approved.length, unconfirmed: confirmed.filter((ok) => !ok).length };

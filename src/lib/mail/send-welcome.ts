@@ -2,6 +2,9 @@ import { describeSmtpFailure } from "./smtp-error";
 import { mailFromAddress, mailTransport } from "./transport";
 import { renderWelcomeEmail } from "./welcome-email";
 
+/** How many welcomes are in flight at once — mirrors confirmEmails' own pacing. */
+const SEND_BATCH = 10;
+
 export interface WelcomeRecipient {
   id: string;
   name: string;
@@ -71,41 +74,51 @@ export async function sendWelcomeEmails(
   const { helpUrl, supportEmail } = helpLinks(siteUrl);
   const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim() || DEFAULT_POSTAL_ADDRESS;
 
+  // Ten at a time, matching confirmEmails beside it. One at a time meant a
+  // bulk approval held the request open for one SMTP round trip per person
+  // — a couple of hundred new joiners is minutes, not seconds.
   const results: boolean[] = [];
-  for (const person of recipients) {
-    const { subject, html, text } = renderWelcomeEmail({
-      name: person.name,
-      email: person.email,
-      role: person.role,
-      siteUrl,
-      helpUrl,
-      supportEmail,
-      postalAddress,
-    });
+  for (let offset = 0; offset < recipients.length; offset += SEND_BATCH) {
+    const batch = recipients.slice(offset, offset + SEND_BATCH);
+    results.push(
+      ...(await Promise.all(
+        batch.map(async (person) => {
+          const { subject, html, text } = renderWelcomeEmail({
+            name: person.name,
+            email: person.email,
+            role: person.role,
+            siteUrl,
+            helpUrl,
+            supportEmail,
+            postalAddress,
+          });
 
-    try {
-      await smtp.client.sendMail({
-        from: { name: "PA Command Center", address: from },
-        to: person.email,
-        replyTo: supportEmail,
-        subject,
-        text,
-        html,
-      });
-      results.push(true);
-    } catch (cause) {
-      // Same shape the end-of-day send logs, for the same reader: the
-      // platform log is where an administrator looks when someone says
-      // they were approved and never heard about it.
-      const error = (cause && typeof cause === "object" ? cause : {}) as Record<string, unknown>;
-      console.error("[welcome] send failed", {
-        to: person.email,
-        code: error.code,
-        response: error.response,
-        reason: describeSmtpFailure(cause, smtp.target),
-      });
-      results.push(false);
-    }
+          try {
+            await smtp.client.sendMail({
+              from: { name: "PA Command Center", address: from },
+              to: person.email,
+              replyTo: supportEmail,
+              subject,
+              text,
+              html,
+            });
+            return true;
+          } catch (cause) {
+            // Same shape the end-of-day send logs, for the same reader: the
+            // platform log is where an administrator looks when someone says
+            // they were approved and never heard about it.
+            const error = (cause && typeof cause === "object" ? cause : {}) as Record<string, unknown>;
+            console.error("[welcome] send failed", {
+              to: person.email,
+              code: error.code,
+              response: error.response,
+              reason: describeSmtpFailure(cause, smtp.target),
+            });
+            return false;
+          }
+        }),
+      )),
+    );
   }
   return results;
 }
