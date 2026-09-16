@@ -2,11 +2,8 @@ import type { QaForm } from "./forms";
 import type { FindingRow } from "./scoring";
 import type { StoredTimeMotion } from "./time-motion";
 
-/**
- * Prefixed to the file so Excel on Windows reads it as UTF-8 — without it
- * the dashes and the minus signs the exports carry open as mojibake.
- */
-export const CSV_BOM = "\uFEFF";
+// Re-exported so this module stays the one import for a quality export.
+export { CSV_BOM } from "../csv-bom";
 
 /**
  * Plain CSV: every cell quoted, CRLF rows. A text cell that starts with a
