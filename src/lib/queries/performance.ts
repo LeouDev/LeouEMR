@@ -23,16 +23,6 @@ import type { CurrentUser } from "@/lib/auth/session";
 
 /** Statuses still requiring attention (not resolved). */
 /**
- * Restricts a query over `performance_issues` to KPIs that still generate
- * action items.
- *
- * Written as an EXISTS rather than a join so it can be dropped into any
- * existing `where` without reshaping the query. It matters because the flag
- * can be turned off after items already exist — MBO is assessed monthly, so
- * its weekly items should stop counting everywhere at once rather than being
- * filtered out at each call site by hand, or deleted irreversibly.
- */
-/**
  * The KPIs Attention required leaves out: the monthly MBO composite and the
  * three gates on it (0013, 0041).
  *
@@ -46,6 +36,16 @@ import type { CurrentUser } from "@/lib/auth/session";
  */
 export const ATTENTION_EXCLUDED_KPIS = ["PRODUCTION_RATE", "DPU", "DPO", "MBO"];
 
+/**
+ * Restricts a query over `performance_issues` to KPIs that still generate
+ * action items.
+ *
+ * Written as an EXISTS rather than a join so it can be dropped into any
+ * existing `where` without reshaping the query. It matters because the flag
+ * can be turned off after items already exist — MBO is assessed monthly, so
+ * its weekly items should stop counting everywhere at once rather than being
+ * filtered out at each call site by hand, or deleted irreversibly.
+ */
 export const OPENS_ACTION_ITEMS = sql`exists (
   select 1 from kpi_definitions k
   where k.id = ${performanceIssues.kpiId} and k.generates_action_items

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { WELCOME_APPROVED_HTML } from "./welcome-approved-template";
 import { firstNameOf, renderWelcomeEmail, WELCOME_PLACEHOLDERS } from "./welcome-email";
@@ -65,6 +66,27 @@ describe("renderWelcomeEmail", () => {
     expect(html).toContain("&quot;&gt;&lt;b&gt;");
   });
 
+  /**
+   * A string replacement reads the dollar forms as patterns rather than as
+   * text, so a value carrying one used to put the marker itself — or a slice
+   * of the document — into the delivered message.
+   */
+  it("treats a value carrying a replacement pattern as plain text", () => {
+    const greeting = renderWelcomeEmail({ ...VALUES, name: "Juan$& Cruz" }).html.match(/in, ([^!]*)!/);
+    expect(greeting?.[1]).toBe("Juan$&amp;");
+
+    const footer = renderWelcomeEmail({ ...VALUES, postalAddress: "1 Market St $' Cebu" }).html;
+    expect(footer).toContain("1 Market St $&#39; Cebu");
+    expect(footer).not.toContain("[company address goes here]");
+    expect(footer).not.toMatch(/\{\{\s*\./);
+  });
+
+  it("puts the postal address in the plain-text part too, not only the markup", () => {
+    const { text } = renderWelcomeEmail({ ...VALUES, postalAddress: "Tower 4\nCebu IT Park" });
+    expect(text).toContain("Tower 4\nCebu IT Park");
+    expect(renderWelcomeEmail(VALUES).text).not.toContain("company address");
+  });
+
   it("keeps a first name to one word, so nothing else in the field is rendered", () => {
     const { html } = renderWelcomeEmail({ ...VALUES, name: '<script>alert(1)</script> Bobby, "Drop"' });
     expect(html).toContain("You're in, &quot;Drop&quot;!");
@@ -127,7 +149,12 @@ describe("renderWelcomeEmail", () => {
 describe("the template module and the file an administrator pastes", () => {
   it("are byte-identical, so neither can drift from the other", () => {
     expect(WELCOME_APPROVED_HTML).toBe(
-      readFileSync("docs/email-templates/welcome-approved.html", "utf8"),
+      // Resolved from this file, not the process cwd, so the guard holds
+      // wherever vitest is invoked from.
+      readFileSync(
+        fileURLToPath(new URL("../../../docs/email-templates/welcome-approved.html", import.meta.url)),
+        "utf8",
+      ),
     );
   });
 });

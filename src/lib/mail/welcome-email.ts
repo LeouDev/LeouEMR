@@ -93,7 +93,11 @@ export function renderWelcomeEmail(values: WelcomeEmailValues): RenderedEmail {
 
   let html = WELCOME_APPROVED_HTML;
   for (const key of WELCOME_PLACEHOLDERS) {
-    html = html.replaceAll(`{{ .${key} }}`, escapeHtml(fill[key]));
+    // A function replacement, never a string. In a string replacement the
+    // dollar forms are patterns, not text, so a name carrying one put the
+    // marker itself back into the message - the single thing these
+    // placeholders exist to keep out of someone's inbox.
+    html = html.replaceAll(`{{ .${key} }}`, () => escapeHtml(fill[key]));
   }
 
   // Required on a bulk-ish transactional send, but never invented here: with
@@ -104,7 +108,7 @@ export function renderWelcomeEmail(values: WelcomeEmailValues): RenderedEmail {
     "[company address goes here]<br>\n",
     // Escaped before the line breaks go in, so the address is text and the
     // <br> between its lines is the only markup it can contribute.
-    address ? `${escapeHtml(address).replace(/\r?\n/g, "<br>")}<br>\n` : "",
+    () => (address ? `${escapeHtml(address).replace(/\r?\n/g, "<br>")}<br>\n` : ""),
   );
 
   // Plain-text alternative, for clients that refuse HTML and for spam
@@ -119,6 +123,9 @@ export function renderWelcomeEmail(values: WelcomeEmailValues): RenderedEmail {
     "",
     `Need help? ${values.helpUrl} or ${values.supportEmail}`,
     "",
+    // The address belongs in both parts: a client showing text/plain, and a
+    // filter scoring it, are exactly who the requirement is about.
+    ...(address ? [address, ""] : []),
     "You're receiving this because an administrator approved access for this email address.",
   ].join("\n");
 

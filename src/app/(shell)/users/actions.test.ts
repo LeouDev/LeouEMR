@@ -15,6 +15,18 @@ const currentUser = vi.hoisted(() => ({ value: null as CurrentUser | null }));
 vi.mock("@/lib/auth/session", () => ({ getCurrentUser: async () => currentUser.value }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
+// `after` defers work until the response is done, which needs a request
+// scope these tests have none of. Running the callback where it was handed
+// over keeps what the tests are actually about — that the send is asked for,
+// and asked for only after the audit row exists — while proving the action
+// no longer waits on it.
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (callback: () => unknown) => {
+    void callback();
+  },
+}));
+
 // The Supabase admin API: an approval marks the email confirmed through it.
 // Each call is recorded; `refuse` makes the fake answer with an error the
 // way auth-js does (returned, not thrown).

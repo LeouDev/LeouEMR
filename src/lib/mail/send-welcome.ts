@@ -49,8 +49,11 @@ function helpLinks(siteUrl: string) {
  * failed because a relay was down. Each failure is logged for an
  * administrator and reported in the count, not to the person approving.
  *
- * Returns one entry per recipient id, in the order given, so the caller can
- * record on each audit row whether that person was actually written to.
+ * Returns one entry per recipient, in the order given. Neither caller reads
+ * it today: both hand this to `after` once the approval is recorded, so
+ * whether a welcome went out lives in the platform log under [welcome]
+ * rather than on the audit row. The array stays because a caller that does
+ * want to wait can, and because the tests read it.
  */
 export async function sendWelcomeEmails(
   recipients: WelcomeRecipient[],
