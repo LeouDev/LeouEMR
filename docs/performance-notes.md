@@ -1137,6 +1137,26 @@ from every environment this project gets worked on in.
   (the handoff flagged mobile as unresolved), and the board persists
   server-side instead of localStorage (the handoff asked for exactly
   that). Not audited: private notes, not a record.
+- **Gmail strips inline SVG, so the email's artwork had to be hosted
+  (16 Sep, bug, main).** The first real welcome email arrived correct in
+  every respect but one: the navy header band showed the wordmark and an
+  empty square. The astronaut and the rocket were inline `<svg>`, which the
+  design file used deliberately — and which Gmail removes from a message
+  body. Apple Mail renders it; Gmail and Outlook do not, so in practice it
+  cannot be used in email at all.
+  Both are now PNGs under `public/email/`, referenced as
+  `{{ .SiteURL }}/email/<name>.png`. Two things make that work: the
+  middleware matcher already excludes `.png`, so the files need no session
+  (verified against a local production build — HTTP 200, `image/png`), and
+  the `<img src>` is built from the same `SiteURL` the sign-in button uses,
+  so it follows whatever deployment sent the message. They are flattened
+  onto the colour each one sits on rather than left transparent, which
+  Outlook's renderer handles poorly. The source drawings stay in
+  `docs/email-templates/art/` for regeneration; sharp is a transitive
+  dependency, used once at authoring time, never at runtime.
+  Keep every image same-origin. A transactional email loading an image from
+  a third party hands that host a read receipt for every open, and the test
+  beside this pins both the origins and the absence of a 1x1.
 - **A bulk approval could lose its own audit trail (16 Sep, bug, main).**
   Found by an audit of the whole app, in code added hours earlier the same
   day. `approvePendingUsers` activates up to 500 accounts in one update,
