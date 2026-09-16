@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { LoggedCase } from "@/lib/case-tracker/tracker";
+import { CASE_DECISIONS, type LoggedCase } from "@/lib/case-tracker/tracker";
 import { HalfDonutGauge, type GaugeTone } from "./case-tracker-ui";
 
 const LABEL = "block text-[11px] font-bold tracking-[0.12em] text-orange-brand uppercase";
@@ -273,10 +273,11 @@ export function CaseForm({
                 onChange={(e) => setDecision(e.target.value as LoggedCase["decision"])}
                 className={`${FIELD} mt-1.5`}
               >
-                <option value="Pend">Pend</option>
-                <option value="Deny">Deny</option>
-                <option value="Approved">Approved</option>
-                <option value="Cancel">Cancel</option>
+                {CASE_DECISIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
               </select>
             </div>
 

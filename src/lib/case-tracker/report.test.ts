@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { caseLogCsv, eodBody, eodHtml, summaryCsv } from "./report";
+import { caseLogCsv, decisionTally, eodBody, eodHtml, summaryCsv } from "./report";
 import { summarizeDay, type ActivityBlock, type LoggedCase, type SkillTarget } from "./tracker";
 
 const TARGETS = new Map<string, SkillTarget>([
@@ -61,19 +61,40 @@ describe("summary csv", () => {
       TARGETS,
     );
     // 2 cases, 2 hours -> 1.00/hr, against 2h x 11 = 22 cases.
-    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","1","0","1","0","2.00","1.00","22"');
+    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","Pend: 1; Approved: 1","2.00","1.00","22"');
   });
 
-  it("breaks out Cancel as its own column, not folded into Pend", () => {
+  it("lists the day's decisions in one cell, in the order the form offers them", () => {
     const csv = summaryCsv(
       ["2026-09-08"],
       [block()],
-      [logged({ id: "c1", decision: "Cancel" }), logged({ id: "c2", decision: "Pend" })],
+      [
+        logged({ id: "c1", decision: "RAFC-C" }),
+        logged({ id: "c2", decision: "Pend" }),
+        logged({ id: "c3", decision: "RAFC-C" }),
+      ],
       TARGETS,
     );
-    expect(csv.split("\r\n")[0]).toContain('"Pend","Deny","Approved","Cancel"');
-    // date, cases, pend=1, deny=0, approved=0, cancel=1
-    expect(csv.split("\r\n")[1]).toBe('"2026-09-08","2","1","0","0","1","2.00","1.00","22"');
+
+    expect(csv.split("\r\n")[0]).toBe('"Date","Cases","Decisions","ProductionHours","CasesPerHour","TargetCases"');
+    expect(csv.split("\r\n")[1]).toContain('"Pend: 1; RAFC-C: 2"');
+  });
+
+  it("leaves out the decisions nobody used, rather than printing a dozen zeroes", () => {
+    expect(decisionTally([logged({ id: "c1" })])).toBe("Approved: 1");
+    expect(decisionTally([])).toBe("");
+  });
+
+  /**
+   * Cases live in the browser's own storage and are never migrated, so a day
+   * logged before a decision was retired still holds it. It must not vanish
+   * from the file the team lead receives.
+   */
+  it("still reports a retired decision, after the ones still on the form", () => {
+    const retired = { ...logged({ id: "c1" }), decision: "Cancel" } as unknown as LoggedCase;
+
+    expect(caseLogCsv([retired], TARGETS)).toContain('"Cancel"');
+    expect(decisionTally([retired, logged({ id: "c2", decision: "Pend" })])).toBe("Pend: 1; Cancel: 1");
   });
 
   it("orders oldest first regardless of the order it is given", () => {

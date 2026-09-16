@@ -562,9 +562,12 @@ export function CaseTracker({
                             ? "bg-pass-bg text-pass"
                             : c.decision === "Deny"
                               ? "bg-fail-bg text-fail"
-                              : c.decision === "Cancel"
-                                ? "bg-cream-dark text-muted"
-                                : "bg-warn-bg text-warn"
+                              : // Amber is "still owed an outcome", which is Pend alone. The
+                                // rest are dispositions in their own right, so they read
+                                // neutral rather than as ten different kinds of warning.
+                                c.decision === "Pend"
+                                ? "bg-warn-bg text-warn"
+                                : "bg-cream-dark text-muted"
                         }`}
                       >
                         {c.decision}
