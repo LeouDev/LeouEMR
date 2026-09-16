@@ -1172,9 +1172,13 @@ from every environment this project gets worked on in.
   `APP_URL` — **set this in production**, or a preview deployment's own
   throwaway host becomes the sign-in link — `HELP_URL` (the app itself until
   there is a separate help site), `SUPPORT_EMAIL` (defaults to
-  `leou.comendador@optum.com`) and `MAIL_POSTAL_ADDRESS`. With no postal address the footer line is dropped
-  rather than mailed as `[company address goes here]`; CAN-SPAM wants a real
-  one, so set it before this is used at any volume.
+  `leou.comendador@optum.com`) and `MAIL_POSTAL_ADDRESS` (defaults to the
+  Cebu IT Park office; a newline starts a new footer line, and the value is
+  escaped before the break goes in, so it can never carry markup). The same
+  address was written into `confirm-signup.html` and `reset-password.html`,
+  which a human pastes into Supabase where no variable can reach —
+  `welcome-approved.html` keeps the `[company address goes here]` marker on
+  purpose, because the app fills that one at send time.
 - **Attention required lists the week's work, not every failed measure
   (16 Sep, main).** The table's last three columns are the action item, its
   status and a review link, so the PAR rating and MBO took a row each with

@@ -16,8 +16,8 @@ from any device, not only the one the request was made on.
 | Confirm signup | `confirm-signup.html` | `type=signup`, lands on /pending for an administrator's approval |
 | Reset password | `reset-password.html` | `type=recovery`, lands on /reset-password |
 
-Before pasting, replace `[company address goes here]` in the footer with
-the real postal address. Suggested subjects: "Confirm your Leou EMR account"
+Both footers already carry the postal address, so they are ready to paste
+as they stand. Suggested subjects: "Confirm your Leou EMR account"
 and "Choose a new Leou EMR password". The "expires after an hour" line
 matches Supabase's default email link expiry; change both if that setting
 is changed.
@@ -42,5 +42,7 @@ included), `.Role` (the sidebar's label for it), `.Email`, `.SiteURL`
 (`APP_URL`, else the request's host), `.HelpURL` (`HELP_URL`, else the app
 itself — where it should point until there is a separate help site) and
 `.SupportEmail` (`SUPPORT_EMAIL`, else `leou.comendador@optum.com`).
-The footer's address comes from `MAIL_POSTAL_ADDRESS`; with none set the
-line is dropped rather than mailed as a placeholder.
+The footer's address comes from `MAIL_POSTAL_ADDRESS`, defaulting to the
+Cebu IT Park office — which is why this one file keeps the
+`[company address goes here]` marker where the other two have the address
+written in: the app fills it at send time, so it must stay a marker here.

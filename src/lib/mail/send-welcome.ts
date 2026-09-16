@@ -13,6 +13,17 @@ export interface WelcomeRecipient {
 const DEFAULT_SUPPORT_EMAIL = "leou.comendador@optum.com";
 
 /**
+ * The footer's postal address, which bulk mail is required to carry.
+ *
+ * A default rather than configuration-only: the address of the site the
+ * team works from changes about as often as the company does, and leaving
+ * it to an unset variable is how the footer ended up with no address at
+ * all. MAIL_POSTAL_ADDRESS still overrides it, and a newline starts a new
+ * line in the footer.
+ */
+const DEFAULT_POSTAL_ADDRESS = "Filinvest Cebu Cyberzone, Tower 4\nCebu IT Park, Apas, Cebu City, Cebu 6000";
+
+/**
  * Where the email points people for help.
  *
  * The help link goes back to the app, which is the help centre until there
@@ -58,7 +69,7 @@ export async function sendWelcomeEmails(
 
   const from = mailFromAddress(smtp);
   const { helpUrl, supportEmail } = helpLinks(siteUrl);
-  const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim();
+  const postalAddress = process.env.MAIL_POSTAL_ADDRESS?.trim() || DEFAULT_POSTAL_ADDRESS;
 
   const results: boolean[] = [];
   for (const person of recipients) {
