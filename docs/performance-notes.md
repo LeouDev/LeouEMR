@@ -1155,14 +1155,19 @@ from every environment this project gets worked on in.
   that distinction is the whole point of the fix, and
   `attention-excluded.test.ts` pins it so it is not folded back into one.
   Weekly rows are untouched either way and the scorecard still shows all of
-  them; this only governs which failures are offered as work. Reading the
-  `Sample` column beside them: it is the source rows behind the figure and
-  its meaning is per KPI — cases for Case Rate and the per-skill KPIs,
-  audits for DPU, attributes for DPO, values averaged for a mean, workbook
-  rows for a summed one — and for PAR it is the number of skills blended
-  while for MBO it is the number of gates checked, which is why those two
-  sat permanently in the `<= 2` amber "very few source rows" state that the
-  cell shows. Another reason they do not belong in this table.
+  them; this only governs which failures are offered as work.
+  The `Sample` column went the same day, for the related reason that it
+  could not be read. `weekly_metric_results.sample_size` is the source rows
+  behind a figure, but the unit is per KPI: cases for Case Rate and the
+  per-skill KPIs, audits for DPU, attributes for DPO, values averaged for a
+  mean, workbook rows for a summed one — and for PAR the number of skills
+  blended, for MBO the number of gates checked, neither of them a volume at
+  all, which is why those two sat permanently in the cell's `<= 2` amber
+  "very few source rows" badge. One column could not honestly label six
+  units, and two lines of the table could not be compared, so it was
+  removed rather than renamed; `AttentionRow` was its only reader. The
+  column is untouched in the database and still shown on the employee
+  progress matrix, where a cell is one KPI and the unit is not in question.
 - **A masterlist upload nearly attrited the whole floor, and said so in
   SQL (16 Sep, main).** An upload of `Copy of
   optumrx-emr-masterlist-template.xlsx` — the blank template, whose only

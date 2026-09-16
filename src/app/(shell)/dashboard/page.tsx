@@ -520,14 +520,13 @@ export default async function DashboardPage({
             />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] border-collapse text-sm">
+              <table className="w-full min-w-[680px] border-collapse text-sm">
                 <thead>
                   <tr className="border-b-2 border-ink bg-cream">
                     <th className="px-6 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Employee</th>
                     <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">KPI</th>
                     <th className="px-3 py-2.5 font-semibold text-ink">Result</th>
                     <th className="px-3 py-2.5 font-semibold text-ink">Target</th>
-                    <th className="px-3 py-2.5 font-semibold text-ink">Sample</th>
                     <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Action item</th>
                     <th className="px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase">Status</th>
                     <th className="px-6 py-2.5 font-semibold text-ink">Review</th>
@@ -555,20 +554,6 @@ export default async function DashboardPage({
                       </td>
                       <td className="px-3 py-2 font-mono tabular-nums text-muted">
                         {formatMetric(row.targetValue, row.kpiCode)}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-xs tabular-nums">
-                        {row.sampleSize === null ? (
-                          <span className="text-muted">—</span>
-                        ) : row.sampleSize <= 2 ? (
-                          <span
-                            className="rounded bg-warn-bg px-1.5 py-0.5 text-warn"
-                            title="Very few source rows behind this figure — read with caution"
-                          >
-                            {row.sampleSize}
-                          </span>
-                        ) : (
-                          <span className="text-muted">{row.sampleSize}</span>
-                        )}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-muted">
                         {row.actionItemCode ?? "—"}
