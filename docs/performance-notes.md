@@ -1287,8 +1287,11 @@ from every environment this project gets worked on in.
   split reads the skill reference's scoring metric — a skill scored by
   average handle time is a phone skill, because handle time measures a
   call — and the per-skill breakdown is on the sub-line's tooltip so the
-  split can be checked rather than trusted. **Confirm this with the
-  business before relying on the figures.**
+  split can be checked rather than trusted. **The owner confirmed this is
+  the business's rule (17 Sep).** It remains an inference off the scoring
+  metric rather than a stored flag: a skill scored by handle time that is
+  not a phone queue would land on the wrong side, and `getAgentHours` is
+  the one place to change if that ever happens.
   Deviations from the mock, all toward existing app convention: the period
   filter is the shared `PeriodPicker` (week/month/quarter/year) rather than
   four bespoke buttons, so the page joins the remembered-period cookie and
