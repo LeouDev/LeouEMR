@@ -16,6 +16,7 @@ import {
 } from "@/lib/db/schema";
 import {
   canAutoReplay,
+  confirmedSeparations,
   evaluateWeeklyResult,
   replayEmployeeKpiHistory,
   separationResolutionWeeks,
@@ -244,14 +245,23 @@ export async function runIssueEngineForWeeks(weeks: string[]): Promise<EngineRun
  * Who counts as gone is the same rule every list and period figure follows
  * (separationDates: an EWS Black/Absconding tag, or a masterlist closure),
  * and the issue is resolved as of the week they left. Someone whose date is
- * still ahead keeps their work until it arrives.
+ * still ahead keeps their work until it arrives — and so does anyone whose
+ * employee row is not marked separated: the two real ways of leaving both
+ * mark it, so a date the row does not confirm is a broken org history
+ * (confirmedSeparations), which the nightly integrity check reports.
  */
 export async function closeIssuesOfSeparated(
   /** Report only; nothing is written. */
   dryRun = false,
 ): Promise<number> {
   const today = new Date().toISOString().slice(0, 10);
-  const leftOn = new Map([...(await separationDates("all"))].filter(([, on]) => on <= today));
+  const inferred = new Map([...(await separationDates("all"))].filter(([, on]) => on <= today));
+  if (inferred.size === 0) return 0;
+  const rows = await db
+    .select({ id: employees.id, status: employees.status })
+    .from(employees)
+    .where(inArray(employees.id, [...inferred.keys()]));
+  const leftOn = confirmedSeparations(inferred, new Map(rows.map((r) => [r.id, r.status])));
   if (leftOn.size === 0) return 0;
 
   const open = await db

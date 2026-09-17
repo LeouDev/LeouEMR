@@ -1483,6 +1483,35 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Audit after the false separations (17 Sep): how the app decides
+  someone left, and the guards now on it.** Two sources feed
+  `separationDates` (eligibility.ts): an EWS Black/Absconding tag, or a
+  closed newest assignment interval (only a masterlist closes one). Both
+  real paths also mark `employees.status = 'separated'` (masterlist
+  attrition pass; EWS tag path in ews-actions.ts); the splice bug closed
+  intervals without touching status, and nothing compared the two. The
+  one irreversible consumer is the separation sweep
+  (`closeIssuesOfSeparated`, every engine pass and `npm run
+  close-separated`), which completed work on the interval alone. Guards:
+  (1) the sweep acts only on separations the employee row confirms
+  (`confirmedSeparations`, tested) — an unconfirmed date is left alone,
+  so a broken org history can no longer close anyone's work; eligibility
+  still hides such a person from period views, which is reversible and
+  is how this was noticed. (2) Two nightly integrity checks: "active
+  employees whose newest assignment is closed" (the bug's signature; it
+  would have fired the night of 14 Sep) and "work closed on separation
+  for someone still here" (latest audit action is the separation
+  closure, owner active, open stint began on or before the closure week
+  — a rehire's new stint begins after it). (3) `npm run
+  fix:false-separations [-- --apply]` codifies the repair: reopens
+  qualifying items at their opening week, removes later duplicate
+  episodes, audits both, and replays every week from the earliest
+  reopened one through `runIssueEngineForWeeks` — no re-import needed.
+  (4) The integrity workflow writes the script's output onto the run's
+  summary page with a pointer to these notes, so a red run reads its own
+  repair. Not changed: `separationDates` itself, deliberately — the
+  period views should keep showing a disagreement rather than paper over
+  it; the check reports it the same night.
 - **The nightly integrity run was red on two counts (17 Sep).** The
   scheduled `integrity.yml` (01:00 UTC, `scripts/check-integrity.mts`
   against production) had failed three nights running; nobody reads its

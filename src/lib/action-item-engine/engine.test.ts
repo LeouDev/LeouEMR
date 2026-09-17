@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  confirmedSeparations,
   separationResolutionWeeks,
   acknowledgeByAgent,
   canAutoReplay,
@@ -339,6 +340,27 @@ describe("shouldAgeOut", () => {
         ageOutAfterDays: 14,
       }),
     ).toBe(true);
+  });
+});
+
+describe("confirmedSeparations — the sweep acts only on separations the employee row confirms", () => {
+  it("keeps a separation whose row is marked separated and drops every other", () => {
+    const inferred = new Map([
+      ["gone", "2026-08-31"],
+      ["still-active", "2026-08-31"],
+      ["on-leave", "2026-08-31"],
+      ["unknown-row", "2026-08-31"],
+    ]);
+    const statusById = new Map([
+      ["gone", "separated"],
+      ["still-active", "active"],
+      ["on-leave", "on_leave"],
+    ]);
+    expect([...confirmedSeparations(inferred, statusById)]).toEqual([["gone", "2026-08-31"]]);
+  });
+
+  it("is empty when nothing is confirmed", () => {
+    expect(confirmedSeparations(new Map([["a", "2026-08-31"]]), new Map([["a", "active"]])).size).toBe(0);
   });
 });
 
