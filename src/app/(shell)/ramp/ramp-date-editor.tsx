@@ -7,7 +7,7 @@ import { setRampAssignment } from "./actions";
 
 /**
  * The start date of one ramp assignment, editable in place. Save stores
- * the new date (snapped to the Saturday of its reporting week, as "Start
+ * the new date (snapped to the Sunday of its reporting week, as "Start
  * ramp" does) and replays the person's already-imported weeks against
  * it; Re-apply runs the same replay on the date as it stands, for after
  * the schedule itself has changed.

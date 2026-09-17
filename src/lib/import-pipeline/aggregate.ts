@@ -29,6 +29,7 @@ import {
 } from "./types";
 import { classifyResponse } from "@/lib/kpi-engine/nps";
 import type { RampTargets } from "./par-scoring";
+import { weekForRow } from "./week-placement";
 
 export type SheetRows = Record<string, Array<Record<string, unknown>>>;
 
@@ -139,6 +140,7 @@ export function aggregateWorkbook(
     let skipped = 0;
     let missingEid = 0;
     let missingWeek = 0;
+    let placedByLabel = 0;
 
     const cols = resolveColumns(headers, {
       ...IDENTITY_COLUMNS,
@@ -147,7 +149,12 @@ export function aggregateWorkbook(
 
     for (const row of rows) {
       const eid = toText(cols.eid ? row[cols.eid] : undefined);
-      const week = parseWeekLabel(cols.week ? row[cols.week] : undefined);
+      // The row's own date places it in a reporting week; the "WE" label
+      // only stands in where a date is missing (week-placement.ts).
+      const week = weekForRow(
+        parseWeekLabel(cols.week ? row[cols.week] : undefined),
+        readDate(cols.factDate ? row[cols.factDate] : undefined),
+      );
 
       if (!eid) {
         missingEid += 1;
@@ -159,6 +166,7 @@ export function aggregateWorkbook(
         skipped += 1;
         continue;
       }
+      if (week.byLabel) placedByLabel += 1;
 
       weeks.add(week.weekStart);
       weekRange.set(week.weekStart, week.weekEnd);
@@ -211,8 +219,17 @@ export function aggregateWorkbook(
       issues.push({
         severity: "error",
         sheet: sheetName,
-        message: "Rows with an unreadable week label were skipped",
+        message: "Rows with neither a readable date nor a readable week label were skipped",
         count: missingWeek,
+      });
+    }
+    if (placedByLabel > 0) {
+      issues.push({
+        severity: "warning",
+        sheet: sheetName,
+        message:
+          "Rows with no readable date were placed by their week label (the Sunday-to-Saturday week containing the label's Friday)",
+        count: placedByLabel,
       });
     }
   }

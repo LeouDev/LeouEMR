@@ -7,7 +7,7 @@ import { loadSkillReferences } from "@/lib/import-pipeline/par-scoring";
 import { periodContaining } from "./period";
 
 export interface TrendPoint {
-  /** The reporting week's start date; weeks run Saturday to Friday. */
+  /** The reporting week's start date (src/lib/queries/period.ts). */
   weekStart: string;
   value: number;
   /** Upper case, or null where the figure is not scored against a target. */
@@ -158,7 +158,7 @@ export async function getCaseRateByWeek(
   ]);
 
   // Bucketed with periodContaining rather than by date arithmetic here, so
-  // these weeks are the same Saturday-to-Friday weeks the ledger uses.
+  // these weeks are the same reporting weeks the ledger uses.
   const wanted = new Set(sorted);
   const skillsByWeek = new Map<string, CaseRateSkillTotals[]>();
   for (const row of rows) {

@@ -1451,6 +1451,42 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Reporting weeks run Sunday to Saturday from 31 May 2026 (17 Sep).**
+  The operation's week is Sunday–Saturday; the app had read the
+  workbook's "WE <Friday>" labels as Saturday–Friday weeks, which is the
+  span the data really covers (`scripts/sql/week-boundary-check.sql`:
+  4,791 of 4,792 weekly rows reproduce under Saturday–Friday, 4,517
+  under Sunday–Saturday). The owner chose to re-cut on the operation's
+  week from 31 May and leave earlier weeks as reported. One rule in two
+  places that are tested against each other for every day of 2026:
+  `weekContaining` (`src/lib/queries/period.ts`) and `reportingWeekStart`
+  (`src/lib/queries/week-sql.ts`) — Saturday–Friday before the cut-over,
+  the week of Sat 23 May extended to Sat 30 May so the grids meet with
+  no gap and no one-day week, Sunday–Saturday after. `periodsBetween`
+  already stepped from each week's end, so the eight-day week costs
+  nothing there; the ramp engine now walks reporting weeks
+  (`weekForStage`/`rampStageForWeek`) instead of adding 7·stage days, so
+  a ramp spanning the cut-over stays on the grid, and any day inside a
+  week names that week. The import places each row by its own date
+  column from 23 May on (`src/lib/import-pipeline/week-placement.ts`) —
+  the label's Saturday belongs to the previous reporting week — and a
+  dateless row in that range goes by the week containing the label's
+  Friday, counted in a warning; the row loop reads the date once and
+  `consumeRow` reads it again for the facts, unchanged. The monthly PAR
+  week split (`period-metrics.ts`, `scorecard/load.ts`) and
+  `scripts/sql/ramp-month-targets.sql` use the SQL rule. Migration 0055
+  (data only, idempotent, rehearsed twice on a seeded scratch schema)
+  moves every Saturday-keyed week value from 30 May on one day forward
+  in `weekly_metric_results` (start and end), `performance_issues`,
+  `weekly_issue_history`, `rca_notes`, `ews_assessments` and
+  `employee_ramp_assignments`, never onto a key that already exists, and
+  extends the 23 May ledger rows to end on 30 May; daily facts are
+  untouched and a re-import of each workbook with rows from 30 May
+  rebuilds the weekly figures inside the new windows
+  (`reconcileFactBackedRows`). Shifted rather than deleted so nothing is
+  destroyed and a re-imported week is a corrected week to the engine,
+  not a new one. Runbook `docs/sunday-week-recut.md`; checks
+  `scripts/sql/sunday-recut-check.sql`.
 - **A team leader's account row can be saved again (13 Sep).** Setting
   Lea's cluster link on the Users page was refused with "No employee
   found with ID …": `updateUser` re-checked the employee ID against agent

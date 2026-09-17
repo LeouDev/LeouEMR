@@ -124,7 +124,7 @@ export function RampForm({
       )}
 
       <p className="text-xs text-muted sm:col-span-4">
-        Any day within the intended first week works — it snaps to that week&rsquo;s Saturday.
+        Any day within the intended first week works — it snaps to that week&rsquo;s Sunday.
         Setting this again for the same employee and skill replaces the previous start date.
       </p>
     </form>

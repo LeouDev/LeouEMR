@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   GRANULARITIES,
+  LAST_LEGACY_WEEK_START,
+  WEEK_CUTOVER,
   periodContaining,
   periodsBetween,
   previousPeriod,
+  weekContaining,
   type Granularity,
 } from "./period";
 
@@ -15,21 +18,59 @@ describe("periodContaining", () => {
     });
   });
 
-  it("uses Saturday-to-Friday weeks, matching the source data's WE labels", () => {
-    // The source labels this week "WE 08/14/26" — Sat Aug 8 to Fri Aug 14.
-    for (const day of ["2026-08-08", "2026-08-11", "2026-08-14"]) {
+  it("uses Sunday-to-Saturday weeks from the cut-over on", () => {
+    expect(WEEK_CUTOVER).toBe("2026-05-31");
+    // Sun Aug 9 to Sat Aug 15.
+    for (const day of ["2026-08-09", "2026-08-12", "2026-08-15"]) {
       expect(periodContaining("week", day)).toMatchObject({
-        start: "2026-08-08",
-        end: "2026-08-14",
+        start: "2026-08-09",
+        end: "2026-08-15",
       });
     }
   });
 
   it("puts the day after a week's end into the next week", () => {
-    expect(periodContaining("week", "2026-08-15")).toMatchObject({
-      start: "2026-08-15",
-      end: "2026-08-21",
+    expect(periodContaining("week", "2026-08-16")).toMatchObject({
+      start: "2026-08-16",
+      end: "2026-08-22",
     });
+  });
+
+  it("starts the first Sunday-to-Saturday week on the cut-over day itself", () => {
+    expect(periodContaining("week", "2026-05-31")).toMatchObject({
+      start: "2026-05-31",
+      end: "2026-06-06",
+    });
+    expect(periodContaining("week", "2026-06-06")).toMatchObject({
+      start: "2026-05-31",
+      end: "2026-06-06",
+    });
+  });
+
+  it("keeps Saturday-to-Friday weeks before the cut-over, as the data was reported", () => {
+    // "WE 05/15/26" — Sat May 9 to Fri May 15.
+    for (const day of ["2026-05-09", "2026-05-12", "2026-05-15"]) {
+      expect(periodContaining("week", day)).toMatchObject({
+        start: "2026-05-09",
+        end: "2026-05-15",
+      });
+    }
+    expect(periodContaining("week", "2026-05-16")).toMatchObject({
+      start: "2026-05-16",
+      end: "2026-05-22",
+    });
+  });
+
+  it("extends the last legacy week by a day so the regimes meet with no gap", () => {
+    // Sat May 23 to Sat May 30: the Friday-ending week plus the Saturday
+    // that would otherwise begin a week the cut-over cuts off after one day.
+    for (const day of ["2026-05-23", "2026-05-29", "2026-05-30"]) {
+      expect(periodContaining("week", day)).toMatchObject({
+        start: LAST_LEGACY_WEEK_START,
+        end: "2026-05-30",
+      });
+    }
+    expect(weekContaining("2026-05-30").start).toBe("2026-05-23");
   });
 
   it("covers whole calendar months including leap years", () => {
@@ -67,14 +108,25 @@ describe("periodContaining", () => {
 
 describe("periodsBetween", () => {
   it("enumerates every week across the span without gaps or repeats", () => {
-    const weeks = periodsBetween("week", "2026-08-01", "2026-08-31").reverse();
-    expect(weeks[0].start).toBe("2026-08-01");
+    const weeks = periodsBetween("week", "2026-08-02", "2026-08-31").reverse();
+    expect(weeks[0].start).toBe("2026-08-02");
 
     for (let i = 1; i < weeks.length; i++) {
       const previousEnd = new Date(`${weeks[i - 1].end}T00:00:00Z`);
       previousEnd.setUTCDate(previousEnd.getUTCDate() + 1);
       expect(weeks[i].start).toBe(previousEnd.toISOString().slice(0, 10));
     }
+  });
+
+  it("crosses the cut-over with one extended week and no gap or overlap", () => {
+    const weeks = periodsBetween("week", "2026-05-10", "2026-06-13").reverse();
+    expect(weeks.map((w) => [w.start, w.end])).toEqual([
+      ["2026-05-09", "2026-05-15"],
+      ["2026-05-16", "2026-05-22"],
+      ["2026-05-23", "2026-05-30"],
+      ["2026-05-31", "2026-06-06"],
+      ["2026-06-07", "2026-06-13"],
+    ]);
   });
 
   it("returns one month for a single month's span", () => {
@@ -104,10 +156,19 @@ describe("previousPeriod", () => {
     expect(prev("day", "2026-09-01").start).toBe("2026-08-31");
   });
 
-  it("steps back a week, keeping the Saturday start", () => {
+  it("steps back a week, keeping the Sunday start", () => {
     const p = prev("week", "2026-09-02");
-    expect(p.start).toBe("2026-08-22");
-    expect(p.end).toBe("2026-08-28");
+    expect(p.start).toBe("2026-08-23");
+    expect(p.end).toBe("2026-08-29");
+  });
+
+  it("steps back across the cut-over into the extended legacy week", () => {
+    const p = prev("week", "2026-06-03");
+    expect(p.start).toBe("2026-05-23");
+    expect(p.end).toBe("2026-05-30");
+    const q = previousPeriod(p);
+    expect(q.start).toBe("2026-05-16");
+    expect(q.end).toBe("2026-05-22");
   });
 
   it("steps back a month across a year boundary", () => {

@@ -20,7 +20,7 @@
  */
 
 export interface WeekVolume {
-  /** The reporting week's start (Saturday), `YYYY-MM-DD`. */
+  /** The reporting week's first day, `YYYY-MM-DD`. */
   weekStart: string;
   hours: number;
   cases: number;

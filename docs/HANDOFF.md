@@ -138,9 +138,12 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0054_two_nesting_weeks` (17 Sep; the ramp has two
-nesting weeks then eight ramp weeks, stages 0–9). `RECONCILE_TRACKER.sql`
-exists for a tracker that drifted once.
+Latest migration: `0055_sunday_weeks` (17 Sep; every stored week key from
+30 May 2026 moves one day onto its Sunday — data only, no DDL; the owner
+runs it by the runbook `docs/sunday-week-recut.md`). Before it
+`0054_two_nesting_weeks` (the ramp has two nesting weeks then eight ramp
+weeks, stages 0–9). `RECONCILE_TRACKER.sql` exists for a tracker that
+drifted once.
 
 ## Roles, access, accounts
 
@@ -187,15 +190,28 @@ the coding container; there is no database to run the app against here.
 
 ## What was built most recently (14–15 Sep 2026), newest first
 
+- **Reporting weeks Sunday to Saturday from 31 May 2026** (17 Sep):
+  the one rule is `weekContaining` in `src/lib/queries/period.ts` and
+  its SQL twin `reportingWeekStart` in `src/lib/queries/week-sql.ts`
+  (Saturday–Friday before the cut-over; the week of Sat 23 May runs
+  eight days to Sat 30 May; Sunday–Saturday after). The import places
+  each row by its own date from 23 May on
+  (`src/lib/import-pipeline/week-placement.ts`; a dateless row in that
+  range goes by its label and is counted in a warning), the ramp engine
+  walks reporting weeks, the monthly PAR and scorecard week split use
+  the SQL rule. Migration 0055 shifts every stored week key; the owner's
+  order of operations (check, apply, deploy, re-import every workbook
+  with rows from 30 May, Re-apply all ramps, check again) is
+  `docs/sunday-week-recut.md`, with `scripts/sql/sunday-recut-check.sql`.
+  The data itself is Saturday–Friday by the labels
+  (`scripts/sql/week-boundary-check.sql`); the owner chose the
+  operation's week regardless.
 - **Ramp shape** (17 Sep): two nesting weeks, then Week 1 through Week 8,
-  ten stages (`src/lib/ramp/engine.ts`). The start week is the Saturday
-  of the first nesting week. Each board row's start date is editable in
-  place (Save replays that person; Re-apply replays on the current date)
-  and "Re-apply all ramps" replays every assignment after a schedule
-  change. Open question on 17 Sep: whether reporting weeks should run
-  Sunday–Saturday rather than the Saturday–Friday the file's "WE
-  <Friday>" labels imply; `scripts/sql/week-boundary-check.sql` decides
-  it from the data.
+  ten stages (`src/lib/ramp/engine.ts`). The start week is the first day
+  of the first nesting week's reporting week (a Sunday now). Each board
+  row's start date is editable in place (Save replays that person;
+  Re-apply replays on the current date) and "Re-apply all ramps" replays
+  every assignment after a schedule change.
 - **Monthly PAR for a ramping agent** (17 Sep): the month's target is
   the plain average of each worked week's target (ramp stage or steady),
   `src/lib/ramp/effective-target.ts`, used by the period metrics and the
@@ -228,6 +244,13 @@ the coding container; there is no database to run the app against here.
 
 ## Open items and things the owner knows about
 
+- **The Sunday re-cut is not applied until the owner runs it**: section
+  A of `scripts/sql/sunday-recut-check.sql`, then
+  `APPLY_0055_SUNDAY_WEEKS.sql`, deploy, re-import every workbook with
+  rows dated 30 May 2026 or later (oldest first), "Re-apply all ramps",
+  section B. Until the re-imports, Sunday-keyed weeks still hold
+  Saturday-to-Friday sums. `APPLY_0054_TWO_NESTING_WEEKS.sql` must go
+  first if it has not been run.
 - The **Monthly** import sheet (IRE, PKT, LH Utilization) is expected
   from October; until then those scorecard rows use defaults.
 - The owner re-imports **the current month from its first day** with
