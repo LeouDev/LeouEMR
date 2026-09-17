@@ -149,8 +149,9 @@ two nesting weeks then eight ramp weeks, stages 0–9).
 A form definition lives in `public.qa_forms`, which is what the app reads.
 `src/lib/quality/forms.ts` only seeds a fresh database, so editing it
 changes nothing in production until a migration carries the definition
-over — 0047 and 0056 are the pattern. `RECONCILE_TRACKER.sql` exists for a tracker that
-drifted once.
+over — 0047 and 0056 are the pattern.
+
+`RECONCILE_TRACKER.sql` exists for a tracker that drifted once.
 
 ## Roles, access, accounts
 
