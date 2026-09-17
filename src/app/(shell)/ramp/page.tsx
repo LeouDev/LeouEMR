@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getRampBoard } from "@/lib/queries/ramp";
 import { LAST_STAGE, isNesting } from "@/lib/ramp/engine";
 import { ClearRampButton, RampForm } from "./ramp-form";
+import { RampDateEditor } from "./ramp-date-editor";
 import { ReapplyAllButton } from "./reapply-all-button";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
@@ -104,7 +105,17 @@ export default async function RampPage() {
                         </span>
                       </td>
                       <td className="px-3 py-2.5 font-mono tabular-nums text-ink">{row.target}</td>
-                      <td className="px-3 py-2.5 font-mono text-xs text-muted">{row.rampStartWeek}</td>
+                      {canEdit ? (
+                        <td className="px-3 py-2.5">
+                          <RampDateEditor
+                            employeeId={row.employeeId}
+                            skillReferenceId={row.skillReferenceId}
+                            rampStartWeek={row.rampStartWeek}
+                          />
+                        </td>
+                      ) : (
+                        <td className="px-3 py-2.5 font-mono text-xs text-muted">{row.rampStartWeek}</td>
+                      )}
                       {canEdit && (
                         <td className="px-6 py-2.5">
                           <ClearRampButton employeeId={row.employeeId} skillReferenceId={row.skillReferenceId} />

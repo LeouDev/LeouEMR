@@ -1007,7 +1007,20 @@ from every environment this project gets worked on in.
   (`reapply.ts` says why); the monthly figures compute fresh. Also
   updated: the Ramp board's copy and "In Nesting" count (stages 0–1), the
   case-tracker stage labels, `scripts/sql/ramp-month-targets.sql`
-  (stages 0–9, nesting 1/2 labels), the schema comment.
+  (stages 0–9, nesting 1/2 labels), the schema comment. Same branch: each
+  board row's "Nesting started" is now an in-place editor
+  (`ramp-date-editor.tsx`): a date box with **Save** (stores the date,
+  snapped to its Saturday as "Start ramp" does, and replays that person)
+  and **Re-apply** (the same replay on the date as it stands) — both
+  through `setRampAssignment`, so nothing new on the server. And
+  `scripts/sql/week-boundary-check.sql`, read-only: for every weekly
+  AHT/CPH row since July, whether the daily sample counts summed over
+  Saturday–Friday or over Sunday–Saturday equal the weekly count, plus
+  production by weekday — the check that settles whether the file's
+  "WE <Friday>" labels cover Sat–Fri (the app's reading since
+  `parseWeekLabel`) or Sun–Sat as the owner believes the work week runs.
+  If Sun–Sat: every stored `week_start`/`week_end`, every ramp start
+  week and the parser move a day, a migration, not an edit.
 - **Ramp month-target report (17 Sep, main).**
   `scripts/sql/ramp-month-targets.sql`, read-only, for the Supabase SQL
   editor: one row per ramping agent and skill for a month (edit the

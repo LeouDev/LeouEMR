@@ -189,8 +189,13 @@ the coding container; there is no database to run the app against here.
 
 - **Ramp shape** (17 Sep): two nesting weeks, then Week 1 through Week 8,
   ten stages (`src/lib/ramp/engine.ts`). The start week is the Saturday
-  of the first nesting week. "Re-apply all ramps" on the Ramp page
-  replays every assignment after a schedule or start-week change.
+  of the first nesting week. Each board row's start date is editable in
+  place (Save replays that person; Re-apply replays on the current date)
+  and "Re-apply all ramps" replays every assignment after a schedule
+  change. Open question on 17 Sep: whether reporting weeks should run
+  Sunday–Saturday rather than the Saturday–Friday the file's "WE
+  <Friday>" labels imply; `scripts/sql/week-boundary-check.sql` decides
+  it from the data.
 - **Monthly PAR for a ramping agent** (17 Sep): the month's target is
   the plain average of each worked week's target (ramp stage or steady),
   `src/lib/ramp/effective-target.ts`, used by the period metrics and the
