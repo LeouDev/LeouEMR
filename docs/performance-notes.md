@@ -1499,10 +1499,27 @@ from every environment this project gets worked on in.
   week is the later of the separation week and the issue's own opening
   week, in one place (`separationResolutionWeeks`, which the two direct
   closers now go through too; `closeIssuesOnSeparation` is the one-person
-  form of `closeIssuesOnSeparationFor`). The 14 existing rows are
-  repaired by the owner with `update performance_issues set
-  resolved_week = opened_week where resolved_week < opened_week` after
-  listing them; the audit log keeps the original closure entry.
+  form of `closeIssuesOnSeparationFor`). The 14 rows turned out to be
+  the visible part of something else: every one belonged to an *active*
+  agent (Herbias's cohort, Aniban) whose assignment the org-history bug
+  above had closed at 31 Aug — the `closeIssuesOfSeparated` sweep took
+  that closed newest interval for a separation and completed their open
+  development items "on separation" on 14–17 Sep. The audit log
+  (`issue.closed_on_separation` since 14 Sep, owner active, assignment
+  open, no RCA/plan/acknowledgement/note, no other live issue) found 33
+  such items, 19 of them opened and "resolved" in the same week of 30 Aug
+  and so invisible to the check. Repaired by the owner with one DO block
+  in the SQL editor (temp tables do not survive between statements
+  there): 31 reopened at their opening week — status OPEN, resolution
+  cleared, `last_evaluated_week = opened_week - 1`, history deleted, an
+  `issue.reopened_false_separation` audit row — and 2 later duplicate
+  episodes (opened only because the first had just been closed) deleted
+  with an `issue.deleted_duplicate_episode` audit row; then a re-import
+  of the September workbook replays the weeks since, the same rewind the
+  reevaluate script uses for issues it keeps. A separation the app
+  infers from a closed newest interval is only as good as the org
+  history: after any org-history repair, look for closures the sweep
+  made in the meantime.
 - **A weekly file closed a listed team at the masterlist month's eve (17
   Sep).** Symptom: after the re-cut re-imports and the WE 09/18/26 upload,
   Archiene Herbias and her whole team were gone from September on the
