@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { KpiBreakdown, TopAgent } from "@/lib/queries/analytics";
 import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
+import type { SupervisorKpis } from "@/lib/queries/supervisor-kpis";
 import type { OrgTrend } from "@/lib/queries/team-trend";
+import { formatMetric } from "@/components/ui";
 import {
   ActionItemsSummary,
   DashboardShell,
@@ -29,6 +31,9 @@ export interface SupervisorRow {
   mboScored: number;
 }
 
+/** The row plus the period's production, quality and NPS for that team. */
+export type SupervisorTableRow = SupervisorRow & SupervisorKpis;
+
 export interface ManagerStats {
   failing: number;
   total: number;
@@ -38,6 +43,25 @@ export interface ManagerStats {
   mboPassing: number;
   mboScored: number;
   worstKpi: KpiBreakdown | null;
+}
+
+/**
+ * One template for the supervisor table's header and its rows, so the two can
+ * never drift apart. Seven columns: the name, then Team, MBO pass, Prod pass,
+ * Quality, NPS, Failing. Team is narrower because it carries a headcount, not
+ * a rate; the name column is wider because the work queue rides beneath it.
+ *
+ * Open and awaiting ack sit under the supervisor's name rather than in
+ * columns of their own. They are a live work queue, not a measure of the
+ * period the other columns report, so reading them as two more figures in the
+ * same row invited comparing them against figures that answer a different
+ * question — and they cost two columns the measures needed more.
+ */
+const GRID = "lg:grid-cols-[2fr_0.7fr_repeat(5,1fr)]";
+
+/** A level short of its target — quiet when either the level or the target is absent. */
+function below(value: number | null, target: number | null): boolean {
+  return value !== null && target !== null && value < target;
 }
 
 /** Above this share of the evaluated team failing, the row is the story rather than a footnote. */
@@ -62,7 +86,7 @@ export function ManagerDashboard({
   mboTree,
 }: {
   stats: ManagerStats;
-  supervisors: SupervisorRow[];
+  supervisors: SupervisorTableRow[];
   /** The week Failing is measured over — the newest one inside the range. */
   asOfLabel: string | null;
   trend: OrgTrend;
@@ -207,54 +231,90 @@ export function ManagerDashboard({
         emptyTrendMessage="No week-by-week history for your span yet."
         rows={() => (
           <>
-              <div className="grid border-b-2 border-ink text-[11px] font-bold tracking-[0.08em] text-muted uppercase lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr]">
-                <div className="py-3 lg:pl-6">Supervisor</div>
-                <div className="hidden py-3 pr-5 text-right lg:block">Team</div>
-                <div className="hidden py-3 pr-5 text-right lg:block">
+              <div className={`grid border-b-2 border-ink text-[11px] font-bold tracking-[0.08em] text-muted uppercase ${GRID}`}>
+                <div className="py-3 lg:pl-6">
+                  Supervisor
+                  <span className="block font-normal normal-case tracking-normal">
+                    site · open · awaiting ack
+                  </span>
+                </div>
+                <div className="hidden py-3 pr-4 text-right lg:block">Team</div>
+                <div className="hidden py-3 pr-4 text-right lg:block">MBO pass</div>
+                <div className="hidden py-3 pr-4 text-right lg:block">Prod pass</div>
+                <div className="hidden py-3 pr-4 text-right lg:block">Quality</div>
+                <div className="hidden py-3 pr-4 text-right lg:block">NPS</div>
+                <div className="hidden py-3 pr-4 text-right lg:block">
                   Failing
                   <span className="block font-normal normal-case tracking-normal">
                     {asOfLabel ? `wk of ${asOfLabel}` : "no reporting week in this period yet"}
                   </span>
                 </div>
-                <div className="hidden py-3 pr-5 text-right lg:block">MBO pass</div>
-                <div className="hidden py-3 pr-5 text-right lg:block">Open</div>
-                <div className="hidden py-3 pr-5 text-right lg:block">Awaiting ack</div>
               </div>
 
               {supervisors.map((s) => {
                 const isScope = scope === s.name;
                 const alarming = s.evaluated > 0 && s.failing / s.evaluated >= TEAM_ALARM;
                 const mboLow = s.mboPassRate !== null && s.mboPassRate < MBO_BAR;
+                const prodLow = s.prodPassRate !== null && s.prodPassRate < MBO_BAR;
+                // Quality and NPS are levels, so they answer to their own
+                // configured target rather than to the MBO bar.
+                const qualityLow = below(s.quality, s.qualityTarget);
+                const npsLow = below(s.nps, s.npsTarget);
                 return (
                   <button
                     key={s.name}
                     type="button"
                     aria-pressed={isScope}
                     onClick={() => setScope(isScope ? null : s.name)}
-                    className={`grid w-full cursor-pointer border-b-2 border-ink text-left transition hover:bg-cream lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr_1fr] ${
+                    className={`grid w-full cursor-pointer border-b-2 border-ink text-left transition hover:bg-cream ${GRID} ${
                       isScope ? "bg-cream shadow-[inset_3px_0_0_var(--color-orange-brand)]" : ""
                     }`}
                   >
-                    <span className="flex flex-col gap-0.5 py-4 lg:pl-6">
+                    <span className="flex flex-col gap-0.5 py-4 pr-4 lg:pl-6">
                       <strong className="text-sm text-ink">{s.name}</strong>
-                      <span className="text-[11px] text-muted">{s.site ?? "—"}</span>
+                      <span className="text-[11px] text-muted">
+                        {s.site ?? "—"} · <strong className="font-semibold text-ink">{s.openIssues}</strong>{" "}
+                        open
+                        {/* An empty queue is the ordinary state, so it says
+                            nothing rather than printing a zero on every row. */}
+                        {s.awaiting > 0 && (
+                          <>
+                            {" · "}
+                            <strong
+                              className={`font-semibold ${s.awaiting >= 3 ? "text-fail" : "text-ink"}`}
+                            >
+                              {s.awaiting}
+                            </strong>{" "}
+                            awaiting ack
+                          </>
+                        )}
+                      </span>
                     </span>
                     <Figure value={s.teamSize} label="team" />
-                    <Figure
-                      value={s.evaluated > 0 ? s.failing : "—"}
-                      label={s.evaluated > 0 ? `of ${s.evaluated} evaluated` : "nobody evaluated"}
-                      tone={alarming ? "fail" : undefined}
-                    />
                     <Figure
                       value={s.mboPassRate === null ? "—" : `${s.mboPassRate.toFixed(0)}%`}
                       label={s.mboScored === 0 ? "nobody scored" : `${s.mboPassing} of ${s.mboScored}`}
                       tone={mboLow ? "fail" : undefined}
                     />
-                    <Figure value={s.openIssues} label="open" />
                     <Figure
-                      value={s.awaiting || "—"}
-                      label="awaiting"
-                      tone={s.awaiting >= 3 ? "fail" : undefined}
+                      value={s.prodPassRate === null ? "—" : `${s.prodPassRate.toFixed(0)}%`}
+                      label={s.prodScored === 0 ? "nobody rated" : `${s.prodPassing} of ${s.prodScored}`}
+                      tone={prodLow ? "fail" : undefined}
+                    />
+                    <Figure
+                      value={formatMetric(s.quality, "QUALITY")}
+                      label={s.qualityScored === 0 ? "nobody scored" : `avg of ${s.qualityScored}`}
+                      tone={qualityLow ? "fail" : undefined}
+                    />
+                    <Figure
+                      value={formatMetric(s.nps, "NPS")}
+                      label={s.npsScored === 0 ? "no surveys" : `avg of ${s.npsScored}`}
+                      tone={npsLow ? "fail" : undefined}
+                    />
+                    <Figure
+                      value={s.evaluated > 0 ? s.failing : "—"}
+                      label={s.evaluated > 0 ? `of ${s.evaluated} evaluated` : "nobody evaluated"}
+                      tone={alarming ? "fail" : undefined}
                     />
                   </button>
                 );
@@ -390,7 +450,7 @@ function Figure({
   tone?: "fail";
 }) {
   return (
-    <span className="flex flex-col gap-0.5 py-4 pr-5 text-right">
+    <span className="flex flex-col gap-0.5 py-4 pr-4 text-right">
       <span
         className={`font-mono text-2xl leading-none font-extrabold tabular-nums ${
           tone === "fail" ? "text-fail" : "text-ink"

@@ -1237,6 +1237,40 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **The manager's supervisor table carries Prod pass, Quality and NPS (17
+  Sep, feature branch).** Seven columns now, in the order a manager reads
+  them: Supervisor, Team, MBO pass, Prod pass, Quality, NPS, Failing. Open
+  and awaiting ack moved under the supervisor's name, beside the site —
+  they are a live work queue, not a measure of the period the rest of the
+  row reports, and setting them as two more figures in the same row invited
+  comparing them against figures answering a different question. The zero
+  case says nothing rather than printing "0 awaiting" on every row, since an
+  empty queue is the ordinary state. The three new columns are
+  `rollUpSupervisorKpis`
+  (`src/lib/queries/supervisor-kpis.ts`), fed by `getPeriodMetrics` — which
+  the dashboard page already calls for the same period, and which caches
+  org-wide, so the columns cost a cache hit rather than a query.
+  **Two shapes, on purpose.** Production is a pass rate because it has a
+  gate the business either clears or does not, and it is deliberately
+  `MBO_GATES.productionRate` (2.99) rather than the KPI's own status: the
+  KPI definition calls exactly 2.99 a WARNING, so reading the status would
+  show someone missing Prod while passing MBO on the same row, off the same
+  number. Quality and NPS are levels, not gates: a team at 96% against a 98%
+  target is a different conversation from one at 70%, and a pass rate
+  flattens both to "failing". Each level is the mean over the members who
+  actually have one — `meanPresent`, the rule the stack rank already
+  follows — with the count beside it ("avg of 12"), so a thin sample is
+  visible rather than hidden, and nobody is pushed down for the members
+  nobody measured.
+  Tone: Prod pass answers to the same 90% bar MBO pass does; Quality and NPS
+  answer to their own configured target, read from the snapshotted
+  `target_value` on the results rather than hardcoded, so editing a KPI's
+  target moves the colour and not just the number. Where a period spans a
+  target change the strictest one wins, so a row goes quiet only when the
+  team clears the bar under either rule.
+  The grid template is one `GRID` constant shared by the header and the
+  rows — they were two literals, and this many columns is too many to keep
+  in step by hand.
 - **The Fax QA form is PANDA Fax, and the seed alone never moved it (17
   Sep, feature branch).** Two things happened here, a day apart in
   intent and an hour apart in fact.
