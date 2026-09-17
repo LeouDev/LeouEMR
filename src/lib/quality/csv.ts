@@ -1,4 +1,5 @@
 import type { QaForm } from "./forms";
+import { headerRows } from "./header-values";
 import type { FindingRow } from "./scoring";
 import type { StoredTimeMotion } from "./time-motion";
 
@@ -45,7 +46,11 @@ export function auditRawRows(audit: ExportAudit): Array<Array<string | number>> 
     ["Transaction date", audit.transactionDate ?? ""],
     ["Evaluator", audit.evaluatorName],
   ];
-  for (const field of audit.form.headerFields) rows.push([field.label, audit.headerValues[field.key] ?? ""]);
+  // Includes a header this form has since retired, where the audit carries
+  // one — an export that quietly drops a recorded value is not raw data.
+  for (const row of headerRows(audit.form.headerFields, audit.headerValues)) {
+    rows.push([row.label, row.value]);
+  }
   if (audit.timeMotion) {
     rows.push([]);
     rows.push(["Time & Motion — Call reference", audit.timeMotion.callReference]);

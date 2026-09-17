@@ -12,7 +12,7 @@ const AUDIT: ExportAudit = {
   auditDate: "2026-09-10",
   transactionDate: "2026-09-08",
   evaluatorName: "Lopez, Ana",
-  headerValues: { caseNo: "FX-40213", callReason: "New PA Initiation" },
+  headerValues: { caseNo: "FX-40213", techDecision: "Approved", callReason: "New PA Initiation" },
   remarks: 'Documentation: said "will call back"',
   scorePct: 95,
   isCritical: false,
@@ -56,9 +56,17 @@ describe("auditRawRows", () => {
       ["Transaction date", "2026-09-08"],
       ["Evaluator", "Lopez, Ana"],
       ["Case #", "FX-40213"],
-      ["Call Reason", "New PA Initiation"],
+      ["Tech Decision", "Approved"],
     ]);
-    expect(rows[9]).toEqual(["Category", "Attribute", "Result"]);
+    // The form retired Call Reason; an audit that recorded one still exports
+    // it, because an export that drops a recorded value is not raw data.
+    expect(rows).toContainEqual(["Call Reason (retired)", "New PA Initiation"]);
+    // Found rather than indexed: the header block's length moves whenever a
+    // form gains or retires a field, and a hardcoded row number makes an
+    // unrelated change look like a broken export.
+    const attributes = rows.findIndex((r) => r[0] === "Category");
+    expect(rows[attributes]).toEqual(["Category", "Attribute", "Result"]);
+    expect(rows[attributes - 1]).toEqual([]);
     expect(rows).toContainEqual([
       "Documentation",
       "Agent failed to document additional PA Types",

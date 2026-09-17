@@ -93,11 +93,43 @@ export const CALL_REASON_OPTIONS = [
 /** Applies to the Phone Form only. */
 export const CALLER_TYPE_OPTIONS = ["Provider", "Member", "Pharmacy", "Third Party", "Internal/Client"];
 
+/**
+ * What the technician actually did with the case — the header the AV, MPA
+ * and Fax forms ask for in place of a call reason.
+ *
+ * Those three audit case work rather than a conversation: "why did they
+ * ring" is a Phone question, and on a fax or a written PA the useful header
+ * is the decision the case ended on. The codes are the business's own, as
+ * written.
+ */
+export const TECH_DECISION_OPTIONS = [
+  "Pend",
+  "Deny",
+  "Approved",
+  "Fax for Appls",
+  "Merged",
+  "RARA",
+  "RAFA",
+  "RAFC-C",
+  "NEITAP",
+  "NEITP",
+  "DNF",
+  "MNF",
+];
+
+/** Applies to the Phone Form only; the others ask for the tech decision instead. */
 const callReason = (label = "Call Reason"): QaHeaderField => ({
   key: "callReason",
   label,
   kind: "select",
   options: CALL_REASON_OPTIONS,
+});
+
+const techDecision = (): QaHeaderField => ({
+  key: "techDecision",
+  label: "Tech Decision",
+  kind: "select",
+  options: TECH_DECISION_OPTIONS,
 });
 
 export const QA_FORM_SEED: QaForm[] = [
@@ -211,7 +243,7 @@ export const QA_FORM_SEED: QaForm[] = [
     key: "avqa",
     label: "AV QA Form",
     sortOrder: 2,
-    headerFields: [{ key: "paNumber", label: "PA Number", kind: "text", placeholder: "e.g. PA-77213" }, callReason()],
+    headerFields: [{ key: "paNumber", label: "PA Number", kind: "text", placeholder: "e.g. PA-77213" }, techDecision()],
     definition: {
       type: "B",
       groups: [
@@ -281,7 +313,7 @@ export const QA_FORM_SEED: QaForm[] = [
     key: "mpaqa",
     label: "MPA QA Form",
     sortOrder: 3,
-    headerFields: [{ key: "paNumber", label: "PA Number", kind: "text", placeholder: "e.g. PA-90210" }, callReason("Reason of Call")],
+    headerFields: [{ key: "paNumber", label: "PA Number", kind: "text", placeholder: "e.g. PA-90210" }, techDecision()],
     definition: {
       type: "A",
       sections: [
@@ -340,7 +372,7 @@ export const QA_FORM_SEED: QaForm[] = [
     key: "faxqa",
     label: "Fax QA Form",
     sortOrder: 4,
-    headerFields: [{ key: "caseNo", label: "Case #", kind: "text", placeholder: "e.g. FX-40213" }, callReason()],
+    headerFields: [{ key: "caseNo", label: "Case #", kind: "text", placeholder: "e.g. FX-40213" }, techDecision()],
     /**
      * PANDA Fax, per the workbook of that name: a hundred points, carried by
      * the lettered attributes that have a score of their own. A lettered row

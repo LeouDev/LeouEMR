@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { OUTCOME_LABELS, outcomeOf, type QaOutcome } from "@/lib/quality/scoring";
+import { headerRows } from "@/lib/quality/header-values";
 import { formatDelta } from "@/lib/quality/time-motion";
 import type { QaHistoryRow } from "@/lib/queries/quality";
 import { Tag } from "../quality-tabs";
@@ -106,9 +107,9 @@ export function HistoryTable({ rows }: { rows: QaHistoryRow[] }) {
             </div>
             {(() => {
               const outcome = outcomeOf(open.scorePct, open.isCritical);
-              const details = open.headerFields
-                .map((field) => ({ label: field.label, value: open.headerValues[field.key] }))
-                .filter((d) => d.value);
+              // Through headerRows, so an audit filed when this form asked a
+              // different header still shows what it recorded.
+              const details = headerRows(open.headerFields, open.headerValues);
               return (
                 <div className="flex flex-col gap-5 px-6 py-5">
                   <div className="text-center">
