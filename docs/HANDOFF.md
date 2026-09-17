@@ -138,15 +138,28 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0057_tech_decision_header` (17 Sep; the AV, MPA and Fax
-QA forms ask for Tech Decision in place of Call Reason — data only, no DDL,
-one paste of `APPLY_0057_TECH_DECISION_HEADER.sql`). Before it
+Latest migration: `0058_survey_responses` (17 Sep; the post-login survey's
+answers, one row per account — a new table, so it carries RLS, the
+`emr_app_full_access` policy and the grant; one paste of
+`APPLY_0058_SURVEY_RESPONSES.sql`). Before it `0057_tech_decision_header`
+(the AV, MPA and Fax QA forms ask for Tech Decision in place of Call
+Reason — data only, no DDL, one paste of
+`APPLY_0057_TECH_DECISION_HEADER.sql`), and
 `0056_panda_fax_form` (the Fax QA form becomes PANDA Fax, scored per
 attribute out of 100), and `0055_sunday_weeks` (every
 stored week key from 30 May 2026 moves one day onto its Sunday — data
 only, no DDL; the owner runs it by the runbook
 `docs/sunday-week-recut.md`), and `0054_two_nesting_weeks` (the ramp has
 two nesting weeks then eight ramp weeks, stages 0–9).
+
+**The post-login survey gate** (`src/lib/survey/gate.ts`) blocks every page
+under `(shell)` until an account has answered. `SURVEY_LIVE_FROM` controls
+it: an ISO timestamp *with offset*, or the literal `off` to disable it
+outright. Anything unparseable also reads as off, and `surveyDueFor` fails
+open on a database error — this gate can lock the whole workforce out, so
+every path that cannot answer lets the request through. If it misbehaves,
+set `SURVEY_LIVE_FROM=off` and redeploy; that is the fastest switch there
+is.
 
 A form definition lives in `public.qa_forms`, which is what the app reads.
 `src/lib/quality/forms.ts` only seeds a fresh database, so editing it

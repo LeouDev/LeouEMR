@@ -116,6 +116,13 @@ const GLYPHS: Record<string, ReactNode> = {
     </>
   ),
   "/import": <path d="M12 3v11M8 10l4 4 4-4M4 16v4h16v-4" />,
+  // A filled-in answer sheet.
+  "/survey-results": (
+    <>
+      <path d="M5 4h14v16H5z" />
+      <path d="M8.5 9h7M8.5 13h7M8.5 17h4" />
+    </>
+  ),
   "/users": (
     <>
       <path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z" />

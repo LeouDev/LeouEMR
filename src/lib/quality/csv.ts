@@ -3,21 +3,11 @@ import { headerRows } from "./header-values";
 import type { FindingRow } from "./scoring";
 import type { StoredTimeMotion } from "./time-motion";
 
-// Re-exported so this module stays the one import for a quality export.
+// Re-exported so this module stays the one import for a quality export. The
+// writer itself is neutral (../csv): the survey export shares it, and with it
+// the guard that stops typed text becoming a spreadsheet formula.
 export { CSV_BOM } from "../csv-bom";
-
-/**
- * Plain CSV: every cell quoted, CRLF rows. A text cell that starts with a
- * character Excel reads as a formula gets a leading space, so a remark or
- * a case number typed as "=..." or "-..." stays text.
- */
-export function csvOf(rows: ReadonlyArray<ReadonlyArray<string | number | null | undefined>>): string {
-  const cell = (value: string | number | null | undefined) => {
-    const text = typeof value === "string" && /^[=+\-@\t\r]/.test(value) ? ` ${value}` : String(value ?? "");
-    return `"${text.replace(/"/g, '""')}"`;
-  };
-  return rows.map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
-}
+export { csvOf } from "../csv";
 
 export interface ExportAudit {
   agentName: string;

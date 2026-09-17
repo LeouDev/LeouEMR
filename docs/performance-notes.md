@@ -1237,6 +1237,64 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **Post-login survey gate and its admin dashboard (17 Sep, feature
+  branch).** From a supplied handoff: five questions everybody answers once,
+  blocking the rest of the app until they are in. Intro screen, then
+  satisfaction (1–5), ease of use (1–5), findability (1–5), NPS (0–10) and
+  one open question; then a completion screen that sends them to the
+  dashboard. `/survey` sits **outside** the `(shell)` route group, like
+  `/login` and `/mfa`, so no sidebar or nav renders around it — the gate is
+  the point and there is nowhere to click to.
+  **Where the gate hangs.** `(shell)/layout.tsx`, one line after the MFA
+  redirect, which is the same shape of question: does this session still owe
+  something before it may see a page. Every active role is gated; the
+  business chose that over leaders-only, with the kill switch below as the
+  condition.
+  **It fails open, deliberately, in four places.** `surveyDueFor` returns
+  false for a non-active account, for a gate not yet open, for
+  `SURVEY_LIVE_FROM` it cannot parse, and — wrapped in try/catch — for any
+  database error. This is the only feature here that can keep four hundred
+  people out of the system they work in: a missed survey response costs
+  nothing, a locked-out shift costs a day. `SURVEY_LIVE_FROM=off` disables
+  it outright, and a typo in the date reads as off rather than as a gate
+  nobody can open.
+  **Launch** defaults to 18 Sep 2026, 6:00 PM Manila, and the offset in that
+  literal is load-bearing — read as UTC it would open at 2am local. The
+  override is an environment variable, following `MFA_GRACE_UNTIL`; changing
+  it still wants a redeploy, which is worth knowing before the switch is
+  needed in a hurry.
+  **Its own table, never `nps_facts`.** That table is customer NPS *about an
+  agent*: it feeds the NPS KPI, which is scored, ranked and opens action
+  items. This survey is staff rating *the website*. Writing these scores
+  there would move agents' KPI results, their ratings and their action items
+  on the strength of feedback about a web page. `survey_responses` keyed
+  one-per-account (migration 0058); the row's existence *is* the completion
+  flag, which is how it follows a person across devices where the
+  prototype's localStorage could not, and the unique index is what makes a
+  double submission a no-op rather than a race.
+  **Sign-out stays reachable** on the survey page. The brief says no exit,
+  and this is not one: the gate is waiting at the next sign-in. Without it
+  somebody signed into the wrong account is stuck in a tab with no recourse.
+  The admin dashboard (`/survey-results`, admin only — feedback given under
+  a name, about the tool the person's own performance is measured in, is not
+  a leader's to browse about their own reports) reads every row and filters
+  in the browser: one response per account caps the set at the roster's
+  size, so the handoff's "paginate once volume grows" never arrives. NPS is
+  promoters less detractors over all responses, not an average of the
+  scores — a distinction the stat card would otherwise get wrong by about a
+  factor of eight.
+  **`csvOf` moved to `src/lib/csv.ts`** so the survey export shares it
+  rather than reimplementing it. What is being shared is the guard that
+  prefixes a cell starting `=`, `+`, `-` or `@` with a space: survey
+  feedback is free text typed by four hundred people straight into a file
+  someone opens in Excel. `quality/csv.ts` re-exports it, so every existing
+  import still resolves.
+  The intro is the app's own astronaut and star field, not the mock's CSS
+  shapes — built in the survey folder rather than by reshaping `SpaceScene`,
+  which login and the MFA step both render. The star field is a written-out
+  constant: `Math.random()` there renders one sky on the server and another
+  in the browser, and React replaces the subtree on that mismatch, which is
+  a flicker on the very first screen anyone sees.
 - **Tech Decision replaces Call Reason on the AV, MPA and Fax forms (17
   Sep, feature branch).** Twelve codes, the business's own: Pend, Deny,
   Approved, Fax for Appls, Merged, RARA, RAFA, RAFC-C, NEITAP, NEITP, DNF,
