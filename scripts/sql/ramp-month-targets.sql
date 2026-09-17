@@ -4,7 +4,7 @@
 --
 -- The rule (src/lib/ramp/effective-target.ts): the plain average of each
 -- WORKED reporting week's target — the ramp stage's target while the ramp
--- runs (stage 0 "nesting" through week 8), the skill's steady target once
+-- runs (two nesting weeks, then Week 1 through Week 8), the skill's steady target once
 -- it is over — where a week counts when any hours or cases were logged in
 -- it. Weeks not yet worked count for nothing, so a running month judges
 -- only the weeks it has; at month end this is the whole month's average.
@@ -40,8 +40,8 @@ worked as (
 ),
 targets as (
   select x.*, r.name as skill, r.target as steady, r.lower_is_better, r.metric, r.r2, r.r3, r.r4, r.r5,
-         case when x.stage between 0 and 8 then s.target end as stage_target,
-         coalesce(case when x.stage between 0 and 8 then s.target end, r.target) as week_target
+         case when x.stage between 0 and 9 then s.target end as stage_target,
+         coalesce(case when x.stage between 0 and 9 then s.target end, r.target) as week_target
   from worked x
   join skill_references r on r.id = x.skill_reference_id
   left join skill_ramp_schedules s on s.skill_reference_id = x.skill_reference_id and s.stage = x.stage
@@ -52,8 +52,8 @@ per_skill as (
          string_agg(
            to_char(t.week_start, 'Mon DD') || ' → ' || round(t.week_target::numeric, 2)
              || case when t.stage_target is null then ' (steady)'
-                     when t.stage = 0 then ' (nesting)'
-                     else ' (week ' || t.stage || ')' end,
+                     when t.stage < 2 then ' (nesting ' || (t.stage + 1) || ')'
+                     else ' (week ' || (t.stage - 1) || ')' end,
            ', ' order by t.week_start) as weeks,
          avg(t.week_target) as month_target,
          case when t.metric = 'case_rate' then null

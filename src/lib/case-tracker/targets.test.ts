@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { resolveTargets, stageFor, STANDARD, targetFor, type TargetSkill } from "./targets";
 
-/** The Fax ladder as migration 0038 seeds it: Nesting 5.5, converging on 11. */
+/** The Fax ladder in migration 0038's shape (nine stages, 5.5 converging on 11); the labels follow the engine. */
 const FAX_RAMP = [5.5, 6.4, 6.9, 7.5, 8.1, 9.3, 9.8, 10.4, 11].map((target, stage) => ({
   stage,
-  label: stage === 0 ? "Nesting" : `Week ${stage}`,
+  label: stage < 2 ? `Nesting ${stage + 1}` : `Week ${stage - 1}`,
   target,
 }));
 
@@ -65,7 +65,7 @@ describe("resolving every skill at once", () => {
       code: "fax",
       name: "Fax",
       target: 6.4,
-      rampStageLabel: "Week 1",
+      rampStageLabel: "Nesting 2",
     });
     expect(targets.get("glp_1")).toEqual({
       code: "glp_1",
@@ -75,10 +75,10 @@ describe("resolving every skill at once", () => {
     });
   });
 
-  it("labels stage 0 as Nesting rather than Week 0", () => {
+  it("labels stage 0 as Nesting 1 rather than Week 0", () => {
     expect(resolveTargets([fax({ currentStage: 0 })], {}).get("fax")).toMatchObject({
       target: 5.5,
-      rampStageLabel: "Nesting",
+      rampStageLabel: "Nesting 1",
     });
   });
 

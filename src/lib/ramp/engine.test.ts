@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAST_STAGE, rampStageForWeek, stageLabel, weekForStage } from "./engine";
+import { LAST_STAGE, NESTING_STAGES, isNesting, rampStageForWeek, stageLabel, weekForStage } from "./engine";
 
 /**
  * The only thing this module does — map a calendar week onto a ramp stage —
@@ -8,10 +8,17 @@ import { LAST_STAGE, rampStageForWeek, stageLabel, weekForStage } from "./engine
  * trusting the general formula to cover them.
  */
 describe("rampStageForWeek", () => {
-  const START = "2026-08-01"; // stage 0 (Nesting) begins here
+  const START = "2026-08-01"; // stage 0 (the first nesting week) begins here
 
-  it("is stage 0 (Nesting) on the start week itself", () => {
+  it("is stage 0 (the first nesting week) on the start week itself", () => {
     expect(rampStageForWeek(START, "2026-08-01")).toBe(0);
+  });
+
+  it("spends two weeks nesting, then reaches ramp Week 1 on the third", () => {
+    expect(isNesting(rampStageForWeek(START, "2026-08-01")!)).toBe(true);
+    expect(isNesting(rampStageForWeek(START, "2026-08-08")!)).toBe(true);
+    expect(isNesting(rampStageForWeek(START, "2026-08-15")!)).toBe(false);
+    expect(NESTING_STAGES).toBe(2);
   });
 
   it("advances one stage per elapsed week", () => {
@@ -20,12 +27,13 @@ describe("rampStageForWeek", () => {
     expect(rampStageForWeek(START, "2026-08-22")).toBe(3);
   });
 
-  it("reaches stage 8 (Week 8) exactly 8 weeks after the start", () => {
-    expect(rampStageForWeek(START, "2026-09-26")).toBe(8);
+  it("reaches stage 9 (ramp Week 8) exactly 9 weeks after the start", () => {
+    expect(rampStageForWeek(START, "2026-10-03")).toBe(9);
+    expect(LAST_STAGE).toBe(9);
   });
 
-  it("is null the week after stage 8 — ramp is complete", () => {
-    expect(rampStageForWeek(START, "2026-10-03")).toBeNull();
+  it("is null the week after stage 9 — ramp is complete", () => {
+    expect(rampStageForWeek(START, "2026-10-10")).toBeNull();
   });
 
   it("is null for any week before ramp began", () => {
@@ -62,12 +70,13 @@ describe("weekForStage", () => {
 });
 
 describe("stageLabel", () => {
-  it("names stage 0 Nesting, not Week 0", () => {
-    expect(stageLabel(0)).toBe("Nesting");
+  it("names the two nesting weeks, not Week 0", () => {
+    expect(stageLabel(0)).toBe("Nesting 1");
+    expect(stageLabel(1)).toBe("Nesting 2");
   });
 
-  it("names every other stage Week N", () => {
-    expect(stageLabel(1)).toBe("Week 1");
-    expect(stageLabel(8)).toBe("Week 8");
+  it("names the ramp weeks Week 1 through Week 8 after them", () => {
+    expect(stageLabel(2)).toBe("Week 1");
+    expect(stageLabel(9)).toBe("Week 8");
   });
 });

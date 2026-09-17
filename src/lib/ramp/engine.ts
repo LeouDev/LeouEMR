@@ -11,12 +11,21 @@
  * live import.
  */
 
-/** Stage 0 is Nesting; 1 through LAST_STAGE are Week 1 through Week 8. */
-export const LAST_STAGE = 8;
+/**
+ * Stages 0 and 1 are the two nesting weeks; 2 through LAST_STAGE are ramp
+ * Week 1 through Week 8. Ten reporting weeks in all — the business's
+ * onboarding path — then the skill's steady target applies.
+ */
+export const NESTING_STAGES = 2;
+export const LAST_STAGE = 9;
 
-/** "Nesting", "Week 1", … "Week 8". */
+export function isNesting(stage: number): boolean {
+  return stage >= 0 && stage < NESTING_STAGES;
+}
+
+/** "Nesting 1", "Nesting 2", "Week 1", … "Week 8". */
 export function stageLabel(stage: number): string {
-  return stage === 0 ? "Nesting" : `Week ${stage}`;
+  return isNesting(stage) ? `Nesting ${stage + 1}` : `Week ${stage - NESTING_STAGES + 1}`;
 }
 
 /** `YYYY-MM-DD` shifted by whole days, in UTC so it never drifts by timezone. */
@@ -31,7 +40,7 @@ function shiftDay(date: string, days: number): string {
  *
  * Null before ramp starts (the assignment does not apply yet — a week
  * imported before a new hire's actual start should never be discounted) and
- * null once it is over (past week 8, ramp is complete and the caller should
+ * null once it is over (past ramp Week 8, ramp is complete and the caller should
  * fall back to the skill's own steady-state target, the same as it would for
  * anyone with no ramp assignment at all).
  */

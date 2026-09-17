@@ -150,3 +150,54 @@ export async function clearRampAssignment(input: unknown): Promise<RampResult> {
   revalidatePath(`/employees/${parsed.data.employeeId}`);
   return { ok: true, weeksCorrected };
 }
+
+export type ReapplyAllResult = { ok: true; assignments: number; weeksCorrected: number } | { ok: false; error: string };
+
+/**
+ * Re-runs every ramp assignment in the caller's scope against the current
+ * schedule, correcting the stored weekly targets and the action items
+ * derived from them — the same replay "Start ramp" does for one person.
+ * For when the schedule itself changes (a stage added, a target edited in
+ * the database) and every ramping agent's already-imported weeks need to
+ * follow it, without re-saving each assignment by hand.
+ */
+export async function reapplyAllRamps(): Promise<ReapplyAllResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (!canRunTeamPrograms(user)) {
+    return { ok: false, error: "Only supervisors and administrators can re-apply ramp schedules" };
+  }
+  const scope = employeeScope(user);
+  if (scope === null) return { ok: false, error: "Nobody is in your scope" };
+
+  const assignments = await db
+    .select({
+      employeeId: employeeRampAssignments.employeeId,
+      skillReferenceId: employeeRampAssignments.skillReferenceId,
+      rampStartWeek: employeeRampAssignments.rampStartWeek,
+    })
+    .from(employeeRampAssignments)
+    .innerJoin(employees, eq(employees.id, employeeRampAssignments.employeeId))
+    .where(scope === "all" ? undefined : scope);
+
+  // One at a time: each replay re-runs the issue engine for the weeks it
+  // touched, and those runs must not interleave.
+  let weeksCorrected = 0;
+  for (const a of assignments) {
+    const result = await reapplyRampToStoredWeeks(a.employeeId, a.skillReferenceId, a.rampStartWeek);
+    weeksCorrected += result.weeksCorrected;
+  }
+
+  invalidateCache(CACHE_TAG.ramp, CACHE_TAG.imports);
+
+  await db.insert(auditLog).values({
+    actorId: user.id,
+    action: "ramp.reapplied_all",
+    entityType: "employee",
+    entityId: user.id,
+    after: { assignments: assignments.length, weeksCorrected },
+  });
+
+  revalidatePath("/ramp");
+  return { ok: true, assignments: assignments.length, weeksCorrected };
+}
