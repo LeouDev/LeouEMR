@@ -138,9 +138,11 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0056_panda_fax_form` (17 Sep; the Fax QA form becomes
-PANDA Fax, scored per attribute out of 100 — data only, no DDL, one paste
-of `APPLY_0056_PANDA_FAX_FORM.sql`). Before it `0055_sunday_weeks` (every
+Latest migration: `0057_tech_decision_header` (17 Sep; the AV, MPA and Fax
+QA forms ask for Tech Decision in place of Call Reason — data only, no DDL,
+one paste of `APPLY_0057_TECH_DECISION_HEADER.sql`). Before it
+`0056_panda_fax_form` (the Fax QA form becomes PANDA Fax, scored per
+attribute out of 100), and `0055_sunday_weeks` (every
 stored week key from 30 May 2026 moves one day onto its Sunday — data
 only, no DDL; the owner runs it by the runbook
 `docs/sunday-week-recut.md`), and `0054_two_nesting_weeks` (the ramp has

@@ -1237,6 +1237,35 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **Tech Decision replaces Call Reason on the AV, MPA and Fax forms (17
+  Sep, feature branch).** Twelve codes, the business's own: Pend, Deny,
+  Approved, Fax for Appls, Merged, RARA, RAFA, RAFC-C, NEITAP, NEITP, DNF,
+  MNF. Those three audit case work rather than a conversation — "why did
+  they ring" is a Phone question, and on a fax or a written PA the useful
+  header is the decision the case ended on. **The Phone form keeps Call
+  Reason** and is untouched; `CALL_REASON_OPTIONS` stays for it.
+  Live via `0057_tech_decision_header` (data only, no DDL, one paste of
+  `APPLY_0057_TECH_DECISION_HEADER.sql`, rehearsed twice on a scratch
+  database seeded from the exact 0043 rows: `UPDATE 3` then `UPDATE 0` with
+  `updated_at` unmoved, and Phone still on `callReason` with its 18
+  options). The seed in `src/lib/quality/forms.ts` moves no live form on its
+  own — 0056's lesson, one migration later.
+  **Retiring a header does not delete what was filed under it, but it did
+  make it invisible, which is worse.** `qa_audits.header_values` is keyed by
+  field key, and the history panel and the raw-data export both walked the
+  form's *current* `headerFields` — so every AV, MPA and Fax audit filed
+  before today would have silently stopped showing the one header it
+  recorded. `headerRows` (`src/lib/quality/header-values.ts`) now returns
+  the current fields followed by any stored key the form no longer has,
+  labelled from `RETIRED_HEADER_LABELS` — "Call Reason (retired)", so two
+  audits of one form cannot appear to disagree about which headers exist
+  with no explanation. An unrecognised key shows under its raw name rather
+  than being dropped: losing a recorded value is the failure this prevents,
+  and an odd label is the smaller problem. Plain module, no `"use client"`,
+  because the panel is a client component and the export is server-side.
+  A side effect worth keeping: the export test found the attribute block by
+  searching for its header row instead of indexing row 9, since the header
+  block's length now moves whenever a form gains or retires a field.
 - **`/team` threw on every request: a client module's value read from the
   server (17 Sep, bug, main).** `TypeError: x.ROSTER_COLUMNS is not
   iterable`, and the page never rendered once. The column list was exported
