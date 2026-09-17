@@ -1526,9 +1526,13 @@ from every environment this project gets worked on in.
   action items (AHT, CPH, Case Rate, MBO): every list hides those
   whatever their status and the engine never folds them, so six such
   items reopened by the hand repair on 17 Sep simply stay hidden. The
-  replay folds only the weeks in the file that triggers it: after the
-  hand repair the September workbook replayed 30 Aug and 6 Sep, and the
-  week of 13 Sep needed the newest file uploaded again. (4) The
+  replay folds only the weeks in the file that triggers it, and only
+  where the person has a row: after the hand repair the September
+  workbook replayed 30 Aug and 6 Sep, and the week of 13 Sep stayed
+  unfolded because the cohort had no rows for it yet (the floor's week
+  was there; theirs was not) — it folds by itself when an upload carries
+  them. A "missing" week is a data question before it is an engine one:
+  check `weekly_metric_results` for the person and week first. (4) The
   integrity workflow writes the script's output onto the run's
   summary page with a pointer to these notes, so a red run reads its own
   repair. Not changed: `separationDates` itself, deliberately — the
