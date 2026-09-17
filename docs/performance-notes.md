@@ -1451,6 +1451,35 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **A weekly file closed a listed team at the masterlist month's eve (17
+  Sep).** Symptom: after the re-cut re-imports and the WE 09/18/26 upload,
+  Archiene Herbias and her whole team were gone from September on the
+  manager overview (5 supervisors, 78 agents). Cause, in
+  `spliceWeeklyAssignments`: its last step re-closed every open interval
+  that began before a protected month at the day before it — meant for
+  someone the masterlist closed as attrited, but applied to everyone the
+  month protected. A *listed* person can hold one open interval that
+  begins before the month, because the masterlist commit's own splice
+  merges its September interval with an abutting August one stating the
+  same structure (same supervisor EID, name, manager, site) — true for
+  her team, whose weekly rows match the masterlist exactly, and false
+  for the teams whose weekly supervisor EIDs the masterlist corrected,
+  which is why only hers vanished. Re-importing the August workbook then
+  did two wrong things to each of them: the splice replaced the merged
+  interval with one the file established (the masterlist stamp lost,
+  so the next file would not be held off either) and the re-close cut
+  it at 31 Aug, which the period owner reads as closed before September
+  and the eligibility rules read as a separation. Fix: the tail now
+  tells listed from closed per month — listed (an interval stamped by
+  that month's masterlist, any of its batches) gets `keepMasterlistMonth`,
+  which splits any interval crossing the month's first day and stamps
+  the piece from that day on, so the month keeps its own stamped
+  interval and stays protected; only the unlisted are re-closed. Three
+  regression tests in `assignments.test.ts` (merged from the masterlist
+  side, merged from the file's side, and the next file still held off).
+  Data repair: re-upload the September masterlist after the deploy — its
+  splice re-opens the month for everyone it lists and stamps it — then
+  check with the per-team query in the handoff.
 - **Reporting weeks run Sunday to Saturday from 31 May 2026 (17 Sep).**
   The operation's week is Sunday–Saturday; the app had read the
   workbook's "WE <Friday>" labels as Saturday–Friday weeks, which is the

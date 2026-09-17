@@ -344,6 +344,75 @@ describe("spliceWeeklyAssignments with a masterlist month", () => {
     expect(result).toEqual(existing);
   });
 
+  it("does not close someone the masterlist listed when the file's August agrees with the masterlist", () => {
+    // The masterlist commit merges its September interval with an abutting
+    // August one stating the same structure, so a listed person can hold one
+    // open interval that begins before the month. Re-importing an August
+    // file must neither drop the September tail nor close them at 31 Aug —
+    // that reads as attrition and removes the whole team from September.
+    const existing = [fromMasterlist(AUG_1, LOVELY)];
+    const result = spliceWeeklyAssignments(
+      existing,
+      collapseWeeks([week(AUG_22, LOVELY), week(AUG_29, LOVELY)]),
+      AUG_22,
+      "2026-09-04",
+      [SEPTEMBER],
+    );
+    expect(assignmentOn(result, "2026-09-15")?.supervisorName).toBe("Lovely");
+    expect(result[result.length - 1].effectiveTo).toBeNull();
+  });
+
+  it("keeps the masterlist's own interval for its month, stamped, so the next file is still held off", () => {
+    const afterAugust = spliceWeeklyAssignments(
+      [fromMasterlist(AUG_1, LOVELY)],
+      collapseWeeks([week(AUG_22, LOVELY), week(AUG_29, LOVELY)]),
+      AUG_22,
+      "2026-09-04",
+      [SEPTEMBER],
+    );
+    expect(afterAugust).toEqual([
+      { ...fromMasterlist(AUG_1, LOVELY), effectiveTo: "2026-08-31", sourceImportId: expect.anything() },
+      fromMasterlist("2026-09-01", LOVELY),
+    ]);
+
+    // A later file inside September that lags the realignment.
+    const afterSeptember = spliceWeeklyAssignments(
+      afterAugust,
+      collapseWeeks([week(SEP_5, LEA)]),
+      SEP_5,
+      "2026-09-11",
+      [SEPTEMBER],
+    );
+    expect(afterSeptember).toEqual(afterAugust);
+  });
+
+  it("keeps the stamp when the file's August merges into the month from the other side", () => {
+    // Lea through August, Lovely from the masterlist's September; the August
+    // file already says Lovely for its last weeks, so the splice merges the
+    // weekly piece into the masterlist's interval from the left.
+    const existing = [
+      { ...closed(AUG_1, "2026-08-31", LEA), sourceImportId: "ml-sep" },
+      fromMasterlist("2026-09-01", LOVELY),
+    ];
+    const afterAugust = spliceWeeklyAssignments(
+      existing,
+      collapseWeeks([week(AUG_22, LOVELY), week(AUG_29, LOVELY)]),
+      AUG_22,
+      "2026-09-04",
+      [SEPTEMBER],
+    );
+    expect(assignmentOn(afterAugust, "2026-09-15")).toEqual(fromMasterlist("2026-09-01", LOVELY));
+
+    const afterSeptember = spliceWeeklyAssignments(
+      afterAugust,
+      collapseWeeks([week(SEP_5, LEA)]),
+      SEP_5,
+      "2026-09-11",
+      [SEPTEMBER],
+    );
+    expect(assignmentOn(afterSeptember, "2026-09-15")?.supervisorName).toBe("Lovely");
+  });
+
   it("still places a hire the masterlist never saw", () => {
     const result = spliceWeeklyAssignments([], collapseWeeks([week(SEP_5, LEA)]), SEP_5, "2026-09-11", [
       SEPTEMBER,

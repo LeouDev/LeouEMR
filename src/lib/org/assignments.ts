@@ -285,15 +285,60 @@ export function spliceWeeklyAssignments(
     result = spliceAssignments(result, inWindow, window.effectiveFrom, window.effectiveTo ?? rangeEnd);
   }
 
-  // The splice leaves the newest interval open. For someone the masterlist
-  // closed, that would reopen them; close it again where the masterlist did.
+  // Each protected month held this person one of two ways. Listed: the
+  // masterlist's interval must come out of the splice as its own, still
+  // stamped, so the next file is held off too — the masterlist commit
+  // merges its month with an abutting earlier interval stating the same
+  // structure, and the splice merges the same way, so without this the
+  // month rode on an interval the file established, unstamped. Closed:
+  // the splice leaves the newest interval open, which would reopen them;
+  // close it again where the masterlist did. Telling the two apart matters:
+  // closing a listed person's merged interval at the month's eve read as
+  // attrition and removed a whole team from the month's reporting.
+  const seen = new Set<string>();
   for (const month of protectedMonths) {
-    const closedBefore = shiftDay(month.start, -1);
-    for (const a of result) {
-      if (a.effectiveTo === null && a.effectiveFrom <= closedBefore) a.effectiveTo = closedBefore;
+    const key = `${month.start}|${month.end}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const stamp = masterlistMonths.find(
+      (m) =>
+        m.start === month.start &&
+        m.end === month.end &&
+        existing.some((a) => a.sourceImportId === m.batchId),
+    )?.batchId;
+    if (stamp) {
+      result = keepMasterlistMonth(result, month, stamp);
+    } else {
+      const closedBefore = shiftDay(month.start, -1);
+      for (const a of result) {
+        if (a.effectiveTo === null && a.effectiveFrom <= closedBefore) a.effectiveTo = closedBefore;
+      }
     }
   }
   return result;
+}
+
+/**
+ * Gives a masterlist month its own interval: any interval that crosses the
+ * month's first day is split there, and the piece from that day on carries
+ * the masterlist's stamp. Idempotent — a month already on its own interval
+ * is left alone — and `sameOrg` ignores the stamp, so the two pieces still
+ * read as one unbroken assignment everywhere else.
+ */
+function keepMasterlistMonth(result: Assignment[], month: DateRange, stamp: string): Assignment[] {
+  const out: Assignment[] = [];
+  for (const a of result) {
+    const crosses =
+      a.effectiveFrom < month.start && (a.effectiveTo === null || a.effectiveTo >= month.start);
+    if (!crosses) {
+      out.push(a);
+      continue;
+    }
+    out.push({ ...a, effectiveTo: shiftDay(month.start, -1) });
+    out.push({ ...a, effectiveFrom: month.start, sourceImportId: stamp });
+  }
+  return out;
 }
 
 /** The assignment covering `date`, or null when the history says nothing. */

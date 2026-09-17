@@ -244,6 +244,15 @@ the coding container; there is no database to run the app against here.
 
 ## Open items and things the owner knows about
 
+- **September masterlist re-upload pending** (17 Sep): the weekly splice
+  used to close a listed person's merged interval at 31 Aug (fixed, see
+  the notes bullet "A weekly file closed a listed team"); Herbias's team
+  is closed that way in production until the owner re-uploads the
+  September masterlist. Check afterwards, read-only:
+  `select a.supervisor_name, count(*) from employee_assignments a where
+  a.effective_from <= '2026-09-30' and (a.effective_to is null or
+  a.effective_to >= '2026-09-01') group by 1 order by 2 desc;` — every
+  team should be present with its roster count.
 - **The Sunday re-cut is not applied until the owner runs it**: section
   A of `scripts/sql/sunday-recut-check.sql`, then
   `APPLY_0055_SUNDAY_WEEKS.sql`, deploy, re-import every workbook with
