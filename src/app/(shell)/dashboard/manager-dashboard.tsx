@@ -6,7 +6,6 @@ import type { KpiBreakdown, TopAgent } from "@/lib/queries/analytics";
 import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
 import type { SupervisorKpis } from "@/lib/queries/supervisor-kpis";
 import type { OrgTrend } from "@/lib/queries/team-trend";
-import { formatMetric } from "@/components/ui";
 import {
   ActionItemsSummary,
   DashboardShell,
@@ -62,6 +61,21 @@ const GRID = "lg:grid-cols-[2fr_0.7fr_repeat(5,1fr)]";
 /** A level short of its target — quiet when either the level or the target is absent. */
 function below(value: number | null, target: number | null): boolean {
   return value !== null && target !== null && value < target;
+}
+
+/**
+ * A figure as a whole number, rounded down, with nothing measured reading as
+ * a dash rather than a zero.
+ *
+ * Down rather than to nearest, so a figure can never disagree with its own
+ * colour: 97.6% against a 98% target reads "97%" and stays red, where
+ * rounding to nearest would print a red "98%" and look like a fault in the
+ * page. Every threshold here is a whole number, so rounding down means the
+ * figure shown is below the bar exactly when the number behind it is. The
+ * exact value is never lost — the count beside each figure carries it.
+ */
+export function whole(value: number | null, suffix = ""): string {
+  return value === null ? "—" : `${Math.floor(value)}${suffix}`;
 }
 
 /** Above this share of the evaluated team failing, the row is the story rather than a footnote. */
@@ -292,22 +306,22 @@ export function ManagerDashboard({
                     </span>
                     <Figure value={s.teamSize} label="team" />
                     <Figure
-                      value={s.mboPassRate === null ? "—" : `${s.mboPassRate.toFixed(0)}%`}
+                      value={whole(s.mboPassRate, "%")}
                       label={s.mboScored === 0 ? "nobody scored" : `${s.mboPassing} of ${s.mboScored}`}
                       tone={mboLow ? "fail" : undefined}
                     />
                     <Figure
-                      value={s.prodPassRate === null ? "—" : `${s.prodPassRate.toFixed(0)}%`}
+                      value={whole(s.prodPassRate, "%")}
                       label={s.prodScored === 0 ? "nobody rated" : `${s.prodPassing} of ${s.prodScored}`}
                       tone={prodLow ? "fail" : undefined}
                     />
                     <Figure
-                      value={formatMetric(s.quality, "QUALITY")}
+                      value={whole(s.quality, "%")}
                       label={s.qualityScored === 0 ? "nobody scored" : `avg of ${s.qualityScored}`}
                       tone={qualityLow ? "fail" : undefined}
                     />
                     <Figure
-                      value={formatMetric(s.nps, "NPS")}
+                      value={whole(s.nps)}
                       label={s.npsScored === 0 ? "no surveys" : `avg of ${s.npsScored}`}
                       tone={npsLow ? "fail" : undefined}
                     />
