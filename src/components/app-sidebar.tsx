@@ -88,6 +88,14 @@ const LEADER_NAV = [
 const ANALYTICS_NAV = { href: "/analytics", label: "Analytics" };
 
 /**
+ * One team lead's whole roster with every agent's KPI line — the question
+ * that follows the dashboard's "which team is struggling". Admin and manager
+ * only: a team leader already reads their own team on the dashboard, and a
+ * lead picker would hand them everyone else's.
+ */
+const TEAM_ROSTER_NAV = { href: "/team", label: "Team Roster" };
+
+/**
  * Admin-only destinations. The pages enforce this themselves too — Audit
  * has no nav entry (kept reachable by URL for whoever needs it) but is
  * otherwise unchanged.
@@ -149,6 +157,7 @@ export async function AppSidebar({ user, initialOpen }: { user: CurrentUser; ini
     // nav at the tail end.
     NAV[0],
     ...(user.role === "admin" ? [ANALYTICS_NAV] : []),
+    ...(user.role === "admin" || user.role === "manager" ? [TEAM_ROSTER_NAV] : []),
     // An agent's Employees roster is a list of one — themselves — so the tab
     // only ever led back to their own page, which their dashboard and action
     // items already link to directly. The page itself stays reachable.

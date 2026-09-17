@@ -1237,6 +1237,67 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **Team Roster, `/team` (17 Sep, feature branch).** From a supplied
+  design handoff: an admin or manager picks a team lead and sees every agent
+  on that team with their whole KPI line, worst first. It is the question
+  that follows the dashboard's — the dashboard says which team is
+  struggling, in six collapsed rows; this says who on the team and by how
+  much, which is what a coaching conversation starts from.
+  Columns: Agent (name, EID, and the phone / non-phone hours sub-line),
+  Below, PAR, Case Rate, AHT, CPH, Quality, NPS, Attendance, MBO. Above it a
+  seven-cell strip: the lead, Team, MBO pass, Prod rating pass, Avg quality,
+  Avg NPS, Below target.
+  The page titles itself after whoever is selected — "Team Brandon" — which
+  is how these teams are actually spoken about. `leadFirstName` picks the
+  given name out of either format the roster carries, since the source
+  workbooks write both "Sacurom, Lovely Mae Enot" and "Victor Fuentenegra",
+  and sometimes omit the space after the comma: a comma means everything
+  after it is the given names, no comma means the row already leads with
+  them. The unassigned bucket has no lead to name and keeps the generic
+  heading, as do the two empty states, which render before a lead is
+  settled. The sidebar entry stays "Team Roster": it is global layout and
+  cannot know which lead a visit will land on.
+  **Everyone on the roster gets a row**, including an agent with no result
+  this period — deliberately unlike the MBO tree and the manager overview,
+  which drop anyone without reportable data. A row of dashes is
+  information; dropping them is how somebody goes a month unmeasured with
+  nobody noticing. Separated and not-yet-hired people are still excluded
+  (`eligibleForPeriod`), since a roster must not list someone who was not
+  there.
+  **Nothing is recomputed.** The cells are `getTeamPeriodComparison`, the
+  same figures the dashboard's own agent table shows, so the two pages can
+  never disagree about one person; the strip's Prod pass, Avg quality and
+  Avg NPS are `rollUpSupervisorKpis`, the same helper behind the manager
+  dashboard's columns, so a team reads identically in both places. Both sit
+  on the org-wide `getPeriodMetrics` cache.
+  Tone is the KPI engine's own evaluated status, never a ratio recomputed in
+  the view — the engine holds the thresholds, the ramp targets and the
+  per-employee CPH/AHT targets, none of which a client component can see.
+  The one exception is PAR, normalised on the server against
+  `MBO_GATES.productionRate` (2.99) before it crosses, because the KPI
+  definition calls exactly 2.99 a WARNING: left as the raw status it would
+  show a miss beside a strip counting the same number as a pass. PAR and MBO
+  read Pass / Fail rather than a level, both being gates.
+  **Two things the handoff flagged as unconfirmed, resolved.** Case Rate is
+  not the guessed "PAR-like ratio against 1.0" — it has been a KPI of its
+  own since migration 0041 (`CASE_RATE`), scored against the agent's own
+  skill mix, and it flows through like every other column. Phone /
+  non-phone hours had no source at all: nothing marks a skill as a phone
+  skill, and `skill_facts.hours` is the only hours in the database. The
+  split reads the skill reference's scoring metric — a skill scored by
+  average handle time is a phone skill, because handle time measures a
+  call — and the per-skill breakdown is on the sub-line's tooltip so the
+  split can be checked rather than trusted. **Confirm this with the
+  business before relying on the figures.**
+  Deviations from the mock, all toward existing app convention: the period
+  filter is the shared `PeriodPicker` (week/month/quarter/year) rather than
+  four bespoke buttons, so the page joins the remembered-period cookie and
+  the progress bar; the content column is `max-w-7xl` rather than the
+  design's 1360px, because `PageBand` is 7xl and a wider column under it
+  reads as a misalignment; the role toggle is gone, role coming from the
+  session. Columns are the fixed set the brief names rather than
+  data-driven: this table compares agents within one team, and a column
+  vanishing between teams is what makes such a table unscannable.
 - **The manager's supervisor table carries Prod pass, Quality and NPS (17
   Sep, feature branch).** Seven columns now, in the order a manager reads
   them: Supervisor, Team, MBO pass, Prod pass, Quality, NPS, Failing. Open

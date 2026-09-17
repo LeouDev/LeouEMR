@@ -106,6 +106,15 @@ const GLYPHS: Record<string, ReactNode> = {
     </>
   ),
   "/201-file": <path d="M3 6h6l2 2h10v12H3z" />,
+  // A roster: one row per person, read top to bottom.
+  "/team": (
+    <>
+      <path d="M4 5h16M4 12h16M4 19h16" />
+      <circle cx={7} cy={5} r={0.9} />
+      <circle cx={7} cy={12} r={0.9} />
+      <circle cx={7} cy={19} r={0.9} />
+    </>
+  ),
   "/import": <path d="M12 3v11M8 10l4 4 4-4M4 16v4h16v-4" />,
   "/users": (
     <>
