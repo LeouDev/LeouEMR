@@ -1271,6 +1271,16 @@ from every environment this project gets worked on in.
   The grid template is one `GRID` constant shared by the header and the
   rows — they were two literals, and this many columns is too many to keep
   in step by hand.
+  **Every figure in the table is a whole number, rounded down** (`whole`).
+  Down rather than to nearest, and that is a property rather than a taste:
+  a figure must never disagree with the colour its own row gives it. Quality
+  at 97.6% against a 98% target is red, and rounding to nearest printed a
+  red "98%" — which reads as a fault in the page rather than as a team
+  below target. Every bar here is a whole number, so rounding down means the
+  figure shown is under the bar exactly when the number behind it is. MBO
+  pass and Prod pass had the same latent fault against the 90% bar (89.6%
+  printed a red "90%") and now share the one helper. Nothing is lost: the
+  count beside each figure carries the exact reading.
 - **The Fax QA form is PANDA Fax, and the seed alone never moved it (17
   Sep, feature branch).** Two things happened here, a day apart in
   intent and an hour apart in fact.
