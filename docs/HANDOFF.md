@@ -75,6 +75,19 @@ in the background and read the output file) until it prints
 `none-yet` forever. Report the result to the owner; they read the last
 message only.
 
+## More than one session works on main
+
+Another session (its branch was `claude/amazing-curie-b5ubwp` on 16–17
+Sep) merges its own work into `main` while you work. So: `git fetch
+origin main` immediately before every push to main. If the push is
+rejected as non-fast-forward, your commit is still safe on local main:
+`git rebase origin/main` (your own unpushed commit only — never rewrite
+anything already pushed), re-run typecheck, lint, tests and build on the
+combined tree, then push. The branch-sync line `git push origin
+main:claude/vibrant-cray-3ff4kq` only works while the branch is an
+ancestor of main; if it is rejected, check the branch out and
+`git merge --ff-only main`, then push it normally.
+
 ## Verification before every commit
 
 ```
