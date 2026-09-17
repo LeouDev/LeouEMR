@@ -1237,6 +1237,37 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **Audit of the day's own work (17 Sep, bugs, main).** A review of
+  everything shipped today, after it had shipped. Five findings, all real,
+  the first of them on the path four hundred people take tomorrow.
+  (1) *The survey's thank-you screen never got its moment.* Submitting set
+  `done`, then called `router.refresh()` — which re-renders the route's
+  server components, and `/survey` redirects to the dashboard the instant
+  the gate is satisfied. So the completion screen was cut short or skipped
+  outright, and the 1.6s `setTimeout` behind it fired against an unmounted
+  component. The navigation and the refresh now happen together in a
+  `useEffect` after the pause, with the timer cleared on unmount.
+  (2) *The coverage line could read "410 of 390".* It counted every
+  response ever filed against only the accounts active *now*, so a disabled
+  leaver who had answered sat in the numerator and not the denominator.
+  Both figures come off one pass over the active accounts now, so they
+  cannot disagree by construction; the leaver's answer still appears in the
+  table, because it was still given.
+  (3) A `useState` named `window` shadowed the global for that whole
+  component — harmless today, one `typeof window` guard away from being
+  quietly wrong. (4) `db.$count` embedded in a `select().from().limit(1)`
+  scanned a table for a throwaway row; folded into the query above.
+  (5) `strictestTarget`'s comment said a row "goes quiet only when the team
+  clears the bar under either rule", which is the opposite of what
+  `Math.max` does — it must clear both. The code and its test were right and
+  the sentence was not, in three places including these notes.
+  **A limit worth knowing**, found while checking the gate's reach: it hangs
+  on the `(shell)` layout, and Next does not run layouts for route
+  handlers. The four download endpoints under `(shell)` are therefore
+  reachable by someone who still owes answers. Left alone deliberately —
+  each authenticates and role-checks itself, the gate collects feedback
+  rather than guarding anything, and gating the avatar route would blank the
+  sidebar's profile pictures.
 - **Charts label each data point (17 Sep, feature branch).** The fail-rate
   trend (`TrendChart`) drew its points with no figures at all — the number
   was in the tooltip, which a printed page and a screenshot both lose. Every
@@ -1497,7 +1528,8 @@ from every environment this project gets worked on in.
   `target_value` on the results rather than hardcoded, so editing a KPI's
   target moves the colour and not just the number. Where a period spans a
   target change the strictest one wins, so a row goes quiet only when the
-  team clears the bar under either rule.
+  team clears the bar under both rules — the comment first said "either",
+  which is the opposite of what `Math.max` does.
   The grid template is one `GRID` constant shared by the header and the
   rows — they were two literals, and this many columns is too many to keep
   in step by hand.

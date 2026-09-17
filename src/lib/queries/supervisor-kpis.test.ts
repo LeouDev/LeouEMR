@@ -85,7 +85,7 @@ describe("rollUpSupervisorKpis", () => {
     expect(rows.get("Ana")).toMatchObject({ quality: 96, qualityScored: 1 });
   });
 
-  it("takes the strictest target where a period spans a change, so a row goes quiet only under either rule", () => {
+  it("takes the strictest target where a period spans a change, so a row must clear both rules", () => {
     const rows = rollUpSupervisorKpis(
       [
         metric({ employeeId: "a1", kpiCode: "QUALITY", actualValue: 96, targetValue: 95 }),

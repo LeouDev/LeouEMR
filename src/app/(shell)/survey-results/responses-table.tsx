@@ -33,12 +33,15 @@ const DATE_WINDOWS: Array<{ value: string; label: string; days: number | null }>
 
 export function ResponsesTable({ rows }: { rows: SurveyResponseRow[] }) {
   const [search, setSearch] = useState("");
-  const [window, setWindow] = useState("all");
+  // Not `window`: that name shadows the global for this whole component,
+  // and the export below is one `typeof window` guard away from being
+  // quietly wrong.
+  const [dateWindow, setDateWindow] = useState("all");
 
   const visible = useMemo(() => {
-    const days = DATE_WINDOWS.find((w) => w.value === window)?.days ?? null;
+    const days = DATE_WINDOWS.find((w) => w.value === dateWindow)?.days ?? null;
     return filterResponses(rows, { search, withinDays: days });
-  }, [rows, search, window]);
+  }, [rows, search, dateWindow]);
 
   const stats = useMemo(() => summarize(visible), [visible]);
 
@@ -84,8 +87,8 @@ export function ResponsesTable({ rows }: { rows: SurveyResponseRow[] }) {
           className="w-full max-w-[280px] border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none"
         />
         <select
-          value={window}
-          onChange={(event) => setWindow(event.target.value)}
+          value={dateWindow}
+          onChange={(event) => setDateWindow(event.target.value)}
           aria-label="Date range"
           className="border-2 border-ink bg-surface px-3 py-2 text-sm font-semibold text-ink outline-none"
         >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { AstronautFigure } from "@/components/astronaut-figure";
 import { submitSurvey } from "./actions";
 
@@ -89,6 +89,27 @@ export function SurveyWizard({ signOut }: { signOut: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  /**
+   * Leave for the dashboard once the thank-you has been read, not before.
+   *
+   * `router.refresh()` cannot be called the moment the answers are filed:
+   * it re-renders this route's server components, and `/survey` redirects
+   * to the dashboard as soon as the gate is satisfied — so the refresh
+   * carried the person away before the completion screen had rendered, and
+   * a bare `setTimeout` then fired against an unmounted component.
+   * Navigating and refreshing together, after the pause, does both jobs:
+   * the dashboard is fetched fresh rather than from the client cache, which
+   * still holds the redirect that sent them here.
+   */
+  useEffect(() => {
+    if (!done) return;
+    const timer = setTimeout(() => {
+      router.replace("/dashboard");
+      router.refresh();
+    }, 1600);
+    return () => clearTimeout(timer);
+  }, [done, router]);
+
   const set = (patch: Partial<Answers>) => {
     setAnswers((current) => ({ ...current, ...patch }));
     setError(null);
@@ -112,11 +133,6 @@ export function SurveyWizard({ signOut }: { signOut: React.ReactNode }) {
         return;
       }
       setDone(true);
-      // The gate reads the database, so the dashboard has to be fetched
-      // again rather than served from the client router's cache — without
-      // the refresh it can bounce straight back here.
-      router.refresh();
-      setTimeout(() => router.replace("/dashboard"), 1600);
     });
   }
 

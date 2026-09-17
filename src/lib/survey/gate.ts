@@ -53,6 +53,15 @@ export function surveyIsLive(now: Date = new Date()): boolean {
  *
  * Only an active account is gated — someone still pending approval has no
  * dashboard to be kept from, and the MFA step comes first either way.
+ *
+ * **What the gate does not cover**, since it hangs on the `(shell)` layout:
+ * route handlers. Next does not run a layout for `route.ts`, so the four
+ * download endpoints under `(shell)` (the quality export, the avatar, the
+ * two import templates) are reachable by someone who still owes answers.
+ * That is deliberate rather than an oversight — each one authenticates and
+ * role-checks itself, this gate collects feedback rather than guarding
+ * anything, and gating the avatar route would blank out the profile
+ * pictures in the sidebar. A page is what the survey stands in front of.
  */
 export async function surveyDueFor(user: CurrentUser, now: Date = new Date()): Promise<boolean> {
   if (user.status !== "active") return false;

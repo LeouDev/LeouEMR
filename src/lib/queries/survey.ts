@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { surveyResponses, users } from "@/lib/db/schema";
 import type { SurveyResponseRow } from "@/lib/survey/summary";
@@ -39,11 +39,24 @@ export async function getSurveyResponses(): Promise<SurveyResponseRow[]> {
   return rows.map((row) => ({ ...row, submittedAt: row.submittedAt.toISOString() }));
 }
 
-/** How many active accounts still owe a response, for the dashboard's coverage line. */
+/**
+ * How many active accounts have answered, for the dashboard's coverage line.
+ *
+ * Both figures come off one pass over the active accounts, so they cannot
+ * disagree. Counted separately they did: every response ever filed against
+ * the accounts that exist *now* meant a disabled leaver who had answered
+ * still counted in the numerator but not the denominator, and the line read
+ * "410 of 390 active accounts have answered."
+ */
 export async function getSurveyCoverage(): Promise<{ responded: number; accounts: number }> {
-  const [[responded], [accounts]] = await Promise.all([
-    db.select({ n: db.$count(surveyResponses) }).from(surveyResponses).limit(1),
-    db.select({ n: db.$count(users, eq(users.status, "active")) }).from(users).limit(1),
-  ]);
-  return { responded: Number(responded?.n ?? 0), accounts: Number(accounts?.n ?? 0) };
+  const [row] = await db
+    .select({
+      responded: sql<number>`count(${surveyResponses.id})::int`,
+      accounts: sql<number>`count(*)::int`,
+    })
+    .from(users)
+    .leftJoin(surveyResponses, eq(surveyResponses.userId, users.id))
+    .where(eq(users.status, "active"));
+
+  return { responded: row?.responded ?? 0, accounts: row?.accounts ?? 0 };
 }

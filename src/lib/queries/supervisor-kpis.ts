@@ -61,7 +61,10 @@ interface Team {
  * Quality and NPS are configured org-wide, so every member normally carries
  * the same snapshotted target and this is that number. Where they differ —
  * a period spanning a target change — the strictest one is taken, so a row
- * goes quiet only when the team clears the bar under either rule.
+ * goes quiet only when the team clears the bar under BOTH rules. Erring
+ * that way is deliberate: a team called out against the harder of two
+ * targets is a conversation, and one waved through against the easier one
+ * is a miss nobody sees.
  */
 function strictestTarget(targets: number[]): number | null {
   return targets.length ? Math.max(...targets) : null;
