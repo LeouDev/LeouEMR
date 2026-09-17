@@ -2,11 +2,17 @@ import { Card, CardHeader, STATUS_LABELS } from "@/components/ui";
 import { getAnalytics, getMboOverview, type AnalyticsFilters } from "@/lib/queries/analytics";
 import type { TeamPeriodComparison } from "@/lib/queries/my-stats";
 import type { Period } from "@/lib/queries/period";
+import { getPeriodMetrics } from "@/lib/queries/period-metrics";
 import type { SupervisorRollup } from "@/lib/queries/roster";
+import {
+  NO_SUPERVISOR_KPIS,
+  rollUpSupervisorKpis,
+  type SupervisorKpis,
+} from "@/lib/queries/supervisor-kpis";
 import { getOrgTrend } from "@/lib/queries/team-trend";
 import { MboTree } from "./mbo-tree";
 import type { ShellActionItems } from "./dashboard-shell";
-import { ManagerDashboard, type SupervisorRow } from "./manager-dashboard";
+import { ManagerDashboard, type SupervisorTableRow } from "./manager-dashboard";
 
 /**
  * A manager's org-wide overview, cut by supervisor.
@@ -96,6 +102,21 @@ export async function ManagerOverview({
 
   const trend = await getOrgTrend(roster, weeks.slice(0, 12));
 
+  // Production, quality and NPS per team, over the selected period. Read
+  // through getPeriodMetrics rather than a query of its own: it is computed
+  // once for the whole organisation per period and cached, so this is the
+  // same figures the stack rank, My Stats and the scorecard read, at the
+  // cost of a cache hit. With no period there is nothing to measure over.
+  const teamKpis = period
+    ? rollUpSupervisorKpis(
+        await getPeriodMetrics(
+          roster.map((r) => r.employeeId),
+          period,
+        ),
+        supervisorByEmployee,
+      )
+    : new Map<string, SupervisorKpis>();
+
   const rollupByName = new Map(rollup.map((r) => [r.supervisorName, r]));
   // Failing comes from the analytics breakdown rather than the rollup: the
   // rollup counts the newest week that exists anywhere, while the summary
@@ -103,7 +124,7 @@ export async function ManagerOverview({
   // different weeks whenever the range is not the newest one, and taking one
   // from each put "0 failing" on every row beside a summary saying 15.
   const failingByName = new Map(analytics.bySupervisor.map((g) => [g.label, g]));
-  const supervisors: SupervisorRow[] = [...bySupervisor.entries()]
+  const supervisors: SupervisorTableRow[] = [...bySupervisor.entries()]
     .map(([name, totals]) => {
       // Open and awaiting are a work queue, not a period measure, so they
       // stay current — matching the action-item block in the summary.
@@ -123,6 +144,7 @@ export async function ManagerOverview({
         mboPassRate: totals.scored > 0 ? (totals.passing / totals.scored) * 100 : null,
         mboPassing: totals.passing,
         mboScored: totals.scored,
+        ...(teamKpis.get(name) ?? NO_SUPERVISOR_KPIS),
       };
     })
     // Most open work first, matching how getSupervisorRollup already orders.
