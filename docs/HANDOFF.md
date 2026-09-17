@@ -186,6 +186,11 @@ the coding container; there is no database to run the app against here.
 
 ## What was built most recently (14–15 Sep 2026), newest first
 
+- **Monthly PAR for a ramping agent** (17 Sep): the month's target is
+  the plain average of each worked week's target (ramp stage or steady),
+  `src/lib/ramp/effective-target.ts`, used by the period metrics and the
+  scorecard. `scripts/sql/ramp-month-targets.sql` shows the resulting
+  targets for a month; the owner runs it in the Supabase SQL editor.
 - **Users page**: search (name / email / employee ID), editable email
   (Supabase Auth first, confirmed; company domain; not another
   account's), table widened so Save is in view.

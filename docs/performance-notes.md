@@ -980,6 +980,21 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Ramp month-target report (17 Sep, main).**
+  `scripts/sql/ramp-month-targets.sql`, read-only, for the Supabase SQL
+  editor: one row per ramping agent and skill for a month (edit the
+  first line) — the worked weeks with each week's stage or steady
+  target, the resulting month target (the app's plain average of worked
+  weeks), the steady target beside it, the month's actual, the ratio and
+  the skill's own R1–R5 rating. Validated on a synthetic scenario on the
+  scratch database against hand-computed figures (a ramp ending
+  mid-month: 800/700/600 → 700; a fresh one: 1500/1300/1200 → 1333.33;
+  two labels of one skill in one week folded), and the SQL Drizzle
+  generates for the per-week volumes (`group by …, 3`) was run there
+  too. Audit of the ramp target change the same day: only the weekly
+  import path and the two monthly paths read ramp targets; the employee
+  page's skill breakdown is per week and untouched; org period metrics
+  are cached under the `ramp` tag, which the ramp actions evict.
 - **Monthly PAR honours the ramp in a running month (17 Sep, bug,
   main).** A ramping agent rated 3.6–5.0 week by week on the development
   plan read 1.00–2.00 in "September by KPI" and on the scorecard. Both
