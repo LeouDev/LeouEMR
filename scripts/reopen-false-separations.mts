@@ -12,8 +12,10 @@
  * An item qualifies when its latest audit entry is the separation
  * closure, its owner's row is active, the owner's open assignment began
  * on or before the closure week (the stint never ended), it carries no
- * RCA, plan, acknowledgement or note, and no other live item exists for
- * the same person and KPI. Where one person and KPI has two such items,
+ * RCA, plan, acknowledgement or note, no other live item exists for the
+ * same person and KPI, and the KPI still opens action items (a retired
+ * KPI's items are hidden by every list whatever their status, and the
+ * engine never folds them). Where one person and KPI has two such items,
  * the later one opened only because the first had just been closed: it
  * is removed and the first replays as one episode. Every change gets an
  * audit entry. Then the engine replays every week from the earliest
@@ -49,7 +51,7 @@ const result = await db.execute(sql`
   from performance_issues i
   join employees e on e.id = i.employee_id
   join kpi_definitions k on k.id = i.kpi_id
-  where i.status = 'COMPLETED' and e.status = 'active'
+  where i.status = 'COMPLETED' and e.status = 'active' and k.generates_action_items
     and (select l.action from audit_log l where l.entity_id = i.id
           order by l.created_at desc limit 1) = 'issue.closed_on_separation'
     and exists (select 1 from employee_assignments a

@@ -78,10 +78,11 @@ const CHECKS: Check[] = [
   },
   {
     name: "work closed on separation for someone still here",
-    why: "an item completed 'on separation' whose owner is active and whose stint never ended — the separation was inferred from a broken org history; npm run fix:false-separations reopens and replays them",
+    why: "an item completed 'on separation' whose owner is active and whose stint never ended — the separation was inferred from a broken org history; npm run fix:false-separations reopens and replays them (items on KPIs that no longer open action items are left alone: every list hides them either way)",
     query: sql`select count(*)::int as n from performance_issues i
                join employees e on e.id = i.employee_id
-               where i.status = 'COMPLETED' and e.status = 'active'
+               join kpi_definitions k on k.id = i.kpi_id
+               where i.status = 'COMPLETED' and e.status = 'active' and k.generates_action_items
                  and (select l.action from audit_log l where l.entity_id = i.id
                        order by l.created_at desc limit 1) = 'issue.closed_on_separation'
                  and exists (select 1 from employee_assignments a

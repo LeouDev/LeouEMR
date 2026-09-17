@@ -1507,7 +1507,14 @@ from every environment this project gets worked on in.
   qualifying items at their opening week, removes later duplicate
   episodes, audits both, and replays every week from the earliest
   reopened one through `runIssueEngineForWeeks` — no re-import needed.
-  (4) The integrity workflow writes the script's output onto the run's
+  Both the check and the script skip items on KPIs that no longer open
+  action items (AHT, CPH, Case Rate, MBO): every list hides those
+  whatever their status and the engine never folds them, so six such
+  items reopened by the hand repair on 17 Sep simply stay hidden. The
+  replay folds only the weeks in the file that triggers it: after the
+  hand repair the September workbook replayed 30 Aug and 6 Sep, and the
+  week of 13 Sep needed the newest file uploaded again. (4) The
+  integrity workflow writes the script's output onto the run's
   summary page with a pointer to these notes, so a red run reads its own
   repair. Not changed: `separationDates` itself, deliberately — the
   period views should keep showing a disagreement rather than paper over
