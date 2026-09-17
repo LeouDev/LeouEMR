@@ -7,6 +7,7 @@ import { SIDEBAR_COOKIE } from "@/components/sidebar-shell";
 import Link from "next/link";
 import { getCurrentUser, sessionAssurance } from "@/lib/auth/session";
 import { graceUntilSetting, mfaDecision, todayUtc } from "@/lib/auth/mfa";
+import { surveyDueFor } from "@/lib/survey/gate";
 
 /**
  * The persistent shell for every authenticated page: the sidebar beside
@@ -32,6 +33,13 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   // /mfa and the page until the level could be read again.
   const mfa = aal === null ? "ok" : mfaDecision({ role: user.role, aal, today: todayUtc(), graceUntil });
   if (mfa === "enrol") redirect("/mfa");
+
+  // The post-login survey, after the second step and before anything else:
+  // five questions, once per account, and no page under this layout renders
+  // until they are in. `surveyDueFor` fails open, so a survey table that is
+  // missing or unreachable lets the request through rather than holding the
+  // whole app shut — see the note there.
+  if (await surveyDueFor(user)) redirect("/survey");
 
   // A folded rail is remembered in a cookie so it renders folded from the
   // server, rather than expanded and then snapping shut once hydrated.

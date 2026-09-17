@@ -103,6 +103,10 @@ const TEAM_ROSTER_NAV = { href: "/team", label: "Team Roster" };
 const ADMIN_NAV = [
   { href: "/import", label: "Import" },
   { href: "/users", label: "Users" },
+  // Feedback given under a name, about the tool the person's own
+  // performance is measured in — an administrator's to read, not a
+  // leader's to browse about their own reports.
+  { href: "/survey-results", label: "Survey Results" },
 ];
 
 /**

@@ -1158,3 +1158,41 @@ export const qaAuditResults = pgTable(
     index("qa_audit_results_result_idx").on(table.result, table.category),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Post-login survey
+// ---------------------------------------------------------------------------
+
+/**
+ * One person's answers to the post-login survey, one row per account.
+ *
+ * Deliberately its own table rather than feeding `nps_facts`. That table is
+ * customer NPS *about an agent*: it drives the NPS KPI, which is scored,
+ * ranked and opens action items. This survey is staff rating *the website*.
+ * Writing these scores there would move agents' KPI results — and their
+ * ratings, and their action items — on the strength of feedback about a web
+ * page. The two never mix.
+ *
+ * The row's existence is the completion flag, which is why `userId` is
+ * unique: the survey is shown until a row exists and never again after, and
+ * a per-account row follows the person across devices where the prototype's
+ * localStorage could not.
+ */
+export const surveyResponses = pgTable("survey_responses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id, { onDelete: "cascade" }),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+  /** Overall satisfaction, 1–5. */
+  q1Overall: integer("q1_overall").notNull(),
+  /** Ease of use, 1–5. */
+  q2Ease: integer("q2_ease").notNull(),
+  /** Ease of finding information, 1–5. */
+  q3Findability: integer("q3_findability").notNull(),
+  /** Likelihood to recommend, 0–10. */
+  q4Nps: integer("q4_nps").notNull(),
+  /** The one thing to improve, free text. */
+  q5Feedback: text("q5_feedback").notNull(),
+});
