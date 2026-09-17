@@ -28,12 +28,18 @@ import type { Period } from "./period";
 
 export const UNASSIGNED = "Unassigned";
 
+export interface TeamMember {
+  employeeId: string;
+  eid: string;
+  name: string;
+}
+
 export interface TeamLead {
   name: string;
   site: string | null;
   manager: string | null;
   /** Everyone the period says reported to them — the roster, not only those with results. */
-  memberIds: string[];
+  members: TeamMember[];
 }
 
 /**
@@ -59,6 +65,8 @@ export async function listTeamLeads(user: CurrentUser, period: Period): Promise<
   const rows = await db
     .select({
       employeeId: employees.id,
+      eid: employees.eid,
+      name: employees.name,
       supervisor: supervisorOfRecord(owner),
       manager: managerOfRecord(owner),
       site: siteOfRecord(owner),
@@ -82,13 +90,15 @@ export async function listTeamLeads(user: CurrentUser, period: Period): Promise<
  * Pure, so the majority rule can be pinned down in a test without a database.
  */
 export function groupIntoLeads(
-  rows: Array<{ employeeId: string; supervisor: string | null; manager: string | null; site: string | null }>,
+  rows: Array<
+    TeamMember & { supervisor: string | null; manager: string | null; site: string | null }
+  >,
 ): TeamLead[] {
-  const teams = new Map<string, { memberIds: string[]; sites: string[]; managers: string[] }>();
+  const teams = new Map<string, { members: TeamMember[]; sites: string[]; managers: string[] }>();
   for (const row of rows) {
     const name = row.supervisor || UNASSIGNED;
-    const team = teams.get(name) ?? { memberIds: [], sites: [], managers: [] };
-    team.memberIds.push(row.employeeId);
+    const team = teams.get(name) ?? { members: [], sites: [], managers: [] };
+    team.members.push({ employeeId: row.employeeId, eid: row.eid, name: row.name });
     if (row.site) team.sites.push(row.site);
     if (row.manager) team.managers.push(row.manager);
     teams.set(name, team);
@@ -99,7 +109,7 @@ export function groupIntoLeads(
       name,
       site: majority(team.sites),
       manager: majority(team.managers),
-      memberIds: team.memberIds,
+      members: team.members.sort((a, b) => a.name.localeCompare(b.name)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

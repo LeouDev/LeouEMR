@@ -3,62 +3,23 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatMetric, metricTone } from "@/components/ui";
+import {
+  ROSTER_COLUMNS,
+  SHADE_AT,
+  VERDICT_COLUMNS,
+  type RosterCell,
+  type RosterRow,
+  type SortMode,
+} from "./columns";
 
 /**
- * One agent's row and one team's strip, already reduced to plain data on the
- * server.
+ * The roster, drawn from plain data the server has already reduced.
  *
  * Nothing but strings, numbers and plain objects crosses into this file, and
- * nothing here is imported back the other way — a server module that reads a
- * value out of a client one gets a reference proxy instead of the value,
- * which is how the dashboard went down once (see kpi-groups.ts).
+ * nothing here is imported back the other way — the shape both sides need
+ * lives in ./columns.ts precisely because a server module that reads a value
+ * out of a client one gets a reference proxy instead of the value.
  */
-
-export interface RosterCell {
-  value: number | null;
-  /** From the KPI engine: PASS, WARNING, FAIL, or null with nothing measured. */
-  status: string | null;
-}
-
-export interface RosterRow {
-  employeeId: string;
-  name: string;
-  eid: string;
-  /** How many of the columns shown are below target. The default sort key. */
-  below: number;
-  phoneHours: number | null;
-  nonPhoneHours: number | null;
-  /** Which skills made up those hours, for the sub-line's tooltip. */
-  hoursNote: string | null;
-  cells: Record<string, RosterCell>;
-}
-
-export type SortMode = "worst" | "alpha";
-
-/** The columns, in the order the business reads them. */
-export const ROSTER_COLUMNS: Array<{ code: string; label: string }> = [
-  { code: "PRODUCTION_RATE", label: "PAR" },
-  { code: "CASE_RATE", label: "Case Rate" },
-  { code: "AHT", label: "AHT" },
-  { code: "CPH", label: "CPH" },
-  { code: "QUALITY", label: "Quality" },
-  { code: "NPS", label: "NPS" },
-  { code: "ATTENDANCE", label: "Attendance" },
-  { code: "MBO", label: "MBO" },
-];
-
-/**
- * PAR and MBO read as a verdict rather than a level.
- *
- * Both are gates the business either clears or does not — PAR at 2.99, MBO at
- * every gate met — so a warning band on them would invent a middle where the
- * rule has none, and would disagree with the pass rates in the strip above
- * computed off the same gate.
- */
-const VERDICT_COLUMNS = new Set(["PRODUCTION_RATE", "MBO"]);
-
-/** Below target on this many measures and the whole row is shaded, matching team-agent-rows.tsx. */
-const SHADE_AT = 4;
 
 export function RosterTable({
   rows,

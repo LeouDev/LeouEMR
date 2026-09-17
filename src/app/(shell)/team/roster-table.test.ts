@@ -1,7 +1,8 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { ROSTER_COLUMNS, RosterTable, type RosterRow } from "./roster-table";
+import { ROSTER_COLUMNS, type RosterRow } from "./columns";
+import { RosterTable } from "./roster-table";
 
 // The row links to an employee's record; the test only needs the markup.
 vi.mock("next/link", () => ({

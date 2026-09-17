@@ -4,18 +4,21 @@ import { PeriodPicker } from "@/components/period-picker";
 import { EmptyState, PageBand } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
 import { MBO_GATES } from "@/lib/import-pipeline/par-scoring";
-import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import {
   parseGranularity,
   periodContaining,
   periodsBetween,
   type Granularity,
 } from "@/lib/queries/period";
-import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
+import { getFactDateRange, getPeriodMetrics, withoutSkills } from "@/lib/queries/period-metrics";
 import { getAgentHours, leadFirstName, listTeamLeads } from "@/lib/queries/team-roster";
 import { rollUpSupervisorKpis } from "@/lib/queries/supervisor-kpis";
 import { LeadPicker } from "./lead-picker";
-import { ROSTER_COLUMNS, RosterTable, type RosterRow, type SortMode } from "./roster-table";
+// The column list and the row shape come from the neutral module, never from
+// the client component: a value imported across that boundary arrives as a
+// reference proxy, and iterating it throws at request time (see ./columns.ts).
+import { ROSTER_COLUMNS, type RosterRow, type SortMode } from "./columns";
+import { RosterTable } from "./roster-table";
 
 /** The bar a pass rate has to clear before the strip stops calling it out — the business's MBO bar. */
 const PASS_BAR = 90;
@@ -125,24 +128,46 @@ export default async function TeamRosterPage({
     />
   );
 
-  // Two reads of the same cached org-wide period metrics: the comparison
-  // builds the per-agent cells, and the roll-up builds the strip's pass
-  // rates and averages. Using the roll-up rather than recomputing here is
-  // deliberate — it is the same helper the manager dashboard's columns use,
-  // so a team's Prod pass and averages read identically on both pages.
-  const [team, hours, metrics] = await Promise.all([
-    getTeamPeriodComparison(lead.memberIds, period),
-    getAgentHours(lead.memberIds, period),
-    getPeriodMetrics(lead.memberIds, period),
-  ]);
+  // One organisation-wide aggregation, then two small reads, and strictly
+  // one after the other.
+  //
+  // This page first read the cells through `getTeamPeriodComparison`, whose
+  // own `Promise.all` fans out five queries — two of them org-wide period
+  // aggregations — and ran that concurrently with a second aggregation of
+  // its own. That is the fan-out `manager-overview.tsx` documents as the
+  // thing not to do ("Sequential, deliberately — not a Promise.all"), and
+  // what `withQueryGate` names as having reached users as "Something went
+  // wrong loading this page". It also asked for the previous period, which
+  // this page never shows, and asked for the current one twice.
+  //
+  // Reading `getPeriodMetrics` directly gives the same numbers from the same
+  // cache, once: the cells, the strip's roll-up and the hours all come off
+  // it. What is given up is the comparison's case-rate gap-filling, which
+  // only ever filled weeks imported before case rate became a KPI in
+  // migration 0041 — `npm run backfill:case-rate` is the fix for those.
+  const ids = lead.members.map((m) => m.employeeId);
+  const metrics = withoutSkills(await getPeriodMetrics(ids, period));
+  const hours = await getAgentHours(ids, period);
 
-  const rows: RosterRow[] = team.rows.map((row) => {
-    const agentHours = hours.get(row.employeeId);
+  const byEmployee = new Map<string, Map<string, { value: number; status: string }>>();
+  for (const metric of metrics) {
+    const forOne = byEmployee.get(metric.employeeId) ?? new Map();
+    forOne.set(metric.kpiCode, { value: metric.actualValue, status: metric.status });
+    byEmployee.set(metric.employeeId, forOne);
+  }
+
+  // Every member of the roster, measured or not. `getTeamPeriodComparison`
+  // drops anyone with nothing measured this period, which is right for a
+  // comparison table and wrong here: a row of dashes is how a leader sees
+  // that somebody went unmeasured.
+  const rows: RosterRow[] = lead.members.map((member) => {
+    const measured = byEmployee.get(member.employeeId);
+    const agentHours = hours.get(member.employeeId);
     const cells: RosterRow["cells"] = {};
     let below = 0;
     for (const column of ROSTER_COLUMNS) {
-      const cell = row.cells[column.code];
-      const value = cell?.current ?? null;
+      const cell = measured?.get(column.code);
+      const value = cell?.value ?? null;
       // PAR answers to the business's own 2.99 gate, the one MBO itself
       // applies, rather than to the KPI definition's status — which calls
       // exactly 2.99 a WARNING and would show a miss beside a strip
@@ -157,9 +182,9 @@ export default async function TeamRosterPage({
       if (value !== null && status === "FAIL") below += 1;
     }
     return {
-      employeeId: row.employeeId,
-      name: row.name,
-      eid: row.eid,
+      employeeId: member.employeeId,
+      name: member.name,
+      eid: member.eid,
       below,
       phoneHours: agentHours ? agentHours.phone : null,
       nonPhoneHours: agentHours ? agentHours.nonPhone : null,
@@ -172,11 +197,12 @@ export default async function TeamRosterPage({
     };
   });
 
-  const rolled = rollUpSupervisorKpis(
+  // The same helper the manager dashboard's columns use, off the same
+  // metrics, so a team's Prod pass and averages read identically on both.
+  const kpis = rollUpSupervisorKpis(
     metrics,
-    Object.fromEntries(lead.memberIds.map((id) => [id, lead.name])),
-  );
-  const kpis = rolled.get(lead.name);
+    Object.fromEntries(ids.map((id) => [id, lead.name])),
+  ).get(lead.name);
   const mboScored = rows.filter((r) => r.cells.MBO?.value !== null).length;
   const mboPassing = rows.filter((r) => r.cells.MBO?.status === "PASS").length;
   const belowTarget = rows.filter((r) => r.below > 0).length;

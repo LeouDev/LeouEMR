@@ -6,7 +6,10 @@ const row = (
   supervisor: string | null,
   manager: string | null = "Cruz, Dana",
   site: string | null = "CEBU",
-) => ({ employeeId, supervisor, manager, site });
+) => ({ employeeId, eid: `0000000${employeeId.slice(-1)}`, name: `Agent ${employeeId}`, supervisor, manager, site });
+
+const ids = (leads: ReturnType<typeof groupIntoLeads>, index: number) =>
+  leads[index].members.map((m) => m.employeeId);
 
 describe("groupIntoLeads", () => {
   it("gives one row per lead with their whole roster, alphabetically", () => {
@@ -17,7 +20,7 @@ describe("groupIntoLeads", () => {
     ]);
 
     expect(leads.map((l) => l.name)).toEqual(["Aguilar, Renz", "Reyes, Kristian"]);
-    expect(leads[1].memberIds).toEqual(["e1", "e3"]);
+    expect(ids(leads, 1)).toEqual(["e1", "e3"]);
   });
 
   it("keeps a lead whose people span two sites as one team, labelled by the majority", () => {
@@ -30,7 +33,8 @@ describe("groupIntoLeads", () => {
     ]);
 
     expect(leads).toHaveLength(1);
-    expect(leads[0]).toMatchObject({ site: "CEBU", memberIds: ["e1", "e2", "e3"] });
+    expect(leads[0].site).toBe("CEBU");
+    expect(ids(leads, 0)).toEqual(["e1", "e2", "e3"]);
   });
 
   it("breaks a tie on the label alphabetically, so the answer does not depend on row order", () => {
@@ -61,7 +65,8 @@ describe("groupIntoLeads", () => {
     const leads = groupIntoLeads([row("e1", null), row("e2", "")]);
 
     expect(leads).toHaveLength(1);
-    expect(leads[0]).toMatchObject({ name: UNASSIGNED, memberIds: ["e1", "e2"] });
+    expect(leads[0].name).toBe(UNASSIGNED);
+    expect(ids(leads, 0)).toEqual(["e1", "e2"]);
   });
 
   it("reads a lead with no site or manager on record as absent, not as a blank label", () => {

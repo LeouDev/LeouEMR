@@ -1237,6 +1237,42 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **`/team` threw on every request: a client module's value read from the
+  server (17 Sep, bug, main).** `TypeError: x.ROSTER_COLUMNS is not
+  iterable`, and the page never rendered once. The column list was exported
+  from `roster-table.tsx`, a `"use client"` module, and the server page
+  iterated it — **a value imported from a client module into a server one
+  arrives as a client reference proxy, not the value.** It typechecks, it
+  builds, and it throws on every request.
+  This is the second time this exact thing has happened here: the dashboard
+  went down the same way over `KPI_ORDER.indexOf is not a function`, which
+  is why `dashboard/kpi-groups.ts` exists and says so at the top. The
+  warning was there and this walked into it anyway. The shape now lives in
+  `team/columns.ts`, no directive, imported by both sides, with a test that
+  fails if anyone moves those values back across the boundary — a static
+  check on the source, since vitest does not simulate the RSC boundary and
+  so cannot catch the proxy itself. Types may cross freely; values may not.
+  **How it was found matters too.** Nothing in the build, the typecheck or
+  1071 tests caught it, and a local probe of every query at every
+  granularity came back clean — because the queries were never the problem.
+  Reasoning from the symptom pointed at a pooler wedge or a timeout, which
+  the Vercel log then disproved outright: 311 ms, four cache hits, a 200.
+  The function log had the answer in one line. Read it first.
+  Two real defects were fixed on the way, neither of them the crash:
+  *the roster dropped anyone unmeasured.* Cells came from
+  `getTeamPeriodComparison`, which ends with
+  `.filter((row) => Object.values(row.cells).some((c) => c.current !== null))` —
+  right for a comparison table, wrong for a roster whose whole point is that
+  a row of dashes is visible. The page now reads `getPeriodMetrics` directly
+  and builds rows from its own roster, so every member appears.
+  *And it fanned out heavy reads concurrently*, running
+  `getTeamPeriodComparison` (whose own `Promise.all` holds five queries, two
+  of them organisation-wide aggregations) alongside a second aggregation of
+  its own, one of which was a duplicate and one of which — the previous
+  period — the page never shows. That is what `manager-overview.tsx`
+  documents as the thing not to do. It is one aggregation now, then two
+  small reads, sequentially. Giving up the comparison's case-rate
+  gap-filling costs nothing a `npm run backfill:case-rate` does not fix.
 - **Team Roster, `/team` (17 Sep, feature branch).** From a supplied
   design handoff: an admin or manager picks a team lead and sees every agent
   on that team with their whole KPI line, worst first. It is the question
