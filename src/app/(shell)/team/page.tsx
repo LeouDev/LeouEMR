@@ -12,7 +12,7 @@ import {
   type Granularity,
 } from "@/lib/queries/period";
 import { getFactDateRange, getPeriodMetrics } from "@/lib/queries/period-metrics";
-import { getAgentHours, listTeamLeads } from "@/lib/queries/team-roster";
+import { getAgentHours, leadFirstName, listTeamLeads } from "@/lib/queries/team-roster";
 import { rollUpSupervisorKpis } from "@/lib/queries/supervisor-kpis";
 import { LeadPicker } from "./lead-picker";
 import { ROSTER_COLUMNS, RosterTable, type RosterRow, type SortMode } from "./roster-table";
@@ -70,6 +70,8 @@ export default async function TeamRosterPage({
     periods[0] ??
     (range ? periodContaining(granularity, range.last) : null);
 
+  // Before a lead is settled the page has nobody to name, so the two empty
+  // states below keep the generic heading.
   const band = <PageBand title="Team Roster" subtitle="Agent performance by team lead" />;
 
   if (!period) {
@@ -111,6 +113,17 @@ export default async function TeamRosterPage({
 
   const lead = leads.find((l) => l.name === params.lead) ?? leads[0];
   const sort: SortMode = params.sort === "alpha" ? "alpha" : "worst";
+  // "Team Brandon" — how the team is actually spoken about. The lead's full
+  // name still leads the summary strip below, so the heading being a first
+  // name loses nothing; an unassigned bucket has no lead to name and keeps
+  // the generic heading.
+  const firstName = leadFirstName(lead.name);
+  const titled = (
+    <PageBand
+      title={firstName ? `Team ${firstName}` : "Team Roster"}
+      subtitle="Agent performance by team lead"
+    />
+  );
 
   // Two reads of the same cached org-wide period metrics: the comparison
   // builds the per-agent cells, and the roll-up builds the strip's pass
@@ -170,7 +183,7 @@ export default async function TeamRosterPage({
 
   return (
     <>
-      {band}
+      {titled}
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3.5">
           <LeadPicker

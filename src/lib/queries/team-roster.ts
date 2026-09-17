@@ -104,6 +104,27 @@ export function groupIntoLeads(
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * A team lead's first name, for the page to title itself "Team Brandon".
+ *
+ * The roster carries two name formats side by side, because the source
+ * workbooks do: "Sacurom, Lovely Mae Enot" and "Victor Fuentenegra" are both
+ * real rows, and the comma is sometimes written without a space after it
+ * ("Ladera,Cyril Pongasi"). So the comma decides — everything after it is
+ * the given names, and the first of those is the one wanted. With no comma
+ * the row is already given-names-first and the leading word is the answer.
+ *
+ * Returns null rather than a guess for anything that yields no word, the
+ * "Unassigned" bucket included: a heading reading "Team Unassigned" would
+ * name a team lead who does not exist.
+ */
+export function leadFirstName(fullName: string): string | null {
+  if (fullName === UNASSIGNED) return null;
+  const comma = fullName.indexOf(",");
+  const givenNames = comma >= 0 ? fullName.slice(comma + 1) : fullName;
+  return givenNames.trim().split(/\s+/)[0] || null;
+}
+
 /** The most common value, ties resolved alphabetically; null for nothing at all. */
 function majority(values: string[]): string | null {
   const counts = new Map<string, number>();

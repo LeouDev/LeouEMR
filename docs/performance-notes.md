@@ -1247,6 +1247,16 @@ from every environment this project gets worked on in.
   Below, PAR, Case Rate, AHT, CPH, Quality, NPS, Attendance, MBO. Above it a
   seven-cell strip: the lead, Team, MBO pass, Prod rating pass, Avg quality,
   Avg NPS, Below target.
+  The page titles itself after whoever is selected — "Team Brandon" — which
+  is how these teams are actually spoken about. `leadFirstName` picks the
+  given name out of either format the roster carries, since the source
+  workbooks write both "Sacurom, Lovely Mae Enot" and "Victor Fuentenegra",
+  and sometimes omit the space after the comma: a comma means everything
+  after it is the given names, no comma means the row already leads with
+  them. The unassigned bucket has no lead to name and keeps the generic
+  heading, as do the two empty states, which render before a lead is
+  settled. The sidebar entry stays "Team Roster": it is global layout and
+  cannot know which lead a visit will land on.
   **Everyone on the roster gets a row**, including an agent with no result
   this period — deliberately unlike the MBO tree and the manager overview,
   which drop anyone without reportable data. A row of dashes is

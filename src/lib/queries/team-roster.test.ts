@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupIntoLeads, UNASSIGNED } from "./team-roster";
+import { groupIntoLeads, leadFirstName, UNASSIGNED } from "./team-roster";
 
 const row = (
   employeeId: string,
@@ -72,5 +72,30 @@ describe("groupIntoLeads", () => {
 
   it("has no leads at all for an empty roster", () => {
     expect(groupIntoLeads([])).toEqual([]);
+  });
+});
+
+describe("leadFirstName", () => {
+  it("takes the given name from a surname-first row, with or without a space after the comma", () => {
+    expect(leadFirstName("Sacurom, Lovely Mae Enot")).toBe("Lovely");
+    expect(leadFirstName("Ladera,Cyril Pongasi")).toBe("Cyril");
+    expect(leadFirstName("Aniban, Brandon")).toBe("Brandon");
+    expect(leadFirstName("Catarata,Ronnie")).toBe("Ronnie");
+  });
+
+  it("takes the leading word when the row is written given-name first", () => {
+    // Both formats are in this roster, because the source workbooks carry both.
+    expect(leadFirstName("Victor Fuentenegra")).toBe("Victor");
+    expect(leadFirstName("Archiene Ross Calderon Herbias")).toBe("Archiene");
+  });
+
+  it("names nobody for the unassigned bucket, rather than heading a page 'Team Unassigned'", () => {
+    expect(leadFirstName(UNASSIGNED)).toBeNull();
+  });
+
+  it("gives up rather than guessing on a row with no name in it", () => {
+    expect(leadFirstName("")).toBeNull();
+    expect(leadFirstName("   ")).toBeNull();
+    expect(leadFirstName("Sacurom,")).toBeNull();
   });
 });
