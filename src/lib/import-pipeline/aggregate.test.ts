@@ -125,8 +125,46 @@ describe("aggregateWorkbook", () => {
     });
 
     expect(result.metrics).toHaveLength(3);
-    expect(result.weeks).toEqual(["2026-08-01", "2026-08-08"]);
+    expect(result.weeks).toEqual(["2026-08-02", "2026-08-09"]);
     expect(result.employees.map((e) => e.eid).sort()).toEqual(["1", "2"]);
+  });
+
+  it("places each dated row by its own date, not the week label", () => {
+    // The label says Sat Aug 29 – Fri Sep 4; the operation's weeks run
+    // Sunday to Saturday, so Sat Aug 29 belongs to the week before.
+    const result = aggregateWorkbook({
+      Productivity: [
+        { EID: "1", EMPLOYEENAME: "A", Weekly: "WE 09/04/26", DATECOMPLETED: "2026-08-29", CASESCOMPLETED: 10, PRODUCTIVITYHOUR: 1 },
+        { EID: "1", EMPLOYEENAME: "A", Weekly: "WE 09/04/26", DATECOMPLETED: "2026-08-31", CASESCOMPLETED: 20, PRODUCTIVITYHOUR: 1 },
+        { EID: "1", EMPLOYEENAME: "A", Weekly: "WE 09/04/26", DATECOMPLETED: "2026-09-05", CASESCOMPLETED: 30, PRODUCTIVITYHOUR: 1 },
+      ],
+    });
+
+    expect(result.weeks).toEqual(["2026-08-23", "2026-08-30"]);
+    const cph = result.metrics.filter((m) => m.kpiCode === "CPH").map((m) => [m.weekStart, m.weekEnd, m.actualValue]);
+    expect(cph).toEqual([
+      ["2026-08-23", "2026-08-29", 10],
+      ["2026-08-30", "2026-09-05", 25],
+    ]);
+    expect(result.issues.filter((i) => i.severity === "warning" && i.sheet === "Productivity")).toHaveLength(0);
+  });
+
+  it("places an undated row by its label and says how many rows it had to", () => {
+    const result = aggregateWorkbook({
+      Quality: [
+        { EID: "1", AgentName: "A", Weekly: "WE 09/04/26", Date: "2026-09-02", Score: 0.9 },
+        { EID: "1", AgentName: "A", Weekly: "WE 09/04/26", Date: "", Score: 1 },
+      ],
+    });
+
+    expect(result.weeks).toEqual(["2026-08-30"]);
+    expect(result.issues).toContainEqual({
+      severity: "warning",
+      sheet: "Quality",
+      message:
+        "Rows with no readable date were placed by their week label (the Sunday-to-Saturday week containing the label's Friday)",
+      count: 1,
+    });
   });
 
   it("reports rows it skipped instead of dropping them silently", () => {
@@ -555,9 +593,9 @@ describe("aggregateWorkbook org history", () => {
 
     expect(result.orgWeeks).toHaveLength(3);
     expect(result.orgWeeks.map((w) => [w.weekStart, w.supervisorName])).toEqual([
-      ["2026-08-01", "Lea"],
-      ["2026-08-08", "Lea"],
-      ["2026-08-15", "Lovely"],
+      ["2026-08-02", "Lea"],
+      ["2026-08-09", "Lea"],
+      ["2026-08-16", "Lovely"],
     ]);
     // The roster row still carries the latest value, which is what drives
     // authorization and everyday work.
@@ -607,7 +645,7 @@ describe("ramp target overrides", () => {
         ],
       },
       undefined,
-      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }), // Week 1 of ramp
+      rampMap({ "1|2026-08-02|generalphone": { ahtTarget: 920 } }), // Week 1 of ramp
     );
 
     expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 920 });
@@ -633,7 +671,7 @@ describe("ramp target overrides", () => {
       undefined,
       // A ramp map with an entry for someone else's employee/week/skill key —
       // proving the lookup is scoped precisely rather than applied broadly.
-      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+      rampMap({ "1|2026-08-02|generalphone": { ahtTarget: 920 } }),
     );
 
     expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 515 });
@@ -659,7 +697,7 @@ describe("ramp target overrides", () => {
         ],
       },
       undefined,
-      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+      rampMap({ "1|2026-08-02|generalphone": { ahtTarget: 920 } }),
     );
 
     expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 515 });
@@ -684,7 +722,7 @@ describe("ramp target overrides", () => {
         ],
       },
       undefined,
-      rampMap({ "1|2026-08-01|generalphone": { ahtTarget: 920 } }),
+      rampMap({ "1|2026-08-02|generalphone": { ahtTarget: 920 } }),
     );
 
     expect(result.skillWeeks[0]).toMatchObject({ ahtTarget: 920 });

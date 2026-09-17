@@ -8,8 +8,10 @@
 -- it is over — where a week counts when any hours or cases were logged in
 -- it. Weeks not yet worked count for nothing, so a running month judges
 -- only the weeks it has; at month end this is the whole month's average.
--- Reporting weeks run Saturday to Friday. Every label a skill goes by
--- (code, name, aliases) folds into that skill.
+-- Reporting weeks run Sunday to Saturday from 31 May 2026 (Saturday to
+-- Friday before, with the week of 23 May running eight days to the 30th
+-- — the same rule as src/lib/queries/week-sql.ts). Every label a skill
+-- goes by (code, name, aliases) folds into that skill.
 with month as (
   select date '2026-09-01' as first_day,
          (date '2026-09-01' + interval '1 month' - interval '1 day')::date as last_day
@@ -23,7 +25,9 @@ labels as (
 ),
 weeks as (
   select f.employee_id, l.skill_reference_id,
-         (f.fact_date - ((extract(dow from f.fact_date)::int + 1) % 7))::date as week_start,
+         (case when f.fact_date >= date '2026-05-31' then f.fact_date - extract(dow from f.fact_date)::int
+               when f.fact_date >= date '2026-05-23' then date '2026-05-23'
+               else f.fact_date - ((extract(dow from f.fact_date)::int + 1) % 7) end)::date as week_start,
          sum(f.hours) as hours, sum(f.cases) as cases
   from skill_facts f
   cross join month m
@@ -33,6 +37,7 @@ weeks as (
 ),
 worked as (
   select a.employee_id, a.skill_reference_id, a.ramp_start_week, w.week_start, w.hours, w.cases,
+         -- One extended week at the cut-over adds a single day, which floor absorbs.
          floor((w.week_start - a.ramp_start_week) / 7.0)::int as stage
   from employee_ramp_assignments a
   join weeks w on w.employee_id = a.employee_id and w.skill_reference_id = a.skill_reference_id

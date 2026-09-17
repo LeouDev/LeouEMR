@@ -11,6 +11,8 @@
  * live import.
  */
 
+import { periodContaining } from "@/lib/queries/period";
+
 /**
  * Stages 0 and 1 are the two nesting weeks; 2 through LAST_STAGE are ramp
  * Week 1 through Week 8. Ten reporting weeks in all — the business's
@@ -36,6 +38,21 @@ function shiftDay(date: string, days: number): string {
 }
 
 /**
+ * The reporting week `stages` weeks after the one containing `rampStartWeek`.
+ *
+ * Walked week by week through `periodContaining` rather than added as
+ * `stages * 7` days, so a ramp that spans the Sunday cut-over (period.ts)
+ * keeps to the reporting weeks the ledger is keyed by — the extended
+ * eight-day week just before it would otherwise put every later stage one
+ * day off its week.
+ */
+function weekAfter(rampStartWeek: string, stages: number): { start: string; end: string } {
+  let week = periodContaining("week", rampStartWeek);
+  for (let i = 0; i < stages; i++) week = periodContaining("week", shiftDay(week.end, 1));
+  return week;
+}
+
+/**
  * Which ramp stage a reporting week falls on, given when ramp began.
  *
  * Null before ramp starts (the assignment does not apply yet — a week
@@ -43,18 +60,23 @@ function shiftDay(date: string, days: number): string {
  * null once it is over (past ramp Week 8, ramp is complete and the caller should
  * fall back to the skill's own steady-state target, the same as it would for
  * anyone with no ramp assignment at all).
+ *
+ * Any day within a week names that week, so an as-of date and a stored
+ * week start resolve alike.
  */
 export function rampStageForWeek(rampStartWeek: string, evaluatedWeekStart: string): number | null {
-  const start = new Date(`${rampStartWeek}T00:00:00Z`).getTime();
-  const evaluated = new Date(`${evaluatedWeekStart}T00:00:00Z`).getTime();
-  const diffDays = Math.round((evaluated - start) / 86_400_000);
-  if (diffDays < 0) return null;
+  const evaluated = periodContaining("week", evaluatedWeekStart).start;
+  let week = periodContaining("week", rampStartWeek);
+  if (evaluated < week.start) return null;
 
-  const stage = Math.floor(diffDays / 7);
-  return stage > LAST_STAGE ? null : stage;
+  for (let stage = 0; stage <= LAST_STAGE; stage++) {
+    if (week.start === evaluated) return stage;
+    week = periodContaining("week", shiftDay(week.end, 1));
+  }
+  return null;
 }
 
-/** The reporting week (Saturday) a given stage falls on, for a ramp starting `rampStartWeek`. */
+/** The reporting week (its first day) a given stage falls on, for a ramp starting `rampStartWeek`. */
 export function weekForStage(rampStartWeek: string, stage: number): string {
-  return shiftDay(rampStartWeek, stage * 7);
+  return weekAfter(rampStartWeek, stage).start;
 }

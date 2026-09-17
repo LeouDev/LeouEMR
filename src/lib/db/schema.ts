@@ -371,7 +371,7 @@ export const employeeRampAssignments = pgTable(
     skillReferenceId: uuid("skill_reference_id")
       .notNull()
       .references(() => skillReferences.id),
-    /** The Saturday that begins stage 0, matching the source data's own week convention. */
+    /** The first day of the reporting week that begins stage 0 (Sunday since the cut-over, src/lib/queries/period.ts). */
     rampStartWeek: date("ramp_start_week").notNull(),
     createdBy: uuid("created_by")
       .notNull()

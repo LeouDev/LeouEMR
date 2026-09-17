@@ -25,6 +25,7 @@ import {
   supervisorOfRecord,
 } from "@/lib/queries/org-history";
 import { periodContaining, type Period } from "@/lib/queries/period";
+import { reportingWeekStart } from "@/lib/queries/week-sql";
 import { combine } from "@/lib/queries/period-metrics";
 import { computeScorecard, skillGroupOf, type Scorecard, type ScorecardSkillInput } from "./engine";
 import { changedSinceReview, errorWindow } from "./review";
@@ -128,7 +129,7 @@ export async function computeScorecards(employeeIds: string[], monthStart: strin
       .select({
         employeeId: skillFacts.employeeId,
         skillLabel: skillFacts.skillLabel,
-        weekStart: sql<string>`(${skillFacts.factDate} - ((extract(dow from ${skillFacts.factDate})::int + 1) % 7))::text`,
+        weekStart: sql<string>`${reportingWeekStart(skillFacts.factDate)}::text`,
         hours: sql<number>`sum(${skillFacts.hours})::double precision`,
         cases: sql<number>`sum(${skillFacts.cases})::double precision`,
       })

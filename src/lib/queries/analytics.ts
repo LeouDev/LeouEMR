@@ -254,8 +254,8 @@ async function computeAnalytics(filters: AnalyticsFilters): Promise<AnalyticsSna
   // The grouped tables below count failures in the most recent *week*, so that
   // value has to be a real week start. Deriving it from the trend's last
   // bucket breaks under the monthly grain, where the key is the first of the
-  // month: weeks run Saturday-Friday, so the two coincide only in the roughly
-  // one month in seven that begins on a Saturday. Every other month the join
+  // month: a week starts on the first of the month only about one month in
+  // seven (a Sunday now; a Saturday before the cut-over). Every other month the join
   // matched nothing and each fail rate silently read 0% on a fully populated
   // table — which looks like good news rather than a bug.
   const latestWeekPromise = db

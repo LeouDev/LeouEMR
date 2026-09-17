@@ -36,11 +36,54 @@ function utc(value: string): Date {
 }
 
 /**
+ * Reporting weeks run Sunday to Saturday — the operation's own week — from
+ * this Sunday on. Before it they ran Saturday to Friday, the span the
+ * source workbook's "WE <Friday>" labels describe, and the weeks already
+ * reported that way are left as they were.
+ *
+ * The two regimes meet at one extended week: the last Saturday-to-Friday
+ * week (Sat 23 May 2026) runs eight days, to Sat 30 May, so that no day
+ * falls between the regimes and no week starts on the day the cut-over
+ * takes effect. The week list steps from each week's end, so the extra day
+ * costs nothing there; the ramp engine walks the same boundaries.
+ *
+ * `reportingWeekStart` in week-sql.ts is the SQL form of this rule for
+ * queries that bucket daily facts by week; the two must agree.
+ */
+export const WEEK_CUTOVER = "2026-05-31";
+export const LAST_LEGACY_WEEK_START = "2026-05-23";
+
+/** The day before the cut-over — the extended final legacy week's end. */
+const LAST_LEGACY_WEEK_END = "2026-05-30";
+
+/** Inclusive start and end of the reporting week containing `date`. */
+export function weekContaining(date: string): { start: string; end: string } {
+  if (date >= WEEK_CUTOVER) {
+    const d = utc(date);
+    const start = new Date(d);
+    start.setUTCDate(start.getUTCDate() - d.getUTCDay()); // 0 = Sunday
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 6);
+    return { start: iso(start), end: iso(end) };
+  }
+  if (date >= LAST_LEGACY_WEEK_START) {
+    return { start: LAST_LEGACY_WEEK_START, end: LAST_LEGACY_WEEK_END };
+  }
+  // Legacy: the source weeks ended on Friday, so they began on the preceding Saturday.
+  const d = utc(date);
+  const start = new Date(d);
+  start.setUTCDate(start.getUTCDate() - ((d.getUTCDay() + 1) % 7));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return { start: iso(start), end: iso(end) };
+}
+
+/**
  * The period containing a given date.
  *
- * Weeks run Saturday to Friday, matching the source data's "WE" labels —
- * using an ISO Monday week here would silently split every week in the
- * imported data across two reporting periods.
+ * Weeks follow the reporting-week rule above rather than the ISO Monday
+ * week, which would silently split every imported week across two
+ * reporting periods.
  */
 export function periodContaining(granularity: Granularity, date: string): Period {
   const d = utc(date);
@@ -50,14 +93,8 @@ export function periodContaining(granularity: Granularity, date: string): Period
       return { granularity, start: date, end: date, label: formatDay(d) };
 
     case "week": {
-      // Source weeks end on Friday, so they start on the preceding Saturday.
-      const day = d.getUTCDay(); // 0 = Sunday
-      const daysSinceSaturday = (day + 1) % 7;
-      const start = new Date(d);
-      start.setUTCDate(start.getUTCDate() - daysSinceSaturday);
-      const end = new Date(start);
-      end.setUTCDate(end.getUTCDate() + 6);
-      return { granularity, start: iso(start), end: iso(end), label: formatRange(start, end) };
+      const { start, end } = weekContaining(date);
+      return { granularity, start, end, label: formatRange(utc(start), utc(end)) };
     }
 
     case "month": {

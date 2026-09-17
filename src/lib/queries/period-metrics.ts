@@ -18,6 +18,7 @@ import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-m
 import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
 import { effectiveTarget as targetOverWeeks, type WeekVolume } from "@/lib/ramp/effective-target";
 import type { Period } from "./period";
+import { reportingWeekStart } from "./week-sql";
 
 export interface PeriodMetric {
   employeeId: string;
@@ -189,7 +190,7 @@ async function computeOrgPeriodMetrics(period: Period): Promise<PeriodMetric[]> 
       .where(
         and(
           // Any week OVERLAPPING the period, not only one starting inside it.
-          // Weeks run Saturday-Friday against calendar months, so the week that
+          // Weeks run against calendar months, so the week that
           // straddles a month boundary starts in the previous month while its
           // daily facts land in this one. Matching on the start alone dropped
           // that week's target, and a month whose only data is the straddling
@@ -410,8 +411,8 @@ async function computeDerived(
         .select({
           employeeId: skillFacts.employeeId,
           skillLabel: skillFacts.skillLabel,
-          // The reporting week (Saturday to Friday) the day falls in.
-          weekStart: sql<string>`(${skillFacts.factDate} - ((extract(dow from ${skillFacts.factDate})::int + 1) % 7))::text`,
+          // The reporting week the day falls in (week-sql.ts).
+          weekStart: sql<string>`${reportingWeekStart(skillFacts.factDate)}::text`,
           hours: sql<number>`sum(${skillFacts.hours})::double precision`,
           cases: sql<number>`sum(${skillFacts.cases})::double precision`,
         })

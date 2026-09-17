@@ -131,18 +131,18 @@ describe("setRampAssignment", () => {
     expect(reapply.reapplyCalls).toHaveLength(0);
   });
 
-  it("snaps an arbitrary start date to that week's Saturday", async () => {
+  it("snaps an arbitrary start date to that week's Sunday", async () => {
     currentUser.value = user("supervisor");
     const result = await setRampAssignment(input); // 2026-08-03 is a Monday
     expect(result).toEqual({ ok: true, weeksCorrected: 2 });
     const write = stored.inserted[0] as { values: { rampStartWeek: string } };
-    expect(write.values.rampStartWeek).toBe("2026-08-01"); // the preceding Saturday
+    expect(write.values.rampStartWeek).toBe("2026-08-02"); // the preceding Sunday
   });
 
   it("passes the snapped week through to the retroactive correction", async () => {
     currentUser.value = user("admin");
     await setRampAssignment(input);
-    expect(reapply.reapplyCalls[0]).toEqual([EMPLOYEE_ID, SKILL_ID, "2026-08-01"]);
+    expect(reapply.reapplyCalls[0]).toEqual([EMPLOYEE_ID, SKILL_ID, "2026-08-02"]);
   });
 
   it("rejects a malformed request before touching anything", async () => {
