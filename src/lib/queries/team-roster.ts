@@ -150,9 +150,13 @@ export interface AgentHours {
  * phone skill, so this reads the skill reference's scoring metric: a skill
  * scored by average handle time is a phone skill, because handle time is a
  * measure of a call. Everything else — the cases-per-hour and case-rate
- * skills, which is the fax and back-office work — is non-phone. The
- * per-skill breakdown travels with the figures so a leader can see exactly
- * what was counted as which, instead of taking the label on faith.
+ * skills, which is the fax and back-office work — is non-phone. Confirmed
+ * as the business's own rule by the owner on 17 Sep; it is an inference off
+ * the scoring metric rather than a stored flag, so if a future skill is
+ * scored by handle time without being a phone queue, this is the line that
+ * has to change. The per-skill breakdown travels with the figures so a
+ * leader can see exactly what was counted as which, instead of taking the
+ * label on faith.
  *
  * Hours are `skill_facts.hours`, the productive hours the workbook reports
  * per skill per day — the same quantity every rate on this page divides by.
