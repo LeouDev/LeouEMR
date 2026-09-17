@@ -1237,38 +1237,53 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
-- **The Fax QA form follows the workbook's own scoring at last (17 Sep,
-  feature branch).** It had been a category-weighted form (`type: "A"`)
+- **The Fax QA form is PANDA Fax, and the seed alone never moved it (17
+  Sep, feature branch).** Two things happened here, a day apart in
+  intent and an hour apart in fact.
+  *The scoring.* The form had been category-weighted (`type: "A"`) and
   worth 29 points, where one missed attribute forfeited its whole
-  category. Measured against the 90% pass mark, that meant **a single miss
+  category. Measured against the 90% pass mark that meant **a single miss
   in any category failed the audit outright** — 82.76% for a five-weight
-  category, 86.21% for the four. The source workbook (`PAS Fax Updated`)
-  scores per attribute out of 100, where the same miss leaves 95%.
-  Rebuilt as `type: "B"` from that sheet: 30 attributes and four
-  compliance items, wording verbatim, totalling 100 — Provider 15, Member
-  15, Drug 27, Case Handling 28, Clinical Guidelines 10, Documentation 5.
-  Case Handling is new; the old form had no category for it.
+  category, 86.21% for the four. The workbook scores per attribute out of
+  100, where the same miss leaves 95%. It is `type: "B"` now.
+  *The sheet.* It was first rebuilt from `PAS Fax Updated`, which was the
+  wrong workbook — the owner caught it and sent `PANDA FAX Audit 3.2`.
+  What is in the code and in the database is PANDA: 48 attributes and
+  three compliance items, wording verbatim (`Agent answered Formulary
+  Speci`, `corret calculation` and `IntialvsReauthorization` are the
+  sheet's own typos, kept so a reviewer can find the row), totalling 100
+  — Provider Information 15, Member Information 10, Drug Selection and
+  Case Details 25, Decision Accuracy at the Action Screen 35, Clinical
+  Guidelines 10, Documentation 5.
+  **The seed is not the form.** `src/lib/quality/forms.ts` seeds a fresh
+  database; the app reads `public.qa_forms`, so a change there is invisible
+  in production until a migration carries it over. The PAS version was
+  merged and deployed without one and therefore never reached an
+  evaluator — the live form stayed the 29-point `type: "A"` throughout.
+  Migration `0056_panda_fax_form` is what actually changes it (data only,
+  no DDL; apply with `drizzle/APPLY_0056_PANDA_FAX_FORM.sql`, rehearsed
+  twice on a scratch database from the exact 0043 seed row: first run
+  `UPDATE 1`, second `UPDATE 0` with `updated_at` unmoved). Check this
+  before believing any other form edit is live.
   **The engine gained a concept for this.** Neither form type could say
-  "nine checks, marked one by one, sharing five points between them":
+  "eleven checks, marked one by one, sharing five points between them":
   `type: "A"` voids a whole category, `type: "B"` deducts per item.
-  `QaPricedItem.subItems` now carries them, and `scoreAudit` charges the
+  `QaPricedItem.subItems` carries them, and `scoreAudit` charges the
   parent's points once however many of its children failed. They stay
   separately markable on purpose — the evaluator records which check
   failed and the analysis page still counts them apart. A sub-attribute's
   `points` is null rather than 0, or the stepper would read "· 0 pts"
   beside a check that can cost five; it shows "· shares 5 pts" and is
-  indented under its parent.
+  indented under its parent. PANDA leans on this hard: Documentation is
+  one scored attribute with six shared checks beneath it, and Clinical
+  Guidelines is two scored attributes, one of them carrying eleven.
   Nothing already filed moved, and this is why: `qa_audits` stores the
   figures (earned, max, percentage, critical) and `qa_audit_results`
   stores the category and attribute as **text**, not as keys into the
   definition. A form may therefore be rewritten without touching its
   history — worth knowing before changing any other form. The one
-  consequence left standing: a Fax trend spanning 17 Sep compares two
-  scoring rules, and the older side is the harsher one.
-  Open, if it was read wrong: "Did correctly identify initial or
-  reauthorization?" is a separate 5-point attribute here, because the
-  sheet scores it on its own row and totals 100. Folded into the shared
-  guideline group instead, the form totals 95.
+  consequence left standing: a Fax trend spanning the day 0056 is applied
+  compares two scoring rules, and the older side is the harsher one.
 - **What a review of the day's own work found (16 Sep, bugs, main).** A
   code review of everything shipped that day, after it had shipped. Two
   of the findings were real defects in live behaviour.

@@ -14,6 +14,7 @@ import {
   type QaMarks,
   type QaOutcome,
   type QaStep,
+  type QaStepItem,
 } from "@/lib/quality/scoring";
 import {
   TIME_MOTION_INCOMPLETE,
@@ -49,6 +50,58 @@ const SCORE_COLOR: Record<QaOutcome, string> = {
 type StepStatus = "pending" | "clear" | "fail";
 
 const subscribeToNothing = () => () => {};
+
+
+/**
+ * One attribute and its pass/fail control.
+ *
+ * Its own component so the row can be rendered and checked without driving
+ * the stepper to the category it lives on — the sub-attribute presentation
+ * is easy to get subtly wrong and invisible from any test of the scorer.
+ */
+export function CriterionRow({
+  item,
+  sharedPoints,
+  value,
+  isCompliance,
+  onMark,
+}: {
+  item: QaStepItem;
+  /** The points this row shares with its parent, or null when it has its own. */
+  sharedPoints: number | null;
+  value: QaMark;
+  isCompliance: boolean;
+  onMark: (key: string, mark: QaMark) => void;
+}) {
+  return (
+    <li className={`flex items-center justify-between gap-4 py-2.5${item.sharesWith ? " pl-6" : ""}`}>
+      <span className="text-sm text-ink">
+        {item.label}
+        {item.points !== null && <span className="text-muted"> · {item.points} pts</span>}
+        {sharedPoints !== null && <span className="text-muted"> · shares {sharedPoints} pts</span>}
+        {isCompliance && value === "fail" && <span className="text-fail"> · score → 0</span>}
+      </span>
+      <div className="flex shrink-0 border-2 border-ink" role="group" aria-label={item.label}>
+        <button
+          type="button"
+          aria-pressed={value === "pass"}
+          onClick={() => onMark(item.key, "pass")}
+          className={`px-3 py-1 text-xs font-bold tracking-[0.08em] uppercase ${value === "pass" ? "bg-ink text-white" : "bg-surface text-ink hover:bg-cream"}`}
+        >
+          Pass
+        </button>
+        <button
+          type="button"
+          aria-pressed={value === "fail"}
+          onClick={() => onMark(item.key, "fail")}
+          className={`border-l-2 border-ink px-3 py-1 text-xs font-bold tracking-[0.08em] uppercase ${value === "fail" ? "bg-fail text-white" : "bg-surface text-ink hover:bg-cream"}`}
+        >
+          Fail
+        </button>
+      </div>
+    </li>
+  );
+}
 
 /** The evaluator's own calendar date, not the server's — theirs is what an audit is dated. */
 function localToday(): string {
@@ -327,49 +380,23 @@ export function AuditForm({
               </div>
 
               <ul className="mt-4 divide-y-2 divide-line border-t-2 border-line">
-                {current.items.map((item) => {
-                  const value: QaMark = marks[item.key] === "fail" ? "fail" : "pass";
-                  // A sub-attribute shares its parent's points: any one of a
-                  // group failing costs them once. Set in and labelled with
-                  // what it shares, so neither the indent nor a blank space
-                  // reads as "this one is free".
-                  const shared = item.sharesWith
-                    ? (current.items.find((other) => other.key === item.sharesWith)?.points ?? null)
-                    : null;
-                  return (
-                    <li
-                      key={item.key}
-                      className={`flex items-center justify-between gap-4 py-2.5${item.sharesWith ? " pl-6" : ""}`}
-                    >
-                      <span className="text-sm text-ink">
-                        {item.label}
-                        {item.points !== null && <span className="text-muted"> · {item.points} pts</span>}
-                        {shared !== null && <span className="text-muted"> · shares {shared} pts</span>}
-                        {current.kind === "compliance" && value === "fail" && (
-                          <span className="text-fail"> · score → 0</span>
-                        )}
-                      </span>
-                      <div className="flex shrink-0 border-2 border-ink" role="group" aria-label={item.label}>
-                        <button
-                          type="button"
-                          aria-pressed={value === "pass"}
-                          onClick={() => mark(item.key, "pass")}
-                          className={`px-3 py-1 text-xs font-bold tracking-[0.08em] uppercase ${value === "pass" ? "bg-ink text-white" : "bg-surface text-ink hover:bg-cream"}`}
-                        >
-                          Pass
-                        </button>
-                        <button
-                          type="button"
-                          aria-pressed={value === "fail"}
-                          onClick={() => mark(item.key, "fail")}
-                          className={`border-l-2 border-ink px-3 py-1 text-xs font-bold tracking-[0.08em] uppercase ${value === "fail" ? "bg-fail text-white" : "bg-surface text-ink hover:bg-cream"}`}
-                        >
-                          Fail
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
+                {current.items.map((item) => (
+                  <CriterionRow
+                    key={item.key}
+                    item={item}
+                    // A sub-attribute shares its parent's points: any one of a
+                    // group failing costs them once, so the row says what it
+                    // shares rather than leaving a blank where points go.
+                    sharedPoints={
+                      item.sharesWith
+                        ? (current.items.find((other) => other.key === item.sharesWith)?.points ?? null)
+                        : null
+                    }
+                    value={marks[item.key] === "fail" ? "fail" : "pass"}
+                    isCompliance={current.kind === "compliance"}
+                    onMark={mark}
+                  />
+                ))}
               </ul>
 
               <label className="mt-4 block">

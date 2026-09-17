@@ -61,10 +61,10 @@ describe("auditRawRows", () => {
     expect(rows[9]).toEqual(["Category", "Attribute", "Result"]);
     expect(rows).toContainEqual([
       "Documentation",
-      "Agent called the phone number when multiple numbers are present",
+      "Agent failed to document additional PA Types",
       "FAIL",
     ]);
-    expect(rows).toContainEqual(["Compliance", "Wrong member selected", "PASS"]);
+    expect(rows).toContainEqual(["Compliance", "Fax Priority", "PASS"]);
     expect(rows[rows.length - 3]).toEqual(["Remarks", 'Documentation: said "will call back"']);
     expect(rows[rows.length - 2]).toEqual(["Overall score (%)", 95]);
     expect(rows[rows.length - 1]).toEqual(["Critical error", "NO"]);
