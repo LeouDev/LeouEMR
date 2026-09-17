@@ -51,8 +51,9 @@ facts.
    re-import.
 2. Paste `drizzle/APPLY_0055_SUNDAY_WEEKS.sql`. The verify row should
    read all zeros for `*_saturday_keys_left`, `ledger_bad_span 0`,
-   `tracked 1`; `legacy_week_extended` is 1 if the week of 23 May was
-   ever imported. Run it before the release is deployed: with the old
+   `tracked 1`; `legacy_week_extended` is the number of ledger rows in
+   the week of 23 May (2,786 when this was run; 0 only if that week was
+   never imported). Run it before the release is deployed: with the old
    code still live for those minutes the dashboard's "latest week" is
    one day off, which is harmless; the other order (deploy first, then
    an import, then the migration) would leave that week's Saturday rows
@@ -71,7 +72,9 @@ facts.
 5. On the Ramp page press **Re-apply all ramps**, so each ramping agent's
    stored weekly targets follow the Sunday weeks.
 6. Run section B of the check script. B1 all zeros (except
-   `legacy_week_extended`); B2 `differs 0` for every re-imported week.
+   `legacy_week_extended`, a row count); B2 `differs 0` for every
+   re-imported week. Run on 17 Sep 2026: B1 clean, B2 `differs 0` and
+   `no_facts 0` on every week.
 
 Weeks before 23 May 2026 are not re-imported and keep their
 Saturday-to-Friday keys and figures.

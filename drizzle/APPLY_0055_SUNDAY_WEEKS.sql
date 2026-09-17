@@ -69,8 +69,9 @@ commit;
 
 -- Verify: every *_saturday_keys_left column 0 (a non-zero count is a week
 -- already re-imported on the new grid before this ran — see the runbook),
--- ledger_bad_span 0, legacy_week_extended 1 if the week of 23 May 2026 was
--- ever imported (else 0), tracked 1.
+-- ledger_bad_span 0, legacy_week_extended non-zero (it counts the ledger
+-- rows in the week of 23 May 2026; 0 only if that week was never
+-- imported), tracked 1.
 select
   (select count(*) from weekly_metric_results where week_start >= '2026-05-30' and extract(dow from week_start) = 6) as ledger_saturday_keys_left,
   (select count(*) from weekly_metric_results where week_start >= '2026-05-31' and week_end <> week_start + 6) as ledger_bad_span,

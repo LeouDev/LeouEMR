@@ -63,7 +63,9 @@ order by b.uploaded_at;
 
 -- B1. No Saturday key from 30 May 2026 on should remain anywhere; every
 -- ledger week from 31 May should be a Sunday with a seven-day span; the
--- week of 23 May, if it was ever imported, should end on 30 May.
+-- week of 23 May, if it was ever imported, should end on 30 May
+-- (legacy_week_extended counts that week's ledger rows, so any non-zero
+-- number is the pass).
 select
   (select count(*) from weekly_metric_results where week_start >= '2026-05-30' and extract(dow from week_start) = 6) as ledger_saturday_keys_left,
   (select count(*) from weekly_metric_results where week_start >= '2026-05-31' and (extract(dow from week_start) <> 0 or week_end <> week_start + 6)) as ledger_off_grid,
