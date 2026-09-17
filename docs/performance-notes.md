@@ -1237,6 +1237,26 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **Charts label each data point (17 Sep, feature branch).** The fail-rate
+  trend (`TrendChart`) drew its points with no figures at all — the number
+  was in the tooltip, which a printed page and a screenshot both lose. Every
+  point carries its value above it now, and `TrendLineChart` labels every
+  point that fits rather than every third. `TrendBarChart` already labelled
+  every bar; `MultiSeriesTrendChart` is deliberately left alone, because up
+  to eight overlapping series labelled at every bucket is a smear of digits
+  rather than a chart.
+  **`labelStride` is the part worth knowing.** It decides how often a label
+  can be drawn from the space per point against an estimated label width, so
+  a short range labels every point and a year of weeks steps to every third
+  instead of overprinting. Index 0 is a multiple of every stride, so the
+  leftmost figure is never the one dropped. It caps at the point count
+  rather than returning `Infinity` for a zero-width plot: that still
+  "works" arithmetically — only index 0 would label — but a non-finite
+  stride reads as a bug in every caller, and the first test written against
+  it asserted the Infinity was correct, which is how it got noticed.
+  `TrendChart`'s top padding went 12 → 26: a label above a point at the
+  peak was being clipped by the viewBox edge, and each label is also
+  clamped so it can never sit outside the drawing.
 - **Post-login survey gate and its admin dashboard (17 Sep, feature
   branch).** From a supplied handoff: five questions everybody answers once,
   blocking the rest of the app until they are in. Intro screen, then
