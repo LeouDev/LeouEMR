@@ -1237,6 +1237,38 @@ from every environment this project gets worked on in.
   Keep every image same-origin. A transactional email loading an image from
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
+- **The Fax QA form follows the workbook's own scoring at last (17 Sep,
+  feature branch).** It had been a category-weighted form (`type: "A"`)
+  worth 29 points, where one missed attribute forfeited its whole
+  category. Measured against the 90% pass mark, that meant **a single miss
+  in any category failed the audit outright** — 82.76% for a five-weight
+  category, 86.21% for the four. The source workbook (`PAS Fax Updated`)
+  scores per attribute out of 100, where the same miss leaves 95%.
+  Rebuilt as `type: "B"` from that sheet: 30 attributes and four
+  compliance items, wording verbatim, totalling 100 — Provider 15, Member
+  15, Drug 27, Case Handling 28, Clinical Guidelines 10, Documentation 5.
+  Case Handling is new; the old form had no category for it.
+  **The engine gained a concept for this.** Neither form type could say
+  "nine checks, marked one by one, sharing five points between them":
+  `type: "A"` voids a whole category, `type: "B"` deducts per item.
+  `QaPricedItem.subItems` now carries them, and `scoreAudit` charges the
+  parent's points once however many of its children failed. They stay
+  separately markable on purpose — the evaluator records which check
+  failed and the analysis page still counts them apart. A sub-attribute's
+  `points` is null rather than 0, or the stepper would read "· 0 pts"
+  beside a check that can cost five; it shows "· shares 5 pts" and is
+  indented under its parent.
+  Nothing already filed moved, and this is why: `qa_audits` stores the
+  figures (earned, max, percentage, critical) and `qa_audit_results`
+  stores the category and attribute as **text**, not as keys into the
+  definition. A form may therefore be rewritten without touching its
+  history — worth knowing before changing any other form. The one
+  consequence left standing: a Fax trend spanning 17 Sep compares two
+  scoring rules, and the older side is the harsher one.
+  Open, if it was read wrong: "Did correctly identify initial or
+  reauthorization?" is a separate 5-point attribute here, because the
+  sheet scores it on its own row and totals 100. Folded into the shared
+  guideline group instead, the form totals 95.
 - **What a review of the day's own work found (16 Sep, bugs, main).** A
   code review of everything shipped that day, after it had shipped. Two
   of the findings were real defects in live behaviour.

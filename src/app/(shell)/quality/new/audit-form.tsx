@@ -329,11 +329,22 @@ export function AuditForm({
               <ul className="mt-4 divide-y-2 divide-line border-t-2 border-line">
                 {current.items.map((item) => {
                   const value: QaMark = marks[item.key] === "fail" ? "fail" : "pass";
+                  // A sub-attribute shares its parent's points: any one of a
+                  // group failing costs them once. Set in and labelled with
+                  // what it shares, so neither the indent nor a blank space
+                  // reads as "this one is free".
+                  const shared = item.sharesWith
+                    ? (current.items.find((other) => other.key === item.sharesWith)?.points ?? null)
+                    : null;
                   return (
-                    <li key={item.key} className="flex items-center justify-between gap-4 py-2.5">
+                    <li
+                      key={item.key}
+                      className={`flex items-center justify-between gap-4 py-2.5${item.sharesWith ? " pl-6" : ""}`}
+                    >
                       <span className="text-sm text-ink">
                         {item.label}
                         {item.points !== null && <span className="text-muted"> · {item.points} pts</span>}
+                        {shared !== null && <span className="text-muted"> · shares {shared} pts</span>}
                         {current.kind === "compliance" && value === "fail" && (
                           <span className="text-fail"> · score → 0</span>
                         )}
