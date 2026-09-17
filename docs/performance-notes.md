@@ -1312,8 +1312,13 @@ from every environment this project gets worked on in.
   The one exception is PAR, normalised on the server against
   `MBO_GATES.productionRate` (2.99) before it crosses, because the KPI
   definition calls exactly 2.99 a WARNING: left as the raw status it would
-  show a miss beside a strip counting the same number as a pass. PAR and MBO
-  read Pass / Fail rather than a level, both being gates.
+  show a miss beside a strip counting the same number as a pass.
+  **Every column shows its own figure, PAR and MBO included** (they first
+  read "Pass" / "Fail", since both are gates rather than levels). The gate is
+  still what the colour says. The word alone could not tell a leader whether
+  someone missed by 0.01 or by a point, which is the difference between a
+  word of encouragement and a plan — so PAR reads 2.98 in red and MBO reads
+  67%.
   **Two things the handoff flagged as unconfirmed, resolved.** Case Rate is
   not the guessed "PAR-like ratio against 1.0" — it has been a KPI of its
   own since migration 0041 (`CASE_RATE`), scored against the agent's own

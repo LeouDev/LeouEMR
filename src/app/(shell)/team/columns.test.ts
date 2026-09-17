@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { ROSTER_COLUMNS, SHADE_AT, VERDICT_COLUMNS } from "./columns";
+import { ROSTER_COLUMNS, SHADE_AT } from "./columns";
 
 const read = (file: string) => readFileSync(new URL(file, import.meta.url), "utf8");
 
@@ -25,7 +25,6 @@ describe("the roster's shared shape", () => {
   it("is real data on this side of the boundary, not a reference proxy", () => {
     expect(Array.isArray(ROSTER_COLUMNS)).toBe(true);
     expect([...ROSTER_COLUMNS]).toHaveLength(8);
-    expect(VERDICT_COLUMNS instanceof Set).toBe(true);
     expect(typeof SHADE_AT).toBe("number");
   });
 
@@ -33,7 +32,7 @@ describe("the roster's shared shape", () => {
     const client = read("./roster-table.tsx");
     expect(client).toContain('"use client"');
     // Only the component crosses back out; every shared value comes from ./columns.
-    expect(client).not.toMatch(/export const (ROSTER_COLUMNS|VERDICT_COLUMNS|SHADE_AT)\b/);
+    expect(client).not.toMatch(/export const (ROSTER_COLUMNS|SHADE_AT)\b/);
   });
 
   it("is what the server page imports from, so the page never touches the client module's values", () => {

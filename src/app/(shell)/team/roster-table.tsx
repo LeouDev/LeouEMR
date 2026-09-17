@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatMetric, metricTone } from "@/components/ui";
-import {
-  ROSTER_COLUMNS,
-  SHADE_AT,
-  VERDICT_COLUMNS,
-  type RosterCell,
-  type RosterRow,
-  type SortMode,
-} from "./columns";
+import { ROSTER_COLUMNS, SHADE_AT, type RosterCell, type RosterRow, type SortMode } from "./columns";
 
 /**
  * The roster, drawn from plain data the server has already reduced.
@@ -146,22 +139,21 @@ function Hours({ value }: { value: number | null }) {
 }
 
 /**
- * One measure for one agent.
+ * One measure for one agent: the figure itself, coloured by its verdict.
  *
- * The tone is the KPI engine's own evaluated status, never a ratio
- * recomputed here — the engine holds the thresholds, ramp targets and
- * per-employee CPH/AHT targets, none of which a client component can see.
- * PAR and MBO read as Pass / Fail for the reason above VERDICT_COLUMNS.
+ * Every column shows its number, PAR and MBO included. They read as a gate —
+ * PAR at 2.99, MBO at every gate met — and that gate is still what the colour
+ * says, but "Fail" alone does not tell a leader whether someone missed by
+ * 0.01 or by a point, which is the difference between a word of
+ * encouragement and a plan.
+ *
+ * The tone is the KPI engine's own evaluated status, never a ratio recomputed
+ * here — the engine holds the thresholds, the ramp targets and the
+ * per-employee CPH/AHT targets, none of which a client component can see. PAR
+ * is the one the server overrides before it arrives, against the 2.99 gate
+ * MBO itself uses; see the page.
  */
 function Cell({ cell, code }: { cell: RosterCell | undefined; code: string }) {
   if (!cell || cell.value === null) return <span className="text-ink-faint">—</span>;
-  if (VERDICT_COLUMNS.has(code)) {
-    const passed = cell.status === "PASS";
-    return (
-      <span className={`font-extrabold ${passed ? "text-pass" : "text-fail"}`}>
-        {passed ? "Pass" : "Fail"}
-      </span>
-    );
-  }
   return <span className={metricTone(cell.status)}>{formatMetric(cell.value, code)}</span>;
 }

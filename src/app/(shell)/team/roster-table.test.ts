@@ -52,7 +52,7 @@ describe("the roster table", () => {
     expect(headers).toHaveLength(2 + ROSTER_COLUMNS.length);
   });
 
-  it("reads PAR and MBO as a verdict, since both are gates rather than levels", () => {
+  it("shows PAR and MBO as their own figures, not as a verdict", () => {
     const html = render([
       agent({
         cells: cells({
@@ -62,17 +62,27 @@ describe("the roster table", () => {
       }),
     ]);
 
-    expect(html).toContain("Pass");
-    // The rating itself is not printed beside the verdict — the gate is the answer.
-    expect(html).not.toContain("3.42");
+    // "Fail" alone cannot tell a leader whether someone missed by 0.01 or by
+    // a point, and that is the difference between a word and a plan.
+    expect(html).toContain("3.42");
+    expect(html).toContain("100%");
+    expect(html).not.toContain(">Pass<");
+    expect(html).not.toContain(">Fail<");
   });
 
-  it("calls a missed gate a fail", () => {
+  it("keeps the gate's verdict as the colour on a miss", () => {
     const html = render([
-      agent({ cells: cells({ MBO: { value: 66.7, status: "FAIL" } }), below: 1 }),
+      agent({
+        cells: cells({
+          PRODUCTION_RATE: { value: 2.98, status: "FAIL" },
+          MBO: { value: 66.7, status: "FAIL" },
+        }),
+        below: 2,
+      }),
     ]);
 
-    expect(html).toContain("Fail");
+    expect(html).toContain("2.98");
+    expect(html).toContain("67%");
     expect(html).toContain("text-fail");
   });
 
