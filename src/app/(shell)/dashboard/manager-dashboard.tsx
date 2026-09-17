@@ -47,11 +47,17 @@ export interface ManagerStats {
 
 /**
  * One template for the supervisor table's header and its rows, so the two can
- * never drift apart. Nine columns: the name, then Team, MBO pass, Prod pass,
- * Quality, NPS, Failing, Open, Awaiting ack. Team is narrower because it
- * carries a headcount, not a rate.
+ * never drift apart. Seven columns: the name, then Team, MBO pass, Prod pass,
+ * Quality, NPS, Failing. Team is narrower because it carries a headcount, not
+ * a rate; the name column is wider because the work queue rides beneath it.
+ *
+ * Open and awaiting ack sit under the supervisor's name rather than in
+ * columns of their own. They are a live work queue, not a measure of the
+ * period the other columns report, so reading them as two more figures in the
+ * same row invited comparing them against figures that answer a different
+ * question — and they cost two columns the measures needed more.
  */
-const GRID = "lg:grid-cols-[1.5fr_0.7fr_repeat(7,1fr)]";
+const GRID = "lg:grid-cols-[2fr_0.7fr_repeat(5,1fr)]";
 
 /** A level short of its target — quiet when either the level or the target is absent. */
 function below(value: number | null, target: number | null): boolean {
@@ -226,7 +232,12 @@ export function ManagerDashboard({
         rows={() => (
           <>
               <div className={`grid border-b-2 border-ink text-[11px] font-bold tracking-[0.08em] text-muted uppercase ${GRID}`}>
-                <div className="py-3 lg:pl-6">Supervisor</div>
+                <div className="py-3 lg:pl-6">
+                  Supervisor
+                  <span className="block font-normal normal-case tracking-normal">
+                    site · open · awaiting ack
+                  </span>
+                </div>
                 <div className="hidden py-3 pr-4 text-right lg:block">Team</div>
                 <div className="hidden py-3 pr-4 text-right lg:block">MBO pass</div>
                 <div className="hidden py-3 pr-4 text-right lg:block">Prod pass</div>
@@ -238,8 +249,6 @@ export function ManagerDashboard({
                     {asOfLabel ? `wk of ${asOfLabel}` : "no reporting week in this period yet"}
                   </span>
                 </div>
-                <div className="hidden py-3 pr-4 text-right lg:block">Open</div>
-                <div className="hidden py-3 pr-4 text-right lg:block">Awaiting ack</div>
               </div>
 
               {supervisors.map((s) => {
@@ -261,9 +270,25 @@ export function ManagerDashboard({
                       isScope ? "bg-cream shadow-[inset_3px_0_0_var(--color-orange-brand)]" : ""
                     }`}
                   >
-                    <span className="flex flex-col gap-0.5 py-4 lg:pl-6">
+                    <span className="flex flex-col gap-0.5 py-4 pr-4 lg:pl-6">
                       <strong className="text-sm text-ink">{s.name}</strong>
-                      <span className="text-[11px] text-muted">{s.site ?? "—"}</span>
+                      <span className="text-[11px] text-muted">
+                        {s.site ?? "—"} · <strong className="font-semibold text-ink">{s.openIssues}</strong>{" "}
+                        open
+                        {/* An empty queue is the ordinary state, so it says
+                            nothing rather than printing a zero on every row. */}
+                        {s.awaiting > 0 && (
+                          <>
+                            {" · "}
+                            <strong
+                              className={`font-semibold ${s.awaiting >= 3 ? "text-fail" : "text-ink"}`}
+                            >
+                              {s.awaiting}
+                            </strong>{" "}
+                            awaiting ack
+                          </>
+                        )}
+                      </span>
                     </span>
                     <Figure value={s.teamSize} label="team" />
                     <Figure
@@ -290,12 +315,6 @@ export function ManagerDashboard({
                       value={s.evaluated > 0 ? s.failing : "—"}
                       label={s.evaluated > 0 ? `of ${s.evaluated} evaluated` : "nobody evaluated"}
                       tone={alarming ? "fail" : undefined}
-                    />
-                    <Figure value={s.openIssues} label="open" />
-                    <Figure
-                      value={s.awaiting || "—"}
-                      label="awaiting"
-                      tone={s.awaiting >= 3 ? "fail" : undefined}
                     />
                   </button>
                 );
@@ -433,7 +452,7 @@ function Figure({
   return (
     <span className="flex flex-col gap-0.5 py-4 pr-4 text-right">
       <span
-        className={`font-mono text-xl leading-none font-extrabold tabular-nums ${
+        className={`font-mono text-2xl leading-none font-extrabold tabular-nums ${
           tone === "fail" ? "text-fail" : "text-ink"
         }`}
       >

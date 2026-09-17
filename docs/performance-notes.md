@@ -1238,9 +1238,15 @@ from every environment this project gets worked on in.
   a third party hands that host a read receipt for every open, and the test
   beside this pins both the origins and the absence of a 1x1.
 - **The manager's supervisor table carries Prod pass, Quality and NPS (17
-  Sep, feature branch).** Nine columns now, in the order a manager reads
-  them: Supervisor, Team, MBO pass, Prod pass, Quality, NPS, Failing, Open,
-  Awaiting ack. The three new ones are `rollUpSupervisorKpis`
+  Sep, feature branch).** Seven columns now, in the order a manager reads
+  them: Supervisor, Team, MBO pass, Prod pass, Quality, NPS, Failing. Open
+  and awaiting ack moved under the supervisor's name, beside the site —
+  they are a live work queue, not a measure of the period the rest of the
+  row reports, and setting them as two more figures in the same row invited
+  comparing them against figures answering a different question. The zero
+  case says nothing rather than printing "0 awaiting" on every row, since an
+  empty queue is the ordinary state. The three new columns are
+  `rollUpSupervisorKpis`
   (`src/lib/queries/supervisor-kpis.ts`), fed by `getPeriodMetrics` — which
   the dashboard page already calls for the same period, and which caches
   org-wide, so the columns cost a cache hit rather than a query.
@@ -1263,9 +1269,8 @@ from every environment this project gets worked on in.
   target change the strictest one wins, so a row goes quiet only when the
   team clears the bar under either rule.
   The grid template is one `GRID` constant shared by the header and the
-  rows — they were two literals, and nine columns is too many to keep in
-  step by hand. Figures dropped from `text-2xl` to `text-xl`: eight numbers
-  a row at 24px is shouting.
+  rows — they were two literals, and this many columns is too many to keep
+  in step by hand.
 - **The Fax QA form is PANDA Fax, and the seed alone never moved it (17
   Sep, feature branch).** Two things happened here, a day apart in
   intent and an hour apart in fact.
