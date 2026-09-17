@@ -980,6 +980,29 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Monthly PAR honours the ramp in a running month (17 Sep, bug,
+  main).** A ramping agent rated 3.6–5.0 week by week on the development
+  plan read 1.00–2.00 in "September by KPI" and on the scorecard. Both
+  monthly paths (`computeDerived` in `src/lib/queries/period-metrics.ts`,
+  `targetFor` in `src/lib/scorecard/load.ts`) scored the month's summed
+  cases/hours against a *plain average* of the target over every
+  calendar week of the month, so the weeks not yet worked — later,
+  tighter ramp stages — dragged the target down, and a week on leave
+  weighed the same as a full one; the weekly import path, which uses
+  each week's own stage target, was right. Replaced by
+  `effectiveTarget` in `src/lib/ramp/effective-target.ts` (tested): each
+  reporting week's target (stage or steady) weighted by what was worked
+  in it, hours for a per-hour rate (CPH, case rate), cases for a per-case
+  time (AHT) — the weighting under which the summed ratio equals the
+  worked weeks' ratios combined; nothing worked means the steady target.
+  Both callers now read the skill facts per reporting week (Saturday
+  start: `fact_date - ((extract(dow) + 1) % 7)`, grouped by ordinal 3)
+  only when someone is ramping, fold every label of a skill into that
+  skill's weeks, and look the override up by the skill *code*
+  (`normalize(ref.code)`, which the ramp map carries alongside the name
+  and aliases). Anyone not ramping gets the identical steady target, so
+  nothing else moves. The scorecard's `ramping` flag now means a stage
+  target applied to a week that counted.
 - **Handoff brief and deploy poller in the repo (15 Sep, main).**
   `docs/HANDOFF.md` is the read-first brief for a new session: what the
   app is, the owner's standing rules, the exact git and deploy routine,

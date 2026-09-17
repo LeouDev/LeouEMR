@@ -16,7 +16,7 @@ import { CASE_RATE_KPI_CODE, blendCaseRate } from "@/lib/kpi-engine/case-rate";
 import { foldSkillRows, measureSkillWeek, skillKpiCode } from "@/lib/kpi-engine/skill-result";
 import { computeQualityTotals, normalizeSkill } from "@/lib/kpi-engine/quality-metrics";
 import { loadAttributesBySkill, loadRampTargets, loadSkillReferences, MBO_GATES } from "@/lib/import-pipeline/par-scoring";
-import { periodsBetween } from "./period";
+import { effectiveTarget as targetOverWeeks, type WeekVolume } from "@/lib/ramp/effective-target";
 import type { Period } from "./period";
 
 export interface PeriodMetric {
@@ -380,11 +380,13 @@ async function computeDerived(
   // sum against the skill's flat steady target — as if every week in the
   // period held them to the standard — is exactly the bug the standalone
   // CPH/AHT target average above already exists to avoid; this gives PAR
-  // and MBO the same treatment: the plain average of whichever target
-  // applied each week the period covers. An employee with no ramp
-  // assignment gets the identical steady target back (the average of N
-  // copies of the same number), so this changes nothing for anyone not
-  // ramping.
+  // and MBO the same treatment: each week's target (ramp stage or steady)
+  // weighted by what was worked in that week (src/lib/ramp/effective-target.ts).
+  // A plain average of the period's calendar weeks came before it and
+  // was wrong in a running month — the weeks not yet worked, with their
+  // tighter later stages, dragged the target down and an agent rated
+  // 3.6–5.0 week by week read as 1.0 for the month. An employee with no
+  // ramp assignment gets the identical steady target back either way.
   //
   // These three reference/config loads are independent of each other and of
   // everything below, so they run concurrently rather than paying three
@@ -395,30 +397,62 @@ async function computeDerived(
     loadRampTargets(),
   ]);
   const out: PeriodMetric[] = [];
-  const weeksInPeriod = rampTargets.size > 0 ? periodsBetween("week", period.start, period.end) : [];
+
+  // Only a period with someone ramping needs the per-week split (the
+  // steady target weighs the same in every week); the employee ids map to
+  // the EIDs the ramp targets are keyed by.
   const eidById = new Map<string, string>();
-  if (weeksInPeriod.length > 0) {
-    const rows = await db.select({ id: employees.id, eid: employees.eid }).from(employees);
-    for (const row of rows) eidById.set(row.id, row.eid);
+  const volumes = new Map<string, WeekVolume[]>();
+  if (rampTargets.size > 0) {
+    const [people, weekly] = await Promise.all([
+      db.select({ id: employees.id, eid: employees.eid }).from(employees),
+      db
+        .select({
+          employeeId: skillFacts.employeeId,
+          skillLabel: skillFacts.skillLabel,
+          // The reporting week (Saturday to Friday) the day falls in.
+          weekStart: sql<string>`(${skillFacts.factDate} - ((extract(dow from ${skillFacts.factDate})::int + 1) % 7))::text`,
+          hours: sql<number>`sum(${skillFacts.hours})::double precision`,
+          cases: sql<number>`sum(${skillFacts.cases})::double precision`,
+        })
+        .from(skillFacts)
+        .where(and(gte(skillFacts.factDate, period.start), lte(skillFacts.factDate, period.end)))
+        .groupBy(skillFacts.employeeId, skillFacts.skillLabel, sql`3`),
+    ]);
+    for (const row of people) eidById.set(row.id, row.eid);
+    // Every label of one configured skill folds into that skill's weeks.
+    for (const row of weekly) {
+      const ref = refs.get(normalizeSkill(row.skillLabel));
+      if (!ref) continue;
+      const key = `${row.employeeId}|${ref.code}`;
+      const weeks = volumes.get(key) ?? [];
+      const existing = weeks.find((w) => w.weekStart === row.weekStart);
+      if (existing) {
+        existing.hours += row.hours;
+        existing.cases += row.cases;
+      } else {
+        weeks.push({ weekStart: row.weekStart, hours: row.hours, cases: row.cases });
+      }
+      volumes.set(key, weeks);
+    }
   }
 
   function effectiveTarget(
     employeeId: string,
-    skillLabel: string,
-    ref: { target: number; lowerIsBetter: boolean },
+    ref: { code: string; target: number; lowerIsBetter: boolean },
   ): number {
     const eid = eidById.get(employeeId);
-    if (!eid || weeksInPeriod.length === 0) return ref.target;
-
-    const label = normalizeSkill(skillLabel);
-    const sum = weeksInPeriod.reduce((total, week) => {
-      const override = rampTargets.get(`${eid}|${week.start}|${label}`);
-      const weekTarget = ref.lowerIsBetter
-        ? (override?.ahtTarget ?? ref.target)
-        : (override?.cphTarget ?? ref.target);
-      return total + weekTarget;
-    }, 0);
-    return sum / weeksInPeriod.length;
+    if (!eid || rampTargets.size === 0) return ref.target;
+    const label = normalizeSkill(ref.code);
+    return targetOverWeeks(
+      volumes.get(`${employeeId}|${ref.code}`) ?? [],
+      (weekStart) => {
+        const override = rampTargets.get(`${eid}|${weekStart}|${label}`);
+        return ref.lowerIsBetter ? override?.ahtTarget : override?.cphTarget;
+      },
+      ref.target,
+      ref.lowerIsBetter,
+    ).target;
   }
 
   // skills and quality are independent queries against different tables —
@@ -487,7 +521,7 @@ async function computeDerived(
               : null;
       if (actual === null || !ref.target) continue;
 
-      const target = effectiveTarget(employeeId, row.skillLabel, ref);
+      const target = effectiveTarget(employeeId, ref);
       const rating = computeSkillRating(computeSkillRatio(actual, target, ref.lowerIsBetter), ref.thresholds);
       const weight = row.weightHours > 0 ? row.weightHours : row.hours;
       scored.push({ rating, weight });
@@ -535,7 +569,7 @@ async function computeDerived(
       if (!ref) continue;
       const definition = byCode.get(skillKpiCode(ref.code));
       if (!definition) continue;
-      const result = measureSkillWeek(ref.metric, row, effectiveTarget(employeeId, row.skillLabel, ref));
+      const result = measureSkillWeek(ref.metric, row, effectiveTarget(employeeId, ref));
       if (!result) continue;
       out.push(evaluated(employeeId, definition, result.actual, Math.round(row.cases), result.target));
     }

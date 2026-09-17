@@ -16,6 +16,7 @@ import { loadRampTargets, loadSkillReferences, normalize } from "@/lib/import-pi
 import { KPI_CODES, MONTHLY_METRIC_CODES } from "@/lib/import-pipeline/types";
 import { computeNps } from "@/lib/kpi-engine/nps";
 import { measureSkill } from "@/lib/kpi-engine/skill-result";
+import { effectiveTarget, type WeekVolume } from "@/lib/ramp/effective-target";
 import {
   joinPeriodOwner,
   managerOfRecord,
@@ -23,7 +24,7 @@ import {
   siteOfRecord,
   supervisorOfRecord,
 } from "@/lib/queries/org-history";
-import { periodContaining, periodsBetween, type Period } from "@/lib/queries/period";
+import { periodContaining, type Period } from "@/lib/queries/period";
 import { combine } from "@/lib/queries/period-metrics";
 import { computeScorecard, skillGroupOf, type Scorecard, type ScorecardSkillInput } from "./engine";
 import { changedSinceReview, errorWindow } from "./review";
@@ -46,10 +47,9 @@ export async function computeScorecards(employeeIds: string[], monthStart: strin
 
   const month = periodContaining("month", monthStart);
   const window = errorWindow(month.start);
-  const weeks = periodsBetween("week", month.start, month.end);
   const inMonth = (column: AnyPgColumn) => and(gte(column, month.start), lte(column, month.end));
 
-  const [refs, rampTargets, people, skills, quality, errors, attendance, nps, monthly] = await Promise.all([
+  const [refs, rampTargets, people, skills, quality, errors, attendance, nps, monthly, weekly] = await Promise.all([
     loadSkillReferences(),
     loadRampTargets(),
     db.select({ id: employees.id, eid: employees.eid }).from(employees).where(inArray(employees.id, employeeIds)),
@@ -122,24 +122,55 @@ export async function computeScorecards(employeeIds: string[], monthStart: strin
       .select({ employeeId: monthlyMetrics.employeeId, metric: monthlyMetrics.metric, value: monthlyMetrics.value })
       .from(monthlyMetrics)
       .where(and(inArray(monthlyMetrics.employeeId, employeeIds), eq(monthlyMetrics.month, month.start))),
+    // The month's skill work split by reporting week, for the ramp target
+    // weighting below (src/lib/ramp/effective-target.ts).
+    db
+      .select({
+        employeeId: skillFacts.employeeId,
+        skillLabel: skillFacts.skillLabel,
+        weekStart: sql<string>`(${skillFacts.factDate} - ((extract(dow from ${skillFacts.factDate})::int + 1) % 7))::text`,
+        hours: sql<number>`sum(${skillFacts.hours})::double precision`,
+        cases: sql<number>`sum(${skillFacts.cases})::double precision`,
+      })
+      .from(skillFacts)
+      .where(and(inArray(skillFacts.employeeId, employeeIds), inMonth(skillFacts.factDate)))
+      .groupBy(skillFacts.employeeId, skillFacts.skillLabel, sql`3`),
   ]);
 
   const eidById = new Map(people.map((p) => [p.id, p.eid]));
 
-  // The target a person was held to across the month: the ramp-stage target
-  // for each week of a ramp, the steady target otherwise, averaged over the
-  // month's weeks — the same treatment the period PAR rating gives.
+  // The target a person was held to across the month: each reporting
+  // week's target (the ramp stage's, or the steady one) weighted by what
+  // they worked that week — the same treatment the period PAR rating
+  // gives, so the card and the dashboard agree. A running month judges
+  // only the weeks it has; an unworked week counts for nothing.
+  const volumes = new Map<string, WeekVolume[]>();
+  for (const row of weekly) {
+    const ref = refs.get(normalize(row.skillLabel));
+    if (!ref) continue;
+    const key = `${row.employeeId}|${ref.code}`;
+    const entries = volumes.get(key) ?? [];
+    const existing = entries.find((w) => w.weekStart === row.weekStart);
+    if (existing) {
+      existing.hours += row.hours;
+      existing.cases += row.cases;
+    } else {
+      entries.push({ weekStart: row.weekStart, hours: row.hours, cases: row.cases });
+    }
+    volumes.set(key, entries);
+  }
   const targetFor = (employeeId: string, ref: { code: string; target: number; lowerIsBetter: boolean }) => {
     const eid = eidById.get(employeeId);
     const label = normalize(ref.code);
-    let ramping = false;
-    const sum = weeks.reduce((total, week) => {
-      const override = eid ? rampTargets.get(`${eid}|${week.start}|${label}`) : undefined;
-      const weekTarget = ref.lowerIsBetter ? (override?.ahtTarget ?? ref.target) : (override?.cphTarget ?? ref.target);
-      if (override) ramping = true;
-      return total + weekTarget;
-    }, 0);
-    return { target: weeks.length > 0 ? sum / weeks.length : ref.target, ramping };
+    return effectiveTarget(
+      volumes.get(`${employeeId}|${ref.code}`) ?? [],
+      (weekStart) => {
+        const override = eid ? rampTargets.get(`${eid}|${weekStart}|${label}`) : undefined;
+        return ref.lowerIsBetter ? override?.ahtTarget : override?.cphTarget;
+      },
+      ref.target,
+      ref.lowerIsBetter,
+    );
   };
 
   const skillsByEmployee = new Map<string, ScorecardSkillInput[]>();
