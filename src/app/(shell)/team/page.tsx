@@ -231,12 +231,20 @@ export default async function TeamRosterPage({
           />
         </div>
 
-        <div className="mb-[18px] grid border-2 border-ink bg-surface lg:grid-cols-[2fr_repeat(6,1fr)]">
-          <div className="border-b-2 border-line px-5 py-4 lg:border-r-2 lg:border-b-0">
+        {/*
+          Three rows, shared by every cell through `grid-rows-subgrid`: the
+          label, the figure, the count beneath it. "Prod rating pass" wraps to
+          two lines where "Team" does not, and without the shared rows that one
+          label pushed its own number half a line below the rest. Subgrid rather
+          than a reserved label height, so a label nobody has written yet cannot
+          knock the row out of line again.
+        */}
+        <div className="mb-[18px] grid border-2 border-ink bg-surface lg:grid-cols-[2fr_repeat(6,1fr)] lg:grid-rows-[auto_auto_auto]">
+          <div className="border-b-2 border-line px-5 py-4 lg:row-span-3 lg:grid lg:grid-rows-subgrid lg:border-r-2 lg:border-b-0">
             <div className="text-[11px] font-bold tracking-[0.1em] text-orange-brand uppercase">
               Team lead
             </div>
-            <div className="mt-1.5 text-[19px] font-extrabold text-ink">{lead.name}</div>
+            <div className="mt-1.5 self-end text-[19px] font-extrabold text-ink">{lead.name}</div>
             <div className="mt-0.5 text-xs text-muted">
               {lead.site ?? "No site"} · reports to {lead.manager ?? "nobody on record"} ·{" "}
               {period.label}
@@ -316,19 +324,23 @@ function StripCell({
 }) {
   return (
     <div
-      className={`border-b-2 border-line px-5 py-4 text-right lg:border-b-0 ${
+      className={`border-b-2 border-line px-5 py-4 text-right lg:row-span-3 lg:grid lg:grid-rows-subgrid lg:border-b-0 ${
         last ? "" : "lg:border-r-2"
       }`}
     >
       <div className="text-[11px] font-bold tracking-[0.1em] text-muted uppercase">{label}</div>
+      {/* Pinned to the bottom of its shared row, so a figure sits on the same
+          line whether the label above it took one line or two. */}
       <div
-        className={`mt-1.5 font-mono text-[26px] leading-none font-extrabold tabular-nums ${
+        className={`mt-1.5 self-end font-mono text-[26px] leading-none font-extrabold tabular-nums ${
           fail ? "text-fail" : "text-ink"
         }`}
       >
         {value}
       </div>
-      {note && <div className="mt-1 text-[11px] text-muted">{note}</div>}
+      {/* Always rendered, so the cell fills all three rows and the one without
+          a count does not pull its figure down into the gap. */}
+      <div className="mt-1 text-[11px] text-muted">{note ?? "\u00A0"}</div>
     </div>
   );
 }

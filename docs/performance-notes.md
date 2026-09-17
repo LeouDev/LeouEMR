@@ -1282,7 +1282,13 @@ from every environment this project gets worked on in.
   Columns: Agent (name, EID, and the phone / non-phone hours sub-line),
   Below, PAR, Case Rate, AHT, CPH, Quality, NPS, Attendance, MBO. Above it a
   seven-cell strip: the lead, Team, MBO pass, Prod rating pass, Avg quality,
-  Avg NPS, Below target.
+  Avg NPS, Below target. The strip's cells share three rows through
+  `grid-rows-subgrid` — label, figure, count — because "Prod rating pass"
+  wraps to two lines where "Team" does not, and that one label was pushing
+  its own number half a line below every other. Subgrid rather than a
+  reserved label height, so a label nobody has written yet cannot knock the
+  row out of line again; the cell with no count renders a non-breaking space
+  so it still fills all three rows.
   The page titles itself after whoever is selected — "Team Brandon" — which
   is how these teams are actually spoken about. `leadFirstName` picks the
   given name out of either format the roster carries, since the source
