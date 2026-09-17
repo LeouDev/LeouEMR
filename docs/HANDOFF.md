@@ -244,11 +244,11 @@ the coding container; there is no database to run the app against here.
 
 ## Open items and things the owner knows about
 
-- **September masterlist re-upload pending** (17 Sep): the weekly splice
-  used to close a listed person's merged interval at 31 Aug (fixed, see
-  the notes bullet "A weekly file closed a listed team"); Herbias's team
-  is closed that way in production until the owner re-uploads the
-  September masterlist. Check afterwards, read-only:
+- **Masterlist month protection** (17 Sep): the weekly splice used to
+  close a listed person's merged interval at 31 Aug (fixed, see the notes
+  bullet "A weekly file closed a listed team"); the owner re-uploaded the
+  September masterlist the same day and Herbias's cohort is open again
+  from 29 Aug. If a team ever vanishes from a month, check read-only:
   `select a.supervisor_name, count(*) from employee_assignments a where
   a.effective_from <= '2026-09-30' and (a.effective_to is null or
   a.effective_to >= '2026-09-01') group by 1 order by 2 desc;` — every

@@ -1477,9 +1477,10 @@ from every environment this project gets worked on in.
   interval and stays protected; only the unlisted are re-closed. Three
   regression tests in `assignments.test.ts` (merged from the masterlist
   side, merged from the file's side, and the next file still held off).
-  Data repair: re-upload the September masterlist after the deploy — its
-  splice re-opens the month for everyone it lists and stamps it — then
-  check with the per-team query in the handoff.
+  Data repaired the same day by re-uploading the September masterlist
+  after the deploy: its splice re-opened the month for everyone it lists
+  (the cohort now runs from 29 Aug, open, under Herbias, stamped) — the
+  per-team query in the handoff checks it.
 - **Reporting weeks run Sunday to Saturday from 31 May 2026 (17 Sep).**
   The operation's week is Sunday–Saturday; the app had read the
   workbook's "WE <Friday>" labels as Saturday–Friday weeks, which is the
