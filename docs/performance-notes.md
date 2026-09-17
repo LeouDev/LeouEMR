@@ -1289,12 +1289,24 @@ from every environment this project gets worked on in.
   feedback is free text typed by four hundred people straight into a file
   someone opens in Excel. `quality/csv.ts` re-exports it, so every existing
   import still resolves.
-  The intro is the app's own astronaut and star field, not the mock's CSS
-  shapes — built in the survey folder rather than by reshaping `SpaceScene`,
-  which login and the MFA step both render. The star field is a written-out
-  constant: `Math.random()` there renders one sky on the server and another
-  in the browser, and React replaces the subtree on that mismatch, which is
-  a flicker on the very first screen anyone sees.
+  The intro is the app's own astronaut, star field and planets, not the
+  mock's CSS shapes — built in the survey folder rather than by reshaping
+  `SpaceScene`, which login and the MFA step both render. The star field is
+  a written-out constant: `Math.random()` there renders one sky on the
+  server and another in the browser, and React replaces the subtree on that
+  mismatch, which is a flicker on the very first screen anyone sees.
+  **Two things the first cut of that scene got wrong, both worth
+  remembering.** The planets were `rounded-full` divs, and this app squares
+  `rounded-full` on purpose — `globals.css` overrides it to 0, because the
+  Modernist theme has no radius anywhere — so they rendered as boxes. A
+  circle that has to be a circle belongs in an SVG here, which is how
+  `loading-scene.tsx` draws the app's other space art. And the star layer
+  used `preserveAspectRatio="none"`, which stretches the viewBox to the
+  viewport and turns every circle into an ellipse; `xMidYMid slice` keeps
+  them round. Stars, the sun, four planets (a banded Jupiter, ringed
+  Saturn, a cratered rock, a far crescent) and the astronaut now share one
+  1600×900 viewBox, so nothing drifts out of proportion with anything else
+  as the window changes shape.
 - **Tech Decision replaces Call Reason on the AV, MPA and Fax forms (17
   Sep, feature branch).** Twelve codes, the business's own: Pend, Deny,
   Approved, Fax for Appls, Merged, RARA, RAFA, RAFC-C, NEITAP, NEITP, DNF,

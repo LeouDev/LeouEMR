@@ -289,17 +289,91 @@ function Frame({
  * A `Math.random()` field renders one way on the server and another in the
  * browser, and React replaces the whole subtree on that mismatch — a
  * flicker on the first screen anyone sees. Written out, it is the same sky
- * every time. [left%, top%, radius, seconds, delay]
+ * every time. [cx, cy, r, seconds, delay] in the scene's own 1600×900 space.
  */
 const STARS: Array<[number, number, number, number, number]> = [
-  [4, 12, 1.5, 3.2, 0], [11, 68, 1, 2.6, 0.9], [17, 31, 2, 4.1, 0.4], [23, 84, 1, 3.4, 1.7],
-  [29, 8, 1.5, 2.9, 0.2], [34, 52, 1, 3.8, 1.1], [41, 22, 1, 2.4, 0.6], [46, 76, 2, 4.4, 1.4],
-  [52, 40, 1, 3.1, 0.3], [58, 14, 1.5, 2.7, 1.9], [63, 88, 1, 3.6, 0.8], [69, 58, 1, 4.2, 0.1],
-  [74, 26, 2, 2.8, 1.2], [79, 72, 1, 3.3, 0.5], [84, 44, 1.5, 3.9, 1.6], [89, 18, 1, 2.5, 1.0],
-  [93, 62, 1, 4.0, 0.7], [7, 45, 1, 3.5, 1.3], [14, 92, 1.5, 2.9, 0.4], [26, 58, 1, 3.7, 1.8],
-  [38, 80, 1, 2.6, 0.9], [49, 6, 1, 4.3, 0.2], [66, 36, 1.5, 3.0, 1.5], [77, 6, 1, 3.4, 0.6],
-  [96, 34, 1, 2.7, 1.1], [20, 20, 1, 3.8, 0.3], [55, 66, 1, 2.5, 1.7], [86, 84, 1.5, 4.1, 0.8],
+  [60, 110, 2, 3.2, 0], [180, 610, 1.5, 2.6, 0.9], [270, 280, 3, 4.1, 0.4], [370, 760, 1.5, 3.4, 1.7],
+  [460, 70, 2, 2.9, 0.2], [545, 470, 1.5, 3.8, 1.1], [655, 200, 1.5, 2.4, 0.6], [735, 685, 3, 4.4, 1.4],
+  [830, 360, 1.5, 3.1, 0.3], [925, 125, 2, 2.7, 1.9], [1010, 795, 1.5, 3.6, 0.8], [1105, 520, 1.5, 4.2, 0.1],
+  [1185, 235, 3, 2.8, 1.2], [1265, 650, 1.5, 3.3, 0.5], [1345, 395, 2, 3.9, 1.6], [1425, 160, 1.5, 2.5, 1.0],
+  [1490, 560, 1.5, 4.0, 0.7], [110, 405, 1.5, 3.5, 1.3], [225, 830, 2, 2.9, 0.4], [415, 520, 1.5, 3.7, 1.8],
+  [610, 720, 1.5, 2.6, 0.9], [785, 55, 1.5, 4.3, 0.2], [1055, 325, 2, 3.0, 1.5], [1230, 55, 1.5, 3.4, 0.6],
+  [1540, 305, 1.5, 2.7, 1.1], [320, 180, 1.5, 3.8, 0.3], [880, 595, 1.5, 2.5, 1.7], [1375, 760, 2, 4.1, 0.8],
+  [500, 300, 1.5, 3.3, 1.4], [700, 440, 1.5, 2.8, 0.5], [1150, 860, 1.5, 3.6, 1.0], [40, 700, 1.5, 3.1, 1.6],
 ];
+
+/**
+ * The sun and four planets, drawn as SVG circles.
+ *
+ * Not CSS shapes: this app squares `rounded-full` on purpose — the
+ * Modernist theme has no radius anywhere — so a `rounded-full` div renders
+ * as a box, which is exactly what the first cut of this screen showed. A
+ * circle that has to be a circle belongs in an SVG, which is also how the
+ * app's other space art is drawn (see loading-scene.tsx).
+ *
+ * One viewBox at `xMidYMid slice` rather than `none`, too: stretching the
+ * viewBox to the viewport turns every circle into an ellipse, stars
+ * included.
+ */
+function Planets() {
+  return (
+    <>
+      {/* The sun, top right, with its corona rings. */}
+      <g style={{ animation: "drift 9s ease-in-out infinite" }}>
+        <circle cx={1430} cy={150} r={128} fill="var(--orange-500)" opacity={0.08} />
+        <circle cx={1430} cy={150} r={104} fill="none" stroke="var(--orange-500)" strokeWidth={1.5} opacity={0.35} />
+        <circle cx={1430} cy={150} r={86} fill="var(--orange-500)" />
+      </g>
+
+      {/* Jupiter: the banded giant, its stripes clipped to the disc. */}
+      <g style={{ animation: "drift 13s ease-in-out infinite" }}>
+        <clipPath id="survey-jupiter">
+          <circle cx={1210} cy={585} r={112} />
+        </clipPath>
+        <circle cx={1210} cy={585} r={112} fill="#d9a06a" />
+        <g clipPath="url(#survey-jupiter)">
+          <rect x={1098} y={497} width={224} height={22} fill="#b8784a" opacity={0.85} />
+          <rect x={1098} y={533} width={224} height={14} fill="#f0c89a" opacity={0.7} />
+          <rect x={1098} y={561} width={224} height={26} fill="#b8784a" opacity={0.75} />
+          <rect x={1098} y={601} width={224} height={16} fill="#f0c89a" opacity={0.6} />
+          <rect x={1098} y={629} width={224} height={24} fill="#a96a3f" opacity={0.8} />
+          <ellipse cx={1255} cy={574} rx={30} ry={16} fill="var(--orange-600)" />
+          {/* The terminator, so it reads as lit from the sun above right. */}
+          <circle cx={1150} cy={640} r={140} fill="var(--navy-900)" opacity={0.28} />
+        </g>
+        <circle cx={1210} cy={585} r={112} fill="none" stroke="var(--bg)" strokeWidth={2} opacity={0.55} />
+      </g>
+
+      {/* Saturn, rings tilted. */}
+      <g transform="rotate(-18 820 175)" style={{ animation: "drift 11s ease-in-out infinite" }}>
+        <ellipse cx={820} cy={175} rx={112} ry={26} fill="none" stroke="var(--orange-500)" strokeWidth={4} opacity={0.9} />
+        <ellipse cx={820} cy={175} rx={90} ry={18} fill="none" stroke="var(--bg)" strokeWidth={2} opacity={0.5} />
+        <circle cx={820} cy={175} r={54} fill="var(--navy-500)" />
+        <circle cx={820} cy={175} r={54} fill="none" stroke="var(--bg)" strokeWidth={2} opacity={0.6} />
+      </g>
+
+      {/* A cratered rock, bottom right. */}
+      <g style={{ animation: "drift 15s ease-in-out infinite" }}>
+        <circle cx={1478} cy={772} r={46} fill="var(--navy-400)" />
+        <circle cx={1465} cy={757} r={10} fill="var(--navy-600)" opacity={0.7} />
+        <circle cx={1492} cy={784} r={7} fill="var(--navy-600)" opacity={0.6} />
+        <circle cx={1470} cy={792} r={5} fill="var(--navy-600)" opacity={0.5} />
+        <circle cx={1478} cy={772} r={46} fill="none" stroke="var(--bg)" strokeWidth={1.5} opacity={0.4} />
+      </g>
+
+      {/* A far, small one, as a crescent. */}
+      <g style={{ animation: "drift 17s ease-in-out infinite" }}>
+        <clipPath id="survey-crescent">
+          <circle cx={1010} cy={112} r={30} />
+        </clipPath>
+        <circle cx={1010} cy={112} r={30} fill="#eef0f3" opacity={0.85} />
+        <g clipPath="url(#survey-crescent)">
+          <circle cx={996} cy={124} r={30} fill="var(--navy-800)" opacity={0.75} />
+        </g>
+      </g>
+    </>
+  );
+}
 
 /**
  * The opening screen: the app's own astronaut over a navy sky.
@@ -312,37 +386,30 @@ const STARS: Array<[number, number, number, number, number]> = [
 function Intro({ onStart }: { onStart: () => void }) {
   return (
     <div className="relative min-h-screen overflow-hidden bg-navy-800">
+      {/* One scene, one coordinate space: stars, planets and the astronaut
+          all live in it, so nothing drifts out of proportion with anything
+          else as the viewport changes shape. */}
       <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
+        viewBox="0 0 1600 900"
+        preserveAspectRatio="xMidYMid slice"
         aria-hidden
         className="pointer-events-none absolute inset-0 h-full w-full"
       >
-        {STARS.map(([cx, cy, r, dur, delay]) => (
-          <circle
-            key={`${cx}-${cy}`}
-            cx={cx}
-            cy={cy}
-            r={r / 10}
-            fill="var(--bg)"
-            style={{ animation: `twinkle ${dur}s ease-in-out ${delay}s infinite` }}
-          />
-        ))}
-      </svg>
+        <g fill="var(--bg)">
+          {STARS.map(([cx, cy, r, dur, delay]) => (
+            <circle
+              key={`${cx}-${cy}`}
+              cx={cx}
+              cy={cy}
+              r={r}
+              style={{ animation: `twinkle ${dur}s ease-in-out ${delay}s infinite` }}
+            />
+          ))}
+        </g>
 
-      {/* The sun, and two ringed planets, at the design's positions. */}
-      <div className="pointer-events-none absolute top-[12%] right-[10%] h-[120px] w-[120px] rounded-full bg-orange-brand opacity-90" />
-      <div className="pointer-events-none absolute right-[22%] bottom-[24%] hidden sm:block">
-        <div className="h-7 w-7 rounded-full border-[3px] border-cream" />
-        <div className="mx-auto mt-2 h-6 w-6 rounded-full bg-orange-brand" />
-      </div>
+        <Planets />
 
-      <svg
-        viewBox="-40 -20 80 70"
-        aria-hidden
-        className="pointer-events-none absolute bottom-[6%] left-[8%] hidden h-[180px] w-[180px] md:block"
-      >
-        <g style={{ animation: "drift 5s ease-in-out infinite" }}>
+        <g transform="translate(250,700) scale(4.2)" style={{ animation: "drift 6s ease-in-out infinite" }}>
           <AstronautFigure />
         </g>
       </svg>
