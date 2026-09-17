@@ -69,9 +69,17 @@ const CHECKS: Check[] = [
   },
   {
     name: "weekly results dated outside their own week",
-    why: "week_end must be six days after week_start",
+    why: "week_end must be six days after week_start (the one exception is the eight-day week of 23 May 2026, where the Saturday-to-Friday weeks hand over to Sunday-to-Saturday — src/lib/queries/period.ts)",
     query: sql`select count(*)::int as n from weekly_metric_results
-               where week_end <> week_start + interval '6 days'`,
+               where week_end <> week_start + interval '6 days'
+                 and not (week_start = '2026-05-23' and week_end = '2026-05-30')`,
+  },
+  {
+    name: "weekly results off the reporting-week grid",
+    why: "from 31 May 2026 every week starts on a Sunday; before it, on a Saturday (migration 0055 moved the keys)",
+    query: sql`select count(*)::int as n from weekly_metric_results
+               where (week_start >= '2026-05-31' and extract(dow from week_start) <> 0)
+                  or (week_start < '2026-05-31' and extract(dow from week_start) <> 6)`,
   },
 ];
 

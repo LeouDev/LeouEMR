@@ -244,6 +244,12 @@ the coding container; there is no database to run the app against here.
 
 ## Open items and things the owner knows about
 
+- **The nightly integrity workflow** (`.github/workflows/integrity.yml`,
+  `npm run check:integrity` locally) mails the owner on failure and had
+  been red unnoticed for three nights; check its latest run when you
+  start. Its "resolved before opened" rows from before 17 Sep are
+  repaired by the owner's one UPDATE (notes bullet "The nightly integrity
+  run was red").
 - **Masterlist month protection** (17 Sep): the weekly splice used to
   close a listed person's merged interval at 31 Aug (fixed, see the notes
   bullet "A weekly file closed a listed team"); the owner re-uploaded the

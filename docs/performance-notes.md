@@ -1451,6 +1451,26 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **The nightly integrity run was red on two counts (17 Sep).** The
+  scheduled `integrity.yml` (01:00 UTC, `scripts/check-integrity.mts`
+  against production) had failed three nights running; nobody reads its
+  mail. (1) *Weekly results dated outside their own week: 2,786* — the
+  re-cut's one eight-day week (23–30 May 2026); the check now allows
+  exactly that week, and a new check pins every week_start to the grid
+  (Sunday from 31 May, Saturday before). (2) *Issues resolved before
+  they opened: 14* (6 the night before) — every separation closure
+  (`closeIssuesOnSeparation`, `closeIssuesOnSeparationFor`, the
+  `closeIssuesOfSeparated` sweep) stamped the leaver's separation week
+  on every open issue, including one that opened later: a masterlist
+  closing someone as of 31 Aug after September's weeks had opened work
+  for them resolved that work in the week of 30 Aug. Fix: the resolution
+  week is the later of the separation week and the issue's own opening
+  week, in one place (`separationResolutionWeeks`, which the two direct
+  closers now go through too; `closeIssuesOnSeparation` is the one-person
+  form of `closeIssuesOnSeparationFor`). The 14 existing rows are
+  repaired by the owner with `update performance_issues set
+  resolved_week = opened_week where resolved_week < opened_week` after
+  listing them; the audit log keeps the original closure entry.
 - **A weekly file closed a listed team at the masterlist month's eve (17
   Sep).** Symptom: after the re-cut re-imports and the WE 09/18/26 upload,
   Archiene Herbias and her whole team were gone from September on the

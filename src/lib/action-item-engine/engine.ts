@@ -298,12 +298,16 @@ export function shouldAgeOut(
 /**
  * The week each open issue of someone who has left is resolved as of: the
  * reporting week their separation date falls in, so the record shows the
- * work ending when they did rather than when the sweep happened to run.
- * Grouped by week so the caller writes one statement per week, not per
- * issue. An issue whose owner has no separation date is left out.
+ * work ending when they did rather than when the sweep happened to run —
+ * but never before the week the issue itself opened. A separation recorded
+ * after the fact (a masterlist closing someone as of last month's end,
+ * once this month's weeks had already opened work for them) would
+ * otherwise resolve an issue before it existed. Grouped by week so the
+ * caller writes one statement per week, not per issue. An issue whose
+ * owner has no separation date is left out.
  */
 export function separationResolutionWeeks(
-  open: ReadonlyArray<{ id: string; employeeId: string }>,
+  open: ReadonlyArray<{ id: string; employeeId: string; openedWeek: string }>,
   leftOn: ReadonlyMap<string, string>,
   weekStartOf: (date: string) => string,
 ): Map<string, string[]> {
@@ -311,7 +315,8 @@ export function separationResolutionWeeks(
   for (const issue of open) {
     const on = leftOn.get(issue.employeeId);
     if (on === undefined) continue;
-    const week = weekStartOf(on);
+    const separationWeek = weekStartOf(on);
+    const week = separationWeek > issue.openedWeek ? separationWeek : issue.openedWeek;
     const ids = byWeek.get(week);
     if (ids) ids.push(issue.id);
     else byWeek.set(week, [issue.id]);

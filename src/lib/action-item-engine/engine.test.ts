@@ -351,10 +351,10 @@ describe("separationResolutionWeeks — where the open work of someone who left 
   it("groups each issue under the week its owner's separation date falls in", () => {
     const byWeek = separationResolutionWeeks(
       [
-        { id: "i1", employeeId: "a" },
-        { id: "i2", employeeId: "b" },
-        { id: "i3", employeeId: "a" },
-        { id: "i4", employeeId: "c" },
+        { id: "i1", employeeId: "a", openedWeek: "2026-06-01" },
+        { id: "i2", employeeId: "b", openedWeek: "2026-06-01" },
+        { id: "i3", employeeId: "a", openedWeek: "2026-06-01" },
+        { id: "i4", employeeId: "c", openedWeek: "2026-06-01" },
       ],
       new Map([
         ["a", "2026-07-17"],
@@ -372,8 +372,8 @@ describe("separationResolutionWeeks — where the open work of someone who left 
   it("leaves out an issue whose owner has no separation date", () => {
     const byWeek = separationResolutionWeeks(
       [
-        { id: "i1", employeeId: "a" },
-        { id: "i2", employeeId: "still-here" },
+        { id: "i1", employeeId: "a", openedWeek: "2026-06-01" },
+        { id: "i2", employeeId: "still-here", openedWeek: "2026-06-01" },
       ],
       new Map([["a", "2026-07-17"]]),
       weekStartOf,
@@ -381,7 +381,26 @@ describe("separationResolutionWeeks — where the open work of someone who left 
     expect([...byWeek.entries()]).toEqual([["2026-07-13", ["i1"]]]);
   });
 
+  it("never resolves an issue before the week it opened", () => {
+    // A masterlist closed her as of 31 July, after this month's weeks had
+    // already opened work for her: that work ends the week it began, not
+    // a week before it existed.
+    const byWeek = separationResolutionWeeks(
+      [
+        { id: "before", employeeId: "a", openedWeek: "2026-06-01" },
+        { id: "same-week", employeeId: "a", openedWeek: "2026-07-13" },
+        { id: "after", employeeId: "a", openedWeek: "2026-08-03" },
+      ],
+      new Map([["a", "2026-07-17"]]),
+      weekStartOf,
+    );
+    expect([...byWeek.entries()]).toEqual([
+      ["2026-07-13", ["before", "same-week"]],
+      ["2026-08-03", ["after"]],
+    ]);
+  });
+
   it("is empty when nobody has left", () => {
-    expect(separationResolutionWeeks([{ id: "i1", employeeId: "a" }], new Map(), weekStartOf).size).toBe(0);
+    expect(separationResolutionWeeks([{ id: "i1", employeeId: "a", openedWeek: "2026-06-01" }], new Map(), weekStartOf).size).toBe(0);
   });
 });

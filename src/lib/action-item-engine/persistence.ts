@@ -258,6 +258,7 @@ export async function closeIssuesOfSeparated(
     .select({
       id: performanceIssues.id,
       employeeId: performanceIssues.employeeId,
+      openedWeek: performanceIssues.openedWeek,
       status: performanceIssues.status,
     })
     .from(performanceIssues)
@@ -355,40 +356,7 @@ export async function closeIssuesOnSeparation(
   /** The week the separation was recorded, used as the resolution date. */
   week: string,
 ): Promise<number> {
-  const open = await db
-    .select({ id: performanceIssues.id, status: performanceIssues.status })
-    .from(performanceIssues)
-    .where(
-      and(
-        eq(performanceIssues.employeeId, employeeId),
-        ne(performanceIssues.status, "COMPLETED"),
-      ),
-    );
-  if (open.length === 0) return 0;
-
-  const ids = open.map((i) => i.id);
-  await db.transaction(async (tx) => {
-    await tx
-      .update(performanceIssues)
-      .set({ status: "COMPLETED", resolvedWeek: week, updatedAt: sql`now()` })
-      .where(inArray(performanceIssues.id, ids));
-    await tx
-      .update(actionItems)
-      .set({ status: "COMPLETED", updatedAt: sql`now()` })
-      .where(inArray(actionItems.performanceIssueId, ids));
-    // Its own action: closed because the person left, not because the
-    // performance recovered. The two should never be read as the same thing.
-    await tx.insert(auditLog).values(
-      open.map((issue) => ({
-        action: "issue.closed_on_separation",
-        entityType: "performance_issue",
-        entityId: issue.id,
-        before: { status: issue.status },
-        after: { status: "COMPLETED", resolvedWeek: week, reason: "employee separated" },
-      })),
-    );
-  });
-  return open.length;
+  return db.transaction((tx) => closeIssuesOnSeparationFor(tx, [employeeId], week));
 }
 
 /** A transaction on the db, for callers that close work as part of a larger write. */
@@ -407,7 +375,12 @@ export async function closeIssuesOnSeparationFor(
 ): Promise<number> {
   if (employeeIds.length === 0) return 0;
   const open = await tx
-    .select({ id: performanceIssues.id, status: performanceIssues.status })
+    .select({
+      id: performanceIssues.id,
+      employeeId: performanceIssues.employeeId,
+      openedWeek: performanceIssues.openedWeek,
+      status: performanceIssues.status,
+    })
     .from(performanceIssues)
     .where(
       and(
@@ -417,22 +390,37 @@ export async function closeIssuesOnSeparationFor(
     );
   if (open.length === 0) return 0;
 
+  // Resolved as of the separation week, or the issue's own opening week
+  // if that came later (separationResolutionWeeks) — an issue can never
+  // be resolved before it existed.
+  const byWeek = separationResolutionWeeks(
+    open,
+    new Map(employeeIds.map((id) => [id, week])),
+    (w) => w,
+  );
+  const weekOfIssue = new Map<string, string>();
+  for (const [resolvedWeek, ids] of byWeek) for (const id of ids) weekOfIssue.set(id, resolvedWeek);
+
   const ids = open.map((i) => i.id);
-  await tx
-    .update(performanceIssues)
-    .set({ status: "COMPLETED", resolvedWeek: week, updatedAt: sql`now()` })
-    .where(inArray(performanceIssues.id, ids));
+  for (const [resolvedWeek, weekIds] of byWeek) {
+    await tx
+      .update(performanceIssues)
+      .set({ status: "COMPLETED", resolvedWeek, updatedAt: sql`now()` })
+      .where(inArray(performanceIssues.id, weekIds));
+  }
   await tx
     .update(actionItems)
     .set({ status: "COMPLETED", updatedAt: sql`now()` })
     .where(inArray(actionItems.performanceIssueId, ids));
+  // Its own action: closed because the person left, not because the
+  // performance recovered. The two should never be read as the same thing.
   await tx.insert(auditLog).values(
     open.map((issue) => ({
       action: "issue.closed_on_separation",
       entityType: "performance_issue",
       entityId: issue.id,
       before: { status: issue.status },
-      after: { status: "COMPLETED", resolvedWeek: week, reason: "employee separated" },
+      after: { status: "COMPLETED", resolvedWeek: weekOfIssue.get(issue.id), reason: "employee separated" },
     })),
   );
   return open.length;
