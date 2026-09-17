@@ -22,6 +22,17 @@ export interface QaSection {
 export interface QaPricedItem {
   label: string;
   points: number;
+  /**
+   * Attributes marked one by one but sharing this item's points: any of them
+   * failing costs `points`, once, however many of them failed.
+   *
+   * The Fax form's "Appropriately Answers Guideline Questions" is nine
+   * separate checks worth five points between them — an audit that missed
+   * three of them loses five, not fifteen. Kept as their own marks rather
+   * than folded into one line so the evaluator records which check failed
+   * and the analysis page can still count them apart.
+   */
+  subItems?: string[];
 }
 
 export interface QaGroup {
@@ -330,50 +341,100 @@ export const QA_FORM_SEED: QaForm[] = [
     label: "Fax QA Form",
     sortOrder: 4,
     headerFields: [{ key: "caseNo", label: "Case #", kind: "text", placeholder: "e.g. FX-40213" }, callReason()],
+    /**
+     * PAS Fax, per the "PAS Fax Updated" sheet: a hundred points spread over
+     * the attributes themselves, so a miss costs that attribute's points and
+     * nothing more. It replaced a category-weighted version worth 29 in which
+     * any single miss forfeited its whole category — enough, at every
+     * category, to put the audit under the 90% pass mark on its own.
+     *
+     * Audits filed against that version keep their own scores and their own
+     * labels (qa_audits stores the figures, qa_audit_results stores the
+     * category and attribute as text), so nothing already filed moves. A Fax
+     * trend spanning the change does compare the two rules, and the older
+     * side of it is the harsher one.
+     */
     definition: {
-      type: "A",
-      sections: [
+      type: "B",
+      groups: [
         {
           name: "Provider Information",
-          weight: 5,
-          items: ["Incorrect provider selected", "Incorrect NPI entered", "Phone/fax/address not updated when appropriate"],
-        },
-        {
-          name: "Member Information",
-          weight: 5,
-          items: ["Incorrect plan selected", "Multimember hierarchy not followed", "Third identifier not verified"],
-        },
-        {
-          name: "Drug Selection & Case Details",
-          weight: 4,
           items: [
-            "Incorrect drug/formulation/strength",
-            "Incorrect days supply/quantity",
-            "Brand vs generic inaccuracy",
-            "Incorrect backdate",
+            { label: "Agent selected Incorrect Provider", points: 5 },
+            { label: "Agent update Phone or Fax Number when Appropriate", points: 5 },
+            { label: "Agent update Address when Appropriate", points: 5 },
           ],
         },
         {
-          name: "Decision Accuracy at Action Screen",
-          weight: 5,
-          items: ["Failed to verify FLU for incorrect NDC", "Failed to use Retry Trial Claim", "Case not cancelled/reworked properly"],
+          name: "Member",
+          items: [
+            { label: "Agent selected Correct Member", points: 5 },
+            { label: "Agent selected correct Plan", points: 5 },
+            { label: "Agent verified Third Identifier", points: 5 },
+          ],
+        },
+        {
+          name: "Drug",
+          items: [
+            { label: "Agent selected Correct Drug", points: 4 },
+            { label: "Agent selected Correct Formulation", points: 4 },
+            { label: "Agent selected Correct Strength", points: 4 },
+            { label: "Agent entered Correct Days supply and Quantity", points: 4 },
+            { label: "Agent Entered Correct Diagnosis", points: 4 },
+            { label: "Agent selected Correct TCE radio button", points: 4 },
+            { label: "Agent entered Correct Backdate", points: 3 },
+          ],
+        },
+        {
+          name: "Case Handling",
+          items: [
+            { label: "Initiate PA and any new PAs associated with other medications listed in the fax request", points: 4 },
+            { label: "Does not bypass dup/fwd to appeals/reworks/merge correctly", points: 4 },
+            { label: "Asses multiple denials appropriately (Max 2 within 180 day period except TX 1 within 180 days)", points: 4 },
+            { label: "Asses the correct state regulation based on enhanced benefit", points: 4 },
+            { label: "Improper Cancellation", points: 4 },
+            { label: "Reworks when necessary - by utilizing the Copy Case function if appropriate", points: 4 },
+            { label: "Identified all applicable review types", points: 4 },
+          ],
         },
         {
           name: "Clinical Guidelines",
-          weight: 5,
-          items: ["Incorrect guideline answer selected", "Failed OBC to MDO", "Tried and failed medications not captured"],
+          items: [
+            {
+              label: "Appropriately Answers Guideline Questions",
+              points: 5,
+              subItems: [
+                "Agent choose other/not known/not Provided when information is provided",
+                "Agent adds add info provided",
+                "Agent answered tried and failed",
+                "Agent answered plan exclusion questions",
+                "Agent answered formulary specific questions",
+                "Agent answered quantity limits question correctly",
+                "Agent answered diagnosis question",
+                "Agent did not approve based on ceiling limit",
+                "Agent updated medical records without attachment",
+              ],
+            },
+            { label: "Did correctly identify initial or reauthorization?", points: 5 },
+          ],
         },
         {
           name: "Documentation",
-          weight: 5,
           items: [
-            "Did not call correct phone number when multiple present",
-            "Did not document whom they spoke to",
-            "Did not document OBC outcome",
+            {
+              label: "Failed to document relevant case info",
+              points: 5,
+              subItems: [
+                "Agent called the phone number when multiple numbers are present",
+                "Agent documented whom they spoke to",
+                "Agent documented Outcome of OBC-document reason for the OBC and information obtained",
+                "Agent did not document when the way technician answered the CG does not align with Fax",
+              ],
+            },
           ],
         },
       ],
-      compliance: ["Wrong member selected", "Fax priority error", "Invalid cancellation"],
+      compliance: ["Invalid Cancellation", "Fax Priority", "Multiple Review Screen", "Wrong member selected"],
     },
   },
 ];

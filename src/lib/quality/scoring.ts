@@ -28,6 +28,11 @@ export interface QaStepItem {
   label: string;
   /** The item's own points on a flat-weighted form; null where the category carries the weight. */
   points: number | null;
+  /**
+   * Set on a sub-attribute: the key of the item whose points it shares. The
+   * pair (or the group) forfeits those points once, not once each.
+   */
+  sharesWith?: string;
 }
 
 export interface QaStep {
@@ -52,12 +57,27 @@ export function stepsOf(definition: QaDefinition): QaStep[] {
           weight: section.weight,
           items: section.items.map((label, i) => ({ key: itemKey(section.name, i), label: `${LETTERS[i]}. ${label}`, points: null })),
         }))
-      : definition.groups.map((group) => ({
-          name: group.name,
-          kind: "group",
-          weight: group.items.reduce((sum, item) => sum + item.points, 0),
-          items: group.items.map((item, i) => ({ key: itemKey(group.name, i), label: item.label, points: item.points })),
-        }));
+      : definition.groups.map((group) => {
+          // Sub-attributes are walked inline, in the order they are written,
+          // so the stepper and the stored `position` follow the paper form.
+          const items: QaStepItem[] = [];
+          for (const item of group.items) {
+            const key = itemKey(group.name, items.length);
+            items.push({ key, label: item.label, points: item.points });
+            for (const sub of item.subItems ?? []) {
+              // points: null, not 0 — it has none of its own, and the form
+              // must not read "0 pts" beside a check that can cost five.
+              items.push({ key: itemKey(group.name, items.length), label: sub, points: null, sharesWith: key });
+            }
+          }
+          return {
+            name: group.name,
+            kind: "group",
+            // Only the parents carry points, so the total is theirs alone.
+            weight: group.items.reduce((sum, item) => sum + item.points, 0),
+            items,
+          };
+        });
   steps.push({
     name: COMPLIANCE_STEP,
     kind: "compliance",
@@ -110,7 +130,13 @@ export function scoreAudit(definition: QaDefinition, marks: QaMarks): AuditScore
         ? anyFail
           ? 0
           : stepMax
-        : step.items.reduce((sum, item) => sum + (failed(item) ? 0 : (item.points ?? 0)), 0);
+        : step.items.reduce((sum, item) => {
+            // A sub-attribute has no points of its own; it can only cost its
+            // parent's, which the parent's own branch accounts for.
+            if (item.sharesWith) return sum;
+            const sharedFail = step.items.some((other) => other.sharesWith === item.key && failed(other));
+            return sum + (failed(item) || sharedFail ? 0 : (item.points ?? 0));
+          }, 0);
     earned += stepEarned;
     max += stepMax;
     scored.push({ name: step.name, earned: stepEarned, max: stepMax, anyFail });
