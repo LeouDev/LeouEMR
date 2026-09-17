@@ -15,6 +15,28 @@ function percent(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
+/**
+ * How often a value label can be drawn above a series without the labels
+ * running into each other.
+ *
+ * Every point gets its figure while there is room for it; on a long range
+ * the labels thin out instead of overprinting, which is the difference
+ * between a chart you can read a number off and a smear of digits. The
+ * estimate is deliberately generous — 34 units for something like "48.3%"
+ * at these type sizes — because a label that overlaps its neighbour is
+ * worse than a label that is missing, and the tooltip carries every point's
+ * exact figure either way.
+ */
+export function labelStride(count: number, plotWidth: number, labelWidth = 34): number {
+  if (count <= 1) return 1;
+  const step = plotWidth / (count - 1);
+  // A plot with no width has no room for a second label; capping at `count`
+  // keeps the answer a real number — an Infinity here would still "work"
+  // arithmetically (only index 0 labels) but reads as a bug in every caller.
+  if (!(step > 0)) return count;
+  return Math.min(count, Math.max(1, Math.ceil(labelWidth / step)));
+}
+
 /** Colour by how far a fail rate is from acceptable. */
 function severity(rate: number): string {
   if (rate >= 40) return "var(--color-fail)";
@@ -82,7 +104,9 @@ export function TrendChart({
 
   const W = 720;
   const H = 220;
-  const PAD = { top: 12, right: 12, bottom: 28, left: 36 };
+  // The top pad carries the value labels above the highest point; at 12 the
+  // label on a peak was clipped by the viewBox edge.
+  const PAD = { top: 26, right: 12, bottom: 28, left: 36 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
   const max = Math.max(10, Math.ceil(Math.max(...points.map((p) => p.failRate)) / 10) * 10);
@@ -95,6 +119,7 @@ export function TrendChart({
 
   // Label at most eight weeks so the axis stays readable on a dense range.
   const labelEvery = Math.ceil(points.length / 8);
+  const valueEvery = labelStride(points.length, plotW);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Fail rate by week">
@@ -124,6 +149,18 @@ export function TrendChart({
                 text node and warns on an array. */}
             <title>{`${labelFor(p.week)} — ${percent(p.failRate)} failing (${p.failing} of ${p.evaluated})`}</title>
           </circle>
+          {i % valueEvery === 0 && (
+            <text
+              x={x(i)}
+              /* Never above the viewBox: a point at the very top would put
+                 its own label outside the drawing and lose it. */
+              y={Math.max(9, y(p.failRate) - 9)}
+              textAnchor="middle"
+              className="fill-ink text-[9px] font-bold"
+            >
+              {percent(p.failRate)}
+            </text>
+          )}
           {i % labelEvery === 0 && (
             <text x={x(i)} y={H - 8} textAnchor="middle" className="fill-muted text-[9px]">
               {labelFor(p.week)}
@@ -720,7 +757,9 @@ export function TrendLineChart({
       {values.map((v, i) => {
         if (v === null) return null;
         const selected = i === selectedIndex;
-        const showValue = selected || i % 3 === 0;
+        // Every point that fits, rather than every third — the selected one
+        // is always shown, since it is the figure the page is about.
+        const showValue = selected || i % labelStride(buckets.length, W - x0 * 2, 30) === 0;
         return (
           <g key={i}>
             <rect x={x(i) - 4} y={y(v) - 4} width={8} height={8} fill={selected ? "var(--color-orange-brand)" : "var(--color-ink)"}>
