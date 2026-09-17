@@ -44,15 +44,5 @@ export const ROSTER_COLUMNS: Array<{ code: string; label: string }> = [
   { code: "MBO", label: "MBO" },
 ];
 
-/**
- * PAR and MBO read as a verdict rather than a level.
- *
- * Both are gates the business either clears or does not — PAR at 2.99, MBO at
- * every gate met — so a warning band on them would invent a middle where the
- * rule has none, and would disagree with the pass rates in the strip above,
- * computed off the same gate.
- */
-export const VERDICT_COLUMNS = new Set(["PRODUCTION_RATE", "MBO"]);
-
 /** Below target on this many measures and the whole row is shaded, matching team-agent-rows.tsx. */
 export const SHADE_AT = 4;
