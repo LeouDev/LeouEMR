@@ -296,6 +296,28 @@ export function shouldAgeOut(
 }
 
 /**
+ * The separations the sweep may act on: only those the employee row
+ * confirms. Both ways a person really leaves — a masterlist's attrition
+ * pass and an EWS separating tag — also mark the row `separated` as they
+ * do; a separation inferred from the assignment history while the row is
+ * still active is a broken org history, not a departure, and closing work
+ * on it is irreversible. (17 Sep 2026: a splice bug closed a listed team's
+ * intervals at a month's eve and the sweep completed 33 of their
+ * development items.) Anyone the row does not confirm is left alone; the
+ * nightly integrity check reports the disagreement instead.
+ */
+export function confirmedSeparations(
+  inferred: ReadonlyMap<string, string>,
+  statusById: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const confirmed = new Map<string, string>();
+  for (const [employeeId, on] of inferred) {
+    if (statusById.get(employeeId) === "separated") confirmed.set(employeeId, on);
+  }
+  return confirmed;
+}
+
+/**
  * The week each open issue of someone who has left is resolved as of: the
  * reporting week their separation date falls in, so the record shows the
  * work ending when they did rather than when the sweep happened to run —

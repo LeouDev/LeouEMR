@@ -23,6 +23,7 @@
     "purge:unsourced": "tsx --env-file=.env.local scripts/purge-unsourced-results.mts",
     "delete-issue": "tsx --env-file=.env.local scripts/delete-issue.mts",
     "fix:resolution": "tsx --env-file=.env.local scripts/fix-backwards-resolution.mts",
+    "fix:false-separations": "tsx --env-file=.env.local scripts/reopen-false-separations.mts",
     "check:integrity": "tsx --env-file=.env.local scripts/check-integrity.mts",
     "migrate:0039": "tsx --env-file=.env.local scripts/apply-0039.mts",
     "age-out": "tsx --env-file=.env.local scripts/age-out-issues.mts",

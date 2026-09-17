@@ -68,6 +68,27 @@ const CHECKS: Check[] = [
                ) d`,
   },
   {
+    name: "active employees whose newest assignment is closed",
+    why: "only a masterlist closes a person's newest interval, and it marks the row separated as it does; an active row over a closed history is a broken org history (the 17 Sep 2026 splice bug) — re-upload the month's masterlist",
+    query: sql`select count(*)::int as n from employees e
+               where e.status = 'active'
+                 and exists (select 1 from employee_assignments a where a.employee_id = e.id)
+                 and not exists (select 1 from employee_assignments a
+                                 where a.employee_id = e.id and a.effective_to is null)`,
+  },
+  {
+    name: "work closed on separation for someone still here",
+    why: "an item completed 'on separation' whose owner is active and whose stint never ended — the separation was inferred from a broken org history; npm run fix:false-separations reopens and replays them",
+    query: sql`select count(*)::int as n from performance_issues i
+               join employees e on e.id = i.employee_id
+               where i.status = 'COMPLETED' and e.status = 'active'
+                 and (select l.action from audit_log l where l.entity_id = i.id
+                       order by l.created_at desc limit 1) = 'issue.closed_on_separation'
+                 and exists (select 1 from employee_assignments a
+                             where a.employee_id = i.employee_id and a.effective_to is null
+                               and a.effective_from <= i.resolved_week)`,
+  },
+  {
     name: "weekly results dated outside their own week",
     why: "week_end must be six days after week_start (the one exception is the eight-day week of 23 May 2026, where the Saturday-to-Friday weeks hand over to Sunday-to-Saturday — src/lib/queries/period.ts)",
     query: sql`select count(*)::int as n from weekly_metric_results
