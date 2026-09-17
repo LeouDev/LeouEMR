@@ -990,11 +990,12 @@ from every environment this project gets worked on in.
   tighter ramp stages — dragged the target down, and a week on leave
   weighed the same as a full one; the weekly import path, which uses
   each week's own stage target, was right. Replaced by
-  `effectiveTarget` in `src/lib/ramp/effective-target.ts` (tested): each
-  reporting week's target (stage or steady) weighted by what was worked
-  in it, hours for a per-hour rate (CPH, case rate), cases for a per-case
-  time (AHT) — the weighting under which the summed ratio equals the
-  worked weeks' ratios combined; nothing worked means the steady target.
+  `effectiveTarget` in `src/lib/ramp/effective-target.ts` (tested): the
+  plain average of each *worked* reporting week's target (stage or
+  steady), each worked week counting once whatever its volume — the
+  owner's call, the same day, over a first cut that weighted weeks by
+  hours or cases, so the month-end figure is the workbook's own average
+  of weekly targets; nothing worked means the steady target.
   Both callers now read the skill facts per reporting week (Saturday
   start: `fact_date - ((extract(dow) + 1) % 7)`, grouped by ordinal 3)
   only when someone is ramping, fold every label of a skill into that

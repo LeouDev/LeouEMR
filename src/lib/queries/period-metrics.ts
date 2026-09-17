@@ -380,9 +380,9 @@ async function computeDerived(
   // sum against the skill's flat steady target — as if every week in the
   // period held them to the standard — is exactly the bug the standalone
   // CPH/AHT target average above already exists to avoid; this gives PAR
-  // and MBO the same treatment: each week's target (ramp stage or steady)
-  // weighted by what was worked in that week (src/lib/ramp/effective-target.ts).
-  // A plain average of the period's calendar weeks came before it and
+  // and MBO the same treatment: the plain average of each worked week's
+  // target (ramp stage or steady), src/lib/ramp/effective-target.ts. An
+  // average over every calendar week of the period came before it and
   // was wrong in a running month — the weeks not yet worked, with their
   // tighter later stages, dragged the target down and an agent rated
   // 3.6–5.0 week by week read as 1.0 for the month. An employee with no
@@ -399,8 +399,8 @@ async function computeDerived(
   const out: PeriodMetric[] = [];
 
   // Only a period with someone ramping needs the per-week split (the
-  // steady target weighs the same in every week); the employee ids map to
-  // the EIDs the ramp targets are keyed by.
+  // steady target is the same in every week); the employee ids map to the
+  // EIDs the ramp targets are keyed by.
   const eidById = new Map<string, string>();
   const volumes = new Map<string, WeekVolume[]>();
   if (rampTargets.size > 0) {
@@ -451,7 +451,6 @@ async function computeDerived(
         return ref.lowerIsBetter ? override?.ahtTarget : override?.cphTarget;
       },
       ref.target,
-      ref.lowerIsBetter,
     ).target;
   }
 

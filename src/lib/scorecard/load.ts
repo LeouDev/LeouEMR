@@ -139,11 +139,11 @@ export async function computeScorecards(employeeIds: string[], monthStart: strin
 
   const eidById = new Map(people.map((p) => [p.id, p.eid]));
 
-  // The target a person was held to across the month: each reporting
-  // week's target (the ramp stage's, or the steady one) weighted by what
-  // they worked that week — the same treatment the period PAR rating
-  // gives, so the card and the dashboard agree. A running month judges
-  // only the weeks it has; an unworked week counts for nothing.
+  // The target a person was held to across the month: the plain average
+  // of each worked reporting week's target (the ramp stage's, or the
+  // steady one) — the same treatment the period PAR rating gives, so the
+  // card and the dashboard agree. A running month judges only the weeks
+  // it has; an unworked week counts for nothing.
   const volumes = new Map<string, WeekVolume[]>();
   for (const row of weekly) {
     const ref = refs.get(normalize(row.skillLabel));
@@ -169,7 +169,6 @@ export async function computeScorecards(employeeIds: string[], monthStart: strin
         return ref.lowerIsBetter ? override?.ahtTarget : override?.cphTarget;
       },
       ref.target,
-      ref.lowerIsBetter,
     );
   };
 
