@@ -30,5 +30,18 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         # The script exits non-zero when an invariant fails, which fails the
-        # run and sends the usual GitHub notification.
-        run: npx tsx scripts/check-integrity.mts
+        # run and sends the usual GitHub notification. Its output also goes
+        # on the run's summary page, so a red run says what failed and what
+        # to do without opening the log.
+        run: |
+          set +e
+          out=$(npx tsx scripts/check-integrity.mts 2>&1); code=$?
+          printf '%s\n' "$out"
+          {
+            echo '```'
+            echo "$out"
+            echo '```'
+            echo
+            echo 'A failing check names its repair. Background: docs/performance-notes.md (search "integrity").'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $code

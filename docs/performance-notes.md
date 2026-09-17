@@ -1498,6 +1498,35 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Audit after the false separations (17 Sep): how the app decides
+  someone left, and the guards now on it.** Two sources feed
+  `separationDates` (eligibility.ts): an EWS Black/Absconding tag, or a
+  closed newest assignment interval (only a masterlist closes one). Both
+  real paths also mark `employees.status = 'separated'` (masterlist
+  attrition pass; EWS tag path in ews-actions.ts); the splice bug closed
+  intervals without touching status, and nothing compared the two. The
+  one irreversible consumer is the separation sweep
+  (`closeIssuesOfSeparated`, every engine pass and `npm run
+  close-separated`), which completed work on the interval alone. Guards:
+  (1) the sweep acts only on separations the employee row confirms
+  (`confirmedSeparations`, tested) — an unconfirmed date is left alone,
+  so a broken org history can no longer close anyone's work; eligibility
+  still hides such a person from period views, which is reversible and
+  is how this was noticed. (2) Two nightly integrity checks: "active
+  employees whose newest assignment is closed" (the bug's signature; it
+  would have fired the night of 14 Sep) and "work closed on separation
+  for someone still here" (latest audit action is the separation
+  closure, owner active, open stint began on or before the closure week
+  — a rehire's new stint begins after it). (3) `npm run
+  fix:false-separations [-- --apply]` codifies the repair: reopens
+  qualifying items at their opening week, removes later duplicate
+  episodes, audits both, and replays every week from the earliest
+  reopened one through `runIssueEngineForWeeks` — no re-import needed.
+  (4) The integrity workflow writes the script's output onto the run's
+  summary page with a pointer to these notes, so a red run reads its own
+  repair. Not changed: `separationDates` itself, deliberately — the
+  period views should keep showing a disagreement rather than paper over
+  it; the check reports it the same night.
 - **The nightly integrity run was red on two counts (17 Sep).** The
   scheduled `integrity.yml` (01:00 UTC, `scripts/check-integrity.mts`
   against production) had failed three nights running; nobody reads its
@@ -1514,10 +1543,27 @@ from every environment this project gets worked on in.
   week is the later of the separation week and the issue's own opening
   week, in one place (`separationResolutionWeeks`, which the two direct
   closers now go through too; `closeIssuesOnSeparation` is the one-person
-  form of `closeIssuesOnSeparationFor`). The 14 existing rows are
-  repaired by the owner with `update performance_issues set
-  resolved_week = opened_week where resolved_week < opened_week` after
-  listing them; the audit log keeps the original closure entry.
+  form of `closeIssuesOnSeparationFor`). The 14 rows turned out to be
+  the visible part of something else: every one belonged to an *active*
+  agent (Herbias's cohort, Aniban) whose assignment the org-history bug
+  above had closed at 31 Aug — the `closeIssuesOfSeparated` sweep took
+  that closed newest interval for a separation and completed their open
+  development items "on separation" on 14–17 Sep. The audit log
+  (`issue.closed_on_separation` since 14 Sep, owner active, assignment
+  open, no RCA/plan/acknowledgement/note, no other live issue) found 33
+  such items, 19 of them opened and "resolved" in the same week of 30 Aug
+  and so invisible to the check. Repaired by the owner with one DO block
+  in the SQL editor (temp tables do not survive between statements
+  there): 31 reopened at their opening week — status OPEN, resolution
+  cleared, `last_evaluated_week = opened_week - 1`, history deleted, an
+  `issue.reopened_false_separation` audit row — and 2 later duplicate
+  episodes (opened only because the first had just been closed) deleted
+  with an `issue.deleted_duplicate_episode` audit row; then a re-import
+  of the September workbook replays the weeks since, the same rewind the
+  reevaluate script uses for issues it keeps. A separation the app
+  infers from a closed newest interval is only as good as the org
+  history: after any org-history repair, look for closures the sweep
+  made in the meantime.
 - **A weekly file closed a listed team at the masterlist month's eve (17
   Sep).** Symptom: after the re-cut re-imports and the WE 09/18/26 upload,
   Archiene Herbias and her whole team were gone from September on the

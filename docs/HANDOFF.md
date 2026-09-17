@@ -252,10 +252,15 @@ the coding container; there is no database to run the app against here.
 ## Open items and things the owner knows about
 
 - **The nightly integrity workflow** (`.github/workflows/integrity.yml`,
-  `npm run check:integrity` locally) mails the owner on failure and had
-  been red unnoticed for three nights; check its latest run when you
-  start. Its "resolved before opened" rows from before 17 Sep are
-  repaired by the owner's one UPDATE (notes bullet "The nightly integrity
+  `npm run check:integrity` locally) mails the owner on failure and
+  writes the failing checks on the run's summary page; it had been red
+  unnoticed for three nights, so check its latest run when you start. A
+  red run is a same-day job: each check's "why" names its repair. The 33
+  development items the separation sweep closed for active agents (17
+  Sep) were reopened by the owner and replayed; the sweep now refuses a
+  separation the employee row does not confirm, two checks watch for the
+  pattern, and `npm run fix:false-separations` is the repair (notes
+  bullets "Audit after the false separations" and "The nightly integrity
   run was red").
 - **Masterlist month protection** (17 Sep): the weekly splice used to
   close a listed person's merged interval at 31 Aug (fixed, see the notes
