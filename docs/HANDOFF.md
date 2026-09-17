@@ -138,7 +138,8 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0053_my_space` (applied 15 Sep). `RECONCILE_TRACKER.sql`
+Latest migration: `0054_two_nesting_weeks` (17 Sep; the ramp has two
+nesting weeks then eight ramp weeks, stages 0–9). `RECONCILE_TRACKER.sql`
 exists for a tracker that drifted once.
 
 ## Roles, access, accounts
@@ -186,6 +187,10 @@ the coding container; there is no database to run the app against here.
 
 ## What was built most recently (14–15 Sep 2026), newest first
 
+- **Ramp shape** (17 Sep): two nesting weeks, then Week 1 through Week 8,
+  ten stages (`src/lib/ramp/engine.ts`). The start week is the Saturday
+  of the first nesting week. "Re-apply all ramps" on the Ramp page
+  replays every assignment after a schedule or start-week change.
 - **Monthly PAR for a ramping agent** (17 Sep): the month's target is
   the plain average of each worked week's target (ramp stage or steady),
   `src/lib/ramp/effective-target.ts`, used by the period metrics and the

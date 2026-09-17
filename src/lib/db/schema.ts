@@ -332,8 +332,9 @@ export const skillReferences = pgTable("skill_references", {
 
 /**
  * A new-hire ramp schedule: one target per stage of onboarding for a skill.
- * Stage 0 is Nesting, 1-8 are Week 1 through Week 8; past stage 8 an
- * employee has completed ramp and the skill's own steady-state target
+ * Stages 0 and 1 are the two nesting weeks, 2-9 are Week 1 through Week 8
+ * (migration 0054; before it, one nesting week and stages 1-8); past stage
+ * 9 an employee has completed ramp and the skill's own steady-state target
  * (skillReferences.target) applies, exactly as it does for anyone with no
  * ramp assignment. Organization policy, shared across every new hire on
  * that skill — not per employee, unlike employeeRampAssignments below.

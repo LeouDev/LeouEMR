@@ -980,6 +980,34 @@ from every environment this project gets worked on in.
   an employee with no supervisor EID on record the second clause fell
   away and the whole supervisor role was notified. Now nobody is when no
   supervisor is linked.
+- **Two nesting weeks, then eight ramp weeks (17 Sep, feature branch,
+  migration 0054).** The onboarding path is ten reporting weeks, not
+  nine: `NESTING_STAGES = 2`, `LAST_STAGE = 9`, `isNesting`,
+  `stageLabel` → "Nesting 1", "Nesting 2", "Week 1" … "Week 8"
+  (`src/lib/ramp/engine.ts`). An assignment's start week is still the
+  first nesting week; the stage is still the whole weeks elapsed since
+  it, so nothing else in the engine moved. Migration 0054 (custom SQL:
+  the stage check is only in 0038's SQL, not the Drizzle schema, so
+  `generate` had nothing to diff) re-creates `skill_ramp_schedules_stage_range`
+  as 0–9, shifts every skill's ramp Week N from stage N to N+1 (two-step
+  update, so the unique (skill, stage) index never trips), and inserts
+  stage 1 with stage 0's target; guarded on "no stage 9 yet", so a rerun
+  is a no-op. `APPLY_0054_TWO_NESTING_WEEKS.sql` rehearsed twice on a
+  seeded copy: PartD_Phones reads 997, 997, 920, 843, 766, 714, 663,
+  611, 560, 500. Follow-through the owner must do, in order: run the
+  APPLY, deploy, then on the Ramp page set each ramping agent's start
+  week to the Saturday of their *first nesting week* (the September
+  cohort's is 29 Aug, not 5 Sep — that mismatch was why their first
+  worked week scored at the steady target) and press **Re-apply all
+  ramps** (`reapplyAllRamps`, new: every assignment in scope through
+  `reapplyRampToStoredWeeks`, one at a time since each replay runs the
+  issue engine; audit `ramp.reapplied_all`), which corrects the stored
+  weekly AHT/CPH targets and the items derived from them. The stored
+  weekly *PAR* rating still waits for the next import, as before
+  (`reapply.ts` says why); the monthly figures compute fresh. Also
+  updated: the Ramp board's copy and "In Nesting" count (stages 0–1), the
+  case-tracker stage labels, `scripts/sql/ramp-month-targets.sql`
+  (stages 0–9, nesting 1/2 labels), the schema comment.
 - **Ramp month-target report (17 Sep, main).**
   `scripts/sql/ramp-month-targets.sql`, read-only, for the Supabase SQL
   editor: one row per ramping agent and skill for a month (edit the

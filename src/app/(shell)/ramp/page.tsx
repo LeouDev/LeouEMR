@@ -4,8 +4,9 @@ import { canManageActionItems } from "@/lib/auth/scope";
 import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getRampBoard } from "@/lib/queries/ramp";
-import { LAST_STAGE } from "@/lib/ramp/engine";
+import { LAST_STAGE, isNesting } from "@/lib/ramp/engine";
 import { ClearRampButton, RampForm } from "./ramp-form";
+import { ReapplyAllButton } from "./reapply-all-button";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
@@ -35,17 +36,17 @@ export default async function RampPage() {
   const canEdit = canManageActionItems(user);
   const board = await getRampBoard(user, todayIso());
 
-  const nesting = board.rows.filter((r) => r.stage === 0).length;
+  const nesting = board.rows.filter((r) => isNesting(r.stage)).length;
   const completingThisWeek = board.rows.filter((r) => r.stage === LAST_STAGE).length;
 
   return (
     <>
-      <PageBand title="New-Hire Ramp" subtitle="Nesting through Week 8, to the standard target" />
+      <PageBand title="New-Hire Ramp" subtitle="Two nesting weeks, then Week 1 through Week 8, to the standard target" />
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
         <div className="grid gap-4 sm:grid-cols-3">
           <StatCard label="Currently ramping" value={board.rows.length} />
-          <StatCard label="In Nesting" value={nesting} hint="Just started" />
+          <StatCard label="In Nesting" value={nesting} hint="Their first two weeks" />
           <StatCard
             label="Completing this week"
             value={completingThisWeek}
@@ -62,6 +63,7 @@ export default async function RampPage() {
                 ? "Nobody currently ramping"
                 : "Ordered by stage — Nesting first, closest to standard last"
             }
+            action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
           />
           {board.rows.length === 0 ? (
             <EmptyState
