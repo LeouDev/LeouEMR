@@ -91,17 +91,17 @@ describe("outcomeOf", () => {
 
 describe("findingRows", () => {
   it("lists every attribute in form order with its mark, compliance under its own category", () => {
-    // Documentation::1 is the first sub-attribute under "Failed to document
-    // relevant case info", which shares that item's points.
+    // Documentation::1 is the first sub-attribute under "Agent called the Phone
+    // number when multiple numbers are present", which shares that item's points.
     const rows = findingRows(form("faxqa").definition, { [itemKey("Documentation", 1)]: "fail", [itemKey("compliance", 0)]: "fail" });
-    expect(rows).toHaveLength(36 + 4);
+    expect(rows).toHaveLength(48 + 3);
     expect(rows[0]).toMatchObject({ position: 0, category: "Provider Information", attribute: "Agent selected Incorrect Provider", result: "pass" });
-    expect(rows.find((r) => r.attribute === "Agent called the phone number when multiple numbers are present")).toMatchObject({
+    expect(rows.find((r) => r.attribute === "Agent failed to document additional PA Types")).toMatchObject({
       category: "Documentation",
       result: "fail",
     });
-    expect(rows.filter((r) => r.isCompliance)).toHaveLength(4);
-    expect(rows.find((r) => r.isCompliance && r.result === "fail")).toMatchObject({ category: "Compliance", attribute: "Invalid Cancellation" });
+    expect(rows.filter((r) => r.isCompliance)).toHaveLength(3);
+    expect(rows.find((r) => r.isCompliance && r.result === "fail")).toMatchObject({ category: "Compliance", attribute: "Wrong Member Selected" });
   });
 });
 
@@ -187,10 +187,10 @@ describe("the Fax QA form", () => {
   });
 
   it("deducts an attribute's own points and no more", () => {
-    const drug = stepsOf(fax.definition).find((s) => s.name === "Drug")!;
+    const drug = stepsOf(fax.definition).find((s) => s.name === "Drug Selection and Case Details")!;
     const backdate = drug.items.find((i) => i.label.includes("Backdate"))!;
 
-    // The category is worth 27; one 3-point miss costs 3, not the category.
+    // The category is worth 25; one 3-point miss costs 3, not the category.
     expect(scoreAudit(fax.definition, { [backdate.key]: "fail" }).scorePct).toBe(97);
   });
 

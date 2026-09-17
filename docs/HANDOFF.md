@@ -138,11 +138,18 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0055_sunday_weeks` (17 Sep; every stored week key from
-30 May 2026 moves one day onto its Sunday — data only, no DDL; the owner
-runs it by the runbook `docs/sunday-week-recut.md`). Before it
-`0054_two_nesting_weeks` (the ramp has two nesting weeks then eight ramp
-weeks, stages 0–9). `RECONCILE_TRACKER.sql` exists for a tracker that
+Latest migration: `0056_panda_fax_form` (17 Sep; the Fax QA form becomes
+PANDA Fax, scored per attribute out of 100 — data only, no DDL, one paste
+of `APPLY_0056_PANDA_FAX_FORM.sql`). Before it `0055_sunday_weeks` (every
+stored week key from 30 May 2026 moves one day onto its Sunday — data
+only, no DDL; the owner runs it by the runbook
+`docs/sunday-week-recut.md`), and `0054_two_nesting_weeks` (the ramp has
+two nesting weeks then eight ramp weeks, stages 0–9).
+
+A form definition lives in `public.qa_forms`, which is what the app reads.
+`src/lib/quality/forms.ts` only seeds a fresh database, so editing it
+changes nothing in production until a migration carries the definition
+over — 0047 and 0056 are the pattern. `RECONCILE_TRACKER.sql` exists for a tracker that
 drifted once.
 
 ## Roles, access, accounts

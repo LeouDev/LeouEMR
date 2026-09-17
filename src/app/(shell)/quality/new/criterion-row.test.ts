@@ -50,17 +50,19 @@ describe("a criterion row on the Fax form's shared guideline block", () => {
 
   it("shows the parent's own points, and says what each sub-attribute shares", () => {
     expect(lines(renderStep(step))).toEqual([
-      "Appropriately Answers Guideline Questions · 5 pts",
-      "  Agent choose other/not known/not Provided when information is provided · shares 5 pts",
-      "  Agent adds add info provided · shares 5 pts",
-      "  Agent answered tried and failed · shares 5 pts",
-      "  Agent answered plan exclusion questions · shares 5 pts",
-      "  Agent answered formulary specific questions · shares 5 pts",
-      "  Agent answered quantity limits question correctly · shares 5 pts",
-      "  Agent answered diagnosis question · shares 5 pts",
-      "  Agent did not approve based on ceiling limit · shares 5 pts",
-      "  Agent updated medical records without attachment · shares 5 pts",
-      "Did correctly identify initial or reauthorization? · 5 pts",
+      "Agent choose other/not known/not Provided when information is provided · 5 pts",
+      "  Agent adds information provided · shares 5 pts",
+      "  Agent entered IntialvsReauthorization · shares 5 pts",
+      "  Agent answered Plan Exclusion questions · shares 5 pts",
+      "  Agent answered Formulary Speci · shares 5 pts",
+      "  Agent answered Quantity limits question correctly · shares 5 pts",
+      "  Agent answered Diagnosis Question · shares 5 pts",
+      "  Agent failed to make OBC to MDO · shares 5 pts",
+      "  Agent failed to do corret calculation · shares 5 pts",
+      "  Agent failed to enter appropriate edits · shares 5 pts",
+      "  Agent allows the System driven decision · shares 5 pts",
+      "  Agent does not manipulate answers to force pend the case without specific direction · shares 5 pts",
+      "Tried and Failed medications · 5 pts",
     ]);
   });
 
@@ -70,18 +72,20 @@ describe("a criterion row on the Fax form's shared guideline block", () => {
 
   it("sets the sub-attributes in and leaves the two scored attributes flush", () => {
     const indented = lines(renderStep(step)).filter((line) => line.startsWith("  "));
-    expect(indented).toHaveLength(9);
+    expect(indented).toHaveLength(11);
   });
 });
 
 describe("a criterion row elsewhere on the form", () => {
   it("shows an ordinary attribute's own points, with no shared note", () => {
-    const drug = stepsOf(fax.definition).find((s) => s.name === "Drug")!;
-    const rendered = lines(renderStep(drug));
+    const drug = stepsOf(fax.definition).find((s) => s.name === "Drug Selection and Case Details")!;
+    const flush = lines(renderStep(drug)).filter((line) => !line.startsWith("  "));
 
-    expect(rendered[0]).toBe("Agent selected Correct Drug · 4 pts");
-    expect(rendered.some((line) => line.includes("shares"))).toBe(false);
-    expect(rendered.some((line) => line.startsWith("  "))).toBe(false);
+    expect(flush[0]).toBe("Agent selected Correct Drug · 4 pts");
+    // A scored attribute carries its own points and says nothing about sharing;
+    // only the rows set in beneath one do.
+    expect(flush.some((line) => line.includes("shares"))).toBe(false);
+    expect(flush).toEqual(flush.filter((line) => / · \d+ pts$/.test(line)));
   });
 
   it("warns on a failed compliance item, which zeroes the audit", () => {
