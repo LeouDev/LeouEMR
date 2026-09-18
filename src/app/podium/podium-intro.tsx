@@ -20,7 +20,7 @@ import {
   RISE_DELAY,
   RISE_SECONDS,
 } from "./cues";
-import { placeholderFace } from "./faces";
+import { PLACEHOLDER_FACE } from "./faces";
 import { Sky } from "./sky";
 
 /**
@@ -461,6 +461,9 @@ function Legs({ bodyW, top, legsH, bootsH }: { bodyW: number; top: number; legsH
  * profile-panel.tsx), and a podium of grey faces inside an orange ring was
  * the wrong place to start applying the rule instead.
  *
+ * The stand-in is the same drawing for everybody, and deliberately nobody
+ * in particular — see ./faces.ts.
+ *
  * The alt text is empty on purpose. The name is on a tag directly above the
  * picture, so naming the person again here would read them out twice.
  */
@@ -468,7 +471,7 @@ function PodiumFace({ person }: { person: PodiumPerson }) {
   const src =
     person.photoId && person.photoVersion !== null
       ? `/podium/avatar/${person.photoId}?v=${person.photoVersion}`
-      : placeholderFace(person.photoId ?? person.name);
+      : PLACEHOLDER_FACE;
 
   return (
     // A route handler's response or a file cropped square ahead of time —
