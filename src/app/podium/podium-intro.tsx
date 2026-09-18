@@ -20,6 +20,7 @@ import {
   RISE_DELAY,
   RISE_SECONDS,
 } from "./cues";
+import { placeholderFace } from "./faces";
 import { Sky } from "./sky";
 
 /**
@@ -448,71 +449,33 @@ function Legs({ bodyW, top, legsH, bootsH }: { bodyW: number; top: number; legsH
 
 /**
  * The face in the helmet ring: this person's own profile picture where they
- * have uploaded one, and the illustrated fallback where they have not.
+ * have uploaded one, and an illustrated stand-in where they have not.
  *
  * `photoVersion` decides, and it comes off the same cached computation that
  * put them on the podium — so a person without a picture never costs a
  * request that could only 404, and a person with one gets a URL that
- * changes when they replace it. Grayscale is not applied here: it is the
- * theme's own rule for every photograph and avatar in the app
- * (globals.css), and the podium is not the place to start making
- * exceptions to it.
+ * changes when they replace it.
+ *
+ * Both keep their colour. A profile picture is already the app's standing
+ * exception to "photography and avatars are grayscale" (see
+ * profile-panel.tsx), and a podium of grey faces inside an orange ring was
+ * the wrong place to start applying the rule instead.
  *
  * The alt text is empty on purpose. The name is on a tag directly above the
  * picture, so naming the person again here would read them out twice.
  */
 function PodiumFace({ person }: { person: PodiumPerson }) {
-  if (person.photoId && person.photoVersion !== null) {
-    return (
-      // A route handler's response, not a static asset next/image could
-      // optimise, and it is already sized to the frame it fills.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={`/podium/avatar/${person.photoId}?v=${person.photoVersion}`}
-        alt=""
-        className="h-full w-full object-cover"
-      />
-    );
-  }
-  return <HelmetAvatar place={person.place} />;
-}
+  const src =
+    person.photoId && person.photoVersion !== null
+      ? `/podium/avatar/${person.photoId}?v=${person.photoVersion}`
+      : placeholderFace(person.photoId ?? person.name);
 
-/**
- * The stand-in for someone who has not uploaded a profile picture: an
- * illustrated helmet in the app's own flat style.
- *
- * One drawing for everybody, with only the starfield behind the visor
- * differing by place so three side by side do not look stamped from one
- * plate. Deliberately not picked per person: the prototype chose between
- * two illustrations by a `gender` field, and this app holds no such field —
- * guessing one from somebody's name to decide which face to draw them is
- * not a thing to build.
- */
-function HelmetAvatar({ place }: { place: number }) {
-  const stars: Array<[number, number, number]> = [
-    [26, 30, 2],
-    [70, 22, 1.4],
-    [80, 58, 2.2],
-    [34, 70, 1.6],
-    [56, 44, 1.2],
-  ];
-  const shift = (place - 1) * 9;
   return (
-    <svg viewBox="0 0 100 100" className="h-full w-full" aria-hidden preserveAspectRatio="xMidYMid slice">
-      <rect width="100" height="100" fill="var(--navy-700)" />
-      {/* The visor: a dark curved pane with the sky caught in it. */}
-      <circle cx="50" cy="52" r="34" fill="#1a3c6b" />
-      {stars.map(([x, y, r], i) => (
-        <circle key={i} cx={((x + shift) % 70) + 18} cy={y} r={r} fill="var(--bg)" opacity={0.75} />
-      ))}
-      {/* The reflection sweep, and the helmet shell around it. */}
-      <path d="M30 40 q14 -14 34 -8 q-18 2 -28 16 Z" fill="var(--bg)" opacity="0.5" />
-      <circle cx="50" cy="52" r="41" fill="none" stroke="#eef0f3" strokeWidth="9" />
-      <circle cx="50" cy="52" r="34" fill="none" stroke="var(--navy-900)" strokeWidth="2" />
-      <rect x="6" y="46" width="9" height="16" rx="1" fill="#c9ced6" />
-      <rect x="85" y="46" width="9" height="16" rx="1" fill="#c9ced6" />
-      <rect x="38" y="88" width="24" height="6" fill="var(--orange-500)" />
-    </svg>
+    // A route handler's response or a file cropped square ahead of time —
+    // neither something next/image could usefully optimise, and both
+    // already sized to the frame they fill.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt="" data-keep-color className="h-full w-full object-cover" />
   );
 }
 

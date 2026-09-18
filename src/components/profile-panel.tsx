@@ -52,7 +52,7 @@ async function squareDataUrl(file: File): Promise<string> {
   }
 }
 
-/** The picture, or the initials while there is none. In colour: the one image in the app that is (data-keep-color). */
+/** The picture, or the initials while there is none. In colour (data-keep-color), as profile pictures are wherever they appear — here and on the podium. */
 function Avatar({ name, version, className }: { name: string; version: number | null; className: string }) {
   if (version !== null) {
     // A plain img on purpose: the picture is a private 256px route of the
