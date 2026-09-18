@@ -185,9 +185,30 @@ describe("computeScorecard — missing figures", () => {
       pkt: null,
       lhUtilization: null,
     });
-    // Counts and defaults still rate; only the measured rows are gone.
+    // The count and default rows still rate on their own terms.
     expect(card.rows.filter((r) => r.rate !== null).map((r) => r.key)).toEqual(["STANDARD_ERRORS", "IRE", "PKT", "LH_UTILIZATION"]);
-    expect(card.finalScore).toBeCloseTo(5, 9);
+    // But with no productive hours there is no card for them to be a
+    // quarter of, and this is what the test has always been called. It
+    // read 5.00 until Sep 2026 — a perfect score over IRE, PKT and LH
+    // Utilization standing in at their defaults — which put people who had
+    // worked no productive hours at the top of the stack rank.
+    expect(card.finalScore).toBeNull();
+    expect(card.meetsMinimum).toBeNull();
+  });
+
+  it("still scores a partial card, so long as somebody actually worked", () => {
+    // The guard above is about hours, not about data being thin: a month
+    // with hours behind it is rescaled over what was measured, exactly as
+    // before.
+    const card = computeScorecard({
+      ...AUGUST,
+      skills: [skill({ code: "edits", name: "EDITS", hours: 40, actual: 8 * 1.6663, target: 8, thresholds: EDITS })],
+      ancillaryQuality: null,
+      phoneQuality: null,
+      attendance: null,
+    });
+
+    expect(card.finalScore).not.toBeNull();
     expect(card.rescaled).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meanPresent, rank, rankSupervisors, type RankRow } from "./stack-rank";
+import { meanPresent, rank, rankScored, rankSupervisors, type RankRow } from "./stack-rank";
 
 type Seed = { name: string; score: number | null; productionRate?: number | null; mbo?: number | null };
 
@@ -133,5 +133,39 @@ describe("rankSupervisors", () => {
       new Map([team("Mixed", [{ name: "a", score: 3, productionRate: 3.4 }, { name: "b", score: null }])]),
     );
     expect(ranked[0]).toMatchObject({ teamSize: 2, scored: 1, productionRate: 3.4 });
+  });
+});
+
+describe("rankScored", () => {
+  it("leaves the unscored out of the ranking rather than at the bottom of it", () => {
+    const rows = rankScored(people([
+      { name: "Scored high", score: 4.6 },
+      { name: "No hours this month", score: null },
+      { name: "Scored low", score: 3.1 },
+    ]));
+
+    expect(rows.map((r) => r.name)).toEqual(["Scored high", "Scored low"]);
+  });
+
+  it("numbers the places over the people actually in it", () => {
+    // Not "1, 3" with a gap where the unscored person was taken out.
+    const rows = rankScored(people([
+      { name: "A", score: 4.6 },
+      { name: "Unmeasured", score: null },
+      { name: "B", score: 3.1 },
+    ]));
+
+    expect(rows.map((r) => r.rank)).toEqual([1, 2]);
+  });
+
+  it("gives back nothing for a month nobody was measured in", () => {
+    // Which is what the page's own "0 of 410 scored" line is there to say.
+    expect(rankScored(people([{ name: "A", score: null }, { name: "B", score: null }]))).toEqual([]);
+  });
+
+  it("still ranks a low score, which is a result rather than an absence", () => {
+    const rows = rankScored(people([{ name: "Struggling", score: 1.2 }]));
+
+    expect(rows.map((r) => r.name)).toEqual(["Struggling"]);
   });
 });

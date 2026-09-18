@@ -81,12 +81,14 @@ export default async function StackRankPage({
 
   const ranks = await getStackRanks(user, employee, period);
 
-  // How many of the ranking actually have a score this month. A single
-  // person's data can extend the fact range — so the newest month may be one
-  // almost nobody was measured in, and a table of 452 dashes sorted
-  // alphabetically looks broken rather than empty.
-  const scored = ranks.org.filter((r) => r.score !== null).length;
-  const thinlyScored = ranks.org.length > 0 && scored <= Math.max(2, ranks.org.length * 0.05);
+  // The ranking now holds only the people who have a score, so its own
+  // length is that count, and `rosterSize` is how many counted for the month
+  // at all. A single person's data can extend the fact range — so the newest
+  // month may be one almost nobody was measured in, and a board of three out
+  // of four hundred is worth saying out loud rather than presenting as a
+  // ranking.
+  const scored = ranks.org.length;
+  const thinlyScored = ranks.rosterSize > 0 && scored <= Math.max(2, ranks.rosterSize * 0.05);
   const mine = employee ? ranks.org.find((r) => r.employeeId === employee.id) : undefined;
   const myTeamRank = employee ? ranks.team.find((r) => r.employeeId === employee.id) : undefined;
 
@@ -129,7 +131,7 @@ export default async function StackRankPage({
           />
           <StatCard
             label="Rank in organization"
-            value={mine ? `${mine.rank} of ${ranks.org.length}` : "—"}
+            value={mine ? `${mine.rank} of ${scored}` : "—"}
             hint="Across every site"
           />
           <StatCard
@@ -155,7 +157,7 @@ export default async function StackRankPage({
             title="My team"
             subtitle={
               ranks.teamLabel
-                ? `${ranks.team.length} people under ${ranks.teamLabel}`
+                ? `${ranks.team.length} of ${ranks.teamSize} scored under ${ranks.teamLabel}`
                 : "No supervisor recorded"
             }
           />
@@ -171,7 +173,7 @@ export default async function StackRankPage({
           <Card>
             <div className="border-l-8 border-warn px-6 py-4">
               <p className="text-sm font-bold text-ink">
-                Only {scored} of {ranks.org.length} people have a score for {period.label}
+                Only {scored} of {ranks.rosterSize} people have a score for {period.label}
               </p>
               <p className="mt-1 text-sm text-muted">
                 Ranking a month almost nobody was measured in is not meaningful — the rows below
@@ -185,22 +187,22 @@ export default async function StackRankPage({
           <CardHeader
             title="Whole organization"
             subtitle={
-              showAll || orgShown.length === ranks.org.length
+              showAll || orgShown.length === scored
                 ? mine && mine.score !== null
-                  ? `${scored} of ${ranks.org.length} scored · you are ${mine.rank}, scroll to find yourself`
-                  : `${scored} of ${ranks.org.length} people scored this period`
+                  ? `${scored} of ${ranks.rosterSize} scored · you are ${mine.rank}, scroll to find yourself`
+                  : `${scored} of ${ranks.rosterSize} people scored this period`
                 : mine
-                  ? `Top ${ORG_ROWS_SHOWN} of ${ranks.org.length}, and the rows around you at ${mine.rank} · ${scored} scored`
-                  : `Top ${ORG_ROWS_SHOWN} of ${ranks.org.length} · ${scored} scored this period`
+                  ? `Top ${ORG_ROWS_SHOWN} of ${scored} scored, and the rows around you at ${mine.rank}`
+                  : `Top ${ORG_ROWS_SHOWN} of ${scored} scored · ${ranks.rosterSize} people this period`
             }
             action={
-              !showAll && orgShown.length < ranks.org.length ? (
+              !showAll && orgShown.length < scored ? (
                 <NavLink
                   href={showAllHref}
                   prefetch={false}
                   className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
                 >
-                  Show all {ranks.org.length}
+                  Show all {scored}
                 </NavLink>
               ) : undefined
             }
