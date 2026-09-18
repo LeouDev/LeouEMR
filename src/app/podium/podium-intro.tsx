@@ -297,7 +297,7 @@ function Pedestal({ person, kind }: { person: PodiumPerson; kind: "agents" | "su
       <div className="pod-timed relative" style={{ ...pop, width: u(photo * 1.3), height: u(photo * 1.94) }}>
         {place === 1 && <Confetti photo={photo} />}
         {place === 1 && <Mascot photo={photo} />}
-        <Figure photo={photo} place={place} ring={ring} />
+        <Figure photo={photo} person={person} ring={ring} />
       </div>
 
       {/* The pedestal itself: open at the bottom, so it reads as standing on
@@ -342,7 +342,8 @@ function Pedestal({ person, kind }: { person: PodiumPerson; kind: "agents" | "su
  * so the three on the podium and the one hovering beside first place read
  * as the same suit.
  */
-function Figure({ photo, place, ring }: { photo: number; place: number; ring: string }) {
+function Figure({ photo, person, ring }: { photo: number; person: PodiumPerson; ring: string }) {
+  const place = person.place;
   const bodyW = photo * 0.82;
   const torsoH = photo * 0.5;
   const legsH = photo * 0.4;
@@ -391,7 +392,7 @@ function Figure({ photo, place, ring }: { photo: number; place: number; ring: st
             boxShadow: `0 0 0 ${u(6)} var(--navy-900)`,
           }}
         >
-          <HelmetAvatar place={place} />
+          <PodiumFace person={person} />
         </div>
         <div
           className="absolute flex items-center justify-center font-extrabold text-cream"
@@ -446,16 +447,46 @@ function Legs({ bodyW, top, legsH, bootsH }: { bodyW: number; top: number; legsH
 }
 
 /**
- * The stand-in for a profile photo: an illustrated helmet, in the app's own
- * flat style.
+ * The face in the helmet ring: this person's own profile picture where they
+ * have uploaded one, and the illustrated fallback where they have not.
  *
- * Nobody's real picture goes on this podium. The avatars the app holds are
- * served to their owner alone (see the profile avatar route), and putting
- * a colleague's face on a screen every person in the company sees at
- * sign-in is a decision for the business rather than one to make by
- * wiring up a query. Until it is made, everyone gets the same helmet, with
- * only the starfield behind the visor differing by place so three side by
- * side do not look stamped from one plate.
+ * `photoVersion` decides, and it comes off the same cached computation that
+ * put them on the podium — so a person without a picture never costs a
+ * request that could only 404, and a person with one gets a URL that
+ * changes when they replace it. Grayscale is not applied here: it is the
+ * theme's own rule for every photograph and avatar in the app
+ * (globals.css), and the podium is not the place to start making
+ * exceptions to it.
+ *
+ * The alt text is empty on purpose. The name is on a tag directly above the
+ * picture, so naming the person again here would read them out twice.
+ */
+function PodiumFace({ person }: { person: PodiumPerson }) {
+  if (person.photoId && person.photoVersion !== null) {
+    return (
+      // A route handler's response, not a static asset next/image could
+      // optimise, and it is already sized to the frame it fills.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={`/podium/avatar/${person.photoId}?v=${person.photoVersion}`}
+        alt=""
+        className="h-full w-full object-cover"
+      />
+    );
+  }
+  return <HelmetAvatar place={person.place} />;
+}
+
+/**
+ * The stand-in for someone who has not uploaded a profile picture: an
+ * illustrated helmet in the app's own flat style.
+ *
+ * One drawing for everybody, with only the starfield behind the visor
+ * differing by place so three side by side do not look stamped from one
+ * plate. Deliberately not picked per person: the prototype chose between
+ * two illustrations by a `gender` field, and this app holds no such field —
+ * guessing one from somebody's name to decide which face to draw them is
+ * not a thing to build.
  */
 function HelmetAvatar({ place }: { place: number }) {
   const stars: Array<[number, number, number]> = [
