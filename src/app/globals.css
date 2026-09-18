@@ -508,3 +508,129 @@ img:not([data-keep-color]) {
      whole overlay would sit static and blank for the send's entire
      duration with nothing to show it is doing anything. */
 }
+
+/**
+ * The top-performers podium shown after sign-in
+ * (src/app/podium/podium-intro.tsx).
+ *
+ * Two kinds of motion live here and they are kept apart on purpose. The
+ * choreographed ones (.pod-timed) each carry their own start as `--d` and
+ * fill both ways, so "skip" is one rule rather than a second timeline:
+ * shifting every delay back past its own duration lands each element on
+ * its end state at once. The ambient ones (.pod-loop) run for ever and are
+ * unaffected by that shift — a negative delay only changes their phase,
+ * which is exactly right for a starfield.
+ *
+ * Delays arrive as a custom property rather than as an inline
+ * `animation-delay`, because the reduced-motion block at the top of this
+ * file kills anything whose style attribute mentions "animation" — an
+ * inline delay would take the whole podium down with it instead of the
+ * handling this file gives it below.
+ */
+.pod-timed {
+  animation-name: var(--anim);
+  animation-duration: var(--dur, 1s);
+  animation-timing-function: var(--ease, ease-out);
+  animation-fill-mode: both;
+  animation-delay: var(--d, 0s);
+}
+[data-podium-held="1"] .pod-timed {
+  animation-delay: calc(var(--d, 0s) - 30s);
+}
+
+@keyframes pod-rise {
+  from { opacity: 0; transform: translateY(var(--rise, 100%)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pod-pop {
+  from { opacity: 0; transform: translateY(24px) scale(0.7); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pod-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pod-sink-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pod-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes pod-drop-in {
+  from { opacity: 0; transform: translateY(-14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* The "Calculating…" line: in over the first half second, out again just
+   before the pedestals start to rise. */
+@keyframes pod-caption {
+  0% { opacity: 0; }
+  21%, 81% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes pod-confetti {
+  from { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  to { transform: translate(var(--tx), var(--ty)) rotate(260deg); opacity: 0; }
+}
+/* The mascot's arrival: it comes in from off the top-left corner, so the
+   offsets are negative and it animates back to where it belongs. */
+@keyframes pod-fly-in {
+  from { opacity: 0; transform: translate(var(--fx), var(--fy)); }
+  to { opacity: 1; transform: translate(0, 0); }
+}
+
+.pod-loop-twinkle { animation: pod-twinkle var(--dur, 3s) ease-in-out infinite; animation-delay: var(--d, 0s); }
+.pod-loop-drift { animation: pod-drift var(--dur, 14s) ease-in-out infinite; animation-delay: var(--d, 0s); }
+.pod-loop-spin { animation: pod-spin var(--dur, 60s) linear infinite; }
+.pod-loop-shoot { animation: pod-shoot var(--dur, 5s) linear infinite; animation-delay: var(--d, 0s); }
+.pod-loop-bob { animation: pod-bob 2.6s ease-in-out infinite; }
+
+@keyframes pod-twinkle {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@keyframes pod-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-14px, 10px); }
+}
+@keyframes pod-spin {
+  to { transform: rotate(360deg); }
+}
+/* One lane crossed left to right, tail and head together. The streak is
+   drawn at the origin and the whole group is carried across, so the
+   gradient never has to be recomputed. */
+@keyframes pod-shoot {
+  from { transform: translateX(-340px); opacity: 0; }
+  6%, 94% { opacity: 1; }
+  to { transform: translateX(2260px); opacity: 0; }
+}
+@keyframes pod-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/**
+ * Reduced motion: the podium goes straight to its resting frame. The
+ * choreography is celebratory rather than informative — every name, score
+ * and place is in the end state — so removing it costs nothing, where
+ * freezing it mid-rise would leave pedestals sunk through the floor. The
+ * ambient loops stop outright.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .pod-timed {
+    animation-delay: calc(var(--d, 0s) - 30s);
+  }
+  .pod-loop-twinkle,
+  .pod-loop-drift,
+  .pod-loop-spin,
+  .pod-loop-bob {
+    animation: none;
+  }
+  /* The streaks go entirely, rather than stopping. A shooting star with no
+     animation is not a still star — it parks at the start of its lane and
+     reads as a row of stray dots down the left edge of the sky. */
+  .pod-loop-shoot {
+    display: none;
+  }
+}

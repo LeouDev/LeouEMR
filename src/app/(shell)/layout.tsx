@@ -7,6 +7,7 @@ import { SIDEBAR_COOKIE } from "@/components/sidebar-shell";
 import Link from "next/link";
 import { getCurrentUser, sessionAssurance } from "@/lib/auth/session";
 import { graceUntilSetting, mfaDecision, todayUtc } from "@/lib/auth/mfa";
+import { PODIUM_COOKIE, podiumDueFor } from "@/lib/podium/gate";
 import { surveyDueFor } from "@/lib/survey/gate";
 
 /**
@@ -41,9 +42,19 @@ export default async function ShellLayout({ children }: { children: React.ReactN
   // whole app shut — see the note there.
   if (await surveyDueFor(user)) redirect("/survey");
 
+  const jar = await cookies();
+
+  // The top-performers podium, once per browser session and after the
+  // survey — the survey is a gate that has to be cleared, this is a
+  // celebration on the way past it, so it cannot come first. Decided from
+  // a cookie alone, with no database read on the critical path of a sign
+  // in; the podium page itself works out whether there is a podium worth
+  // showing, and the cookie is already set by then (see the middleware).
+  if (podiumDueFor(user, jar.get(PODIUM_COOKIE)?.value)) redirect("/podium");
+
   // A folded rail is remembered in a cookie so it renders folded from the
   // server, rather than expanded and then snapping shut once hydrated.
-  const sidebarOpen = (await cookies()).get(SIDEBAR_COOKIE)?.value !== "collapsed";
+  const sidebarOpen = jar.get(SIDEBAR_COOKIE)?.value !== "collapsed";
 
   return (
     <NavigationProgressProvider>

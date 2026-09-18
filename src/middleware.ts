@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { graceUntilSetting, mfaDecision, mfaExempt, todayUtc } from "@/lib/auth/mfa";
 import { accessTokenFromCookies, decodeJwtPayload, isPrefetchRequest } from "@/lib/auth/session-cookie";
+import { PODIUM_COOKIE } from "@/lib/podium/gate";
 
 const PUBLIC_ROUTES = ["/login", "/auth"];
 
@@ -124,7 +125,35 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request });
   for (const { name, value, options } of cookiesToApply) response.cookies.set(name, value, options);
+  markPodiumSeen(response, pathname, userId, prefetch);
   return response;
+}
+
+/**
+ * Marks the podium seen for this browser session, here rather than on the
+ * page that renders it.
+ *
+ * A Server Component cannot set a cookie, so the podium page itself has no
+ * way to record that it was reached. Left to the page, every route that
+ * could end the visit without a click — no scores for the month, a failed
+ * render, the person typing a URL — would leave the shell's gate still
+ * armed, and the shell would send them straight back. That is a loop with
+ * nothing on the other side of it, on the first page load of four hundred
+ * people's day. Marking it on the request that fetches the podium makes
+ * the bounce happen exactly once whatever the page then does.
+ *
+ * Skipped for a prefetch: Next fetches every <Link> in view, and a
+ * prefetched podium would burn the one showing without anybody seeing it.
+ */
+function markPodiumSeen(response: NextResponse, pathname: string, userId: string | null, prefetch: boolean): void {
+  if (!userId || prefetch || pathname !== "/podium") return;
+  response.cookies.set(PODIUM_COOKIE, userId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    // No maxAge on purpose — see PODIUM_COOKIE.
+  });
 }
 
 /**
