@@ -303,6 +303,9 @@ export interface ActionItemListRow {
   employeeName: string;
   /** The team leader as the roster records them — the support queue groups by it. */
   supervisorName: string | null;
+  /** The manager above that team leader, and the site, for the roster's grouping. */
+  managerName: string | null;
+  site: string | null;
   kpiName: string;
   kpiCode: string;
   hasRca: boolean;
@@ -397,6 +400,8 @@ async function listActionItems(
       employeeId: employees.id,
       employeeName: employees.name,
       supervisorName: employees.supervisorName,
+      managerName: employees.managerName,
+      site: employees.site,
       kpiName: kpiDefinitions.name,
       kpiCode: kpiDefinitions.code,
       rcaId: rcaEntries.id,
@@ -428,6 +433,8 @@ async function listActionItems(
     employeeId: row.employeeId,
     employeeName: row.employeeName,
     supervisorName: row.supervisorName,
+    managerName: row.managerName,
+    site: row.site,
     kpiName: row.kpiName,
     kpiCode: row.kpiCode,
     hasRca: row.rcaId !== null,

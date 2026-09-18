@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assess, buildDevelopmentBoard, supportRequested } from "./development";
+import {
+  NO_MANAGER,
+  NO_TEAM_LEAD,
+  assess,
+  buildDevelopmentBoard,
+  groupIntoRoster,
+  supportRequested,
+} from "./development";
 import type { ActionItemListRow } from "./performance";
 
 /**
@@ -19,6 +26,8 @@ function item(overrides: Partial<ActionItemListRow>): ActionItemListRow {
     employeeId: "e1",
     employeeName: "Someone",
     supervisorName: "Lead A",
+    managerName: "Manager One",
+    site: "CEBU",
     kpiName: "Quality",
     kpiCode: "QUALITY",
     hasRca: true,
@@ -145,5 +154,113 @@ describe("buildDevelopmentBoard", () => {
   it("leaves completed items off the board", () => {
     const board = buildDevelopmentBoard(items, "leader");
     expect(board.rows.find((r) => r.employeeName === "Cal")).toBeUndefined();
+  });
+});
+
+describe("groupIntoRoster", () => {
+  const board = (items: ActionItemListRow[]) => buildDevelopmentBoard(items, "leader").rows;
+
+  it("nests agents under their team leader, and leaders under their manager", () => {
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", employeeName: "Ana", supervisorName: "Lead A", managerName: "Mgr One" }),
+        item({ employeeId: "e2", employeeName: "Ben", supervisorName: "Lead A", managerName: "Mgr One" }),
+        item({ employeeId: "e3", employeeName: "Cara", supervisorName: "Lead B", managerName: "Mgr Two" }),
+      ]),
+    );
+
+    expect(roster.map((m) => m.name).sort()).toEqual(["Mgr One", "Mgr Two"]);
+    const one = roster.find((m) => m.name === "Mgr One")!;
+    expect(one.teamLeadCount).toBe(1);
+    expect(one.headcount).toBe(2);
+    expect(one.teamLeads[0].agents.map((a) => a.employeeName)).toEqual(["Ana", "Ben"]);
+  });
+
+  it("keeps somebody the roster never placed, under a named bucket", () => {
+    // A board that exists to make sure nobody goes unnoticed must not drop
+    // the person whose supervisor the import forgot to record.
+    const roster = groupIntoRoster(
+      board([item({ employeeId: "e9", employeeName: "Unplaced", supervisorName: null, managerName: null })]),
+    );
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].name).toBe(NO_MANAGER);
+    expect(roster[0].teamLeads[0].name).toBe(NO_TEAM_LEAD);
+    expect(roster[0].teamLeads[0].agents[0].employeeName).toBe("Unplaced");
+  });
+
+  it("rolls what a leader owes up across their whole team", () => {
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", supervisorName: "Lead A", hasRca: false, hasActionPlan: false }),
+        item({ employeeId: "e2", supervisorName: "Lead A", hasRca: true, hasActionPlan: false }),
+        item({ employeeId: "e3", supervisorName: "Lead A", status: "AWAITING_AGENT_ACKNOWLEDGEMENT" }),
+        item({ employeeId: "e4", supervisorName: "Lead A", trainingRequired: true, coachingRequired: true }),
+      ]),
+    );
+
+    expect(roster[0].teamLeads[0]).toMatchObject({
+      headcount: 4,
+      openItems: 4,
+      missingRca: 1,
+      missingPlan: 1,
+      awaitingAcknowledgement: 1,
+      needsTraining: 1,
+      needsCoaching: 1,
+    });
+  });
+
+  it("counts people nearing close, not items", () => {
+    // The chip reads "1 nearing close" about one agent, even when two of
+    // their items are both nearly there.
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", supervisorName: "Lead A", kpiName: "Quality", consecutivePassingWeeks: 3 }),
+        item({ employeeId: "e1", supervisorName: "Lead A", kpiName: "AHT", actionItemId: "a2", consecutivePassingWeeks: 3 }),
+        item({ employeeId: "e2", supervisorName: "Lead A", consecutivePassingWeeks: 0 }),
+      ]),
+    );
+
+    expect(roster[0].teamLeads[0].nearingClose).toBe(1);
+  });
+
+  it("names the KPI most of a team's items are about", () => {
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", supervisorName: "Lead A", kpiName: "Quality" }),
+        item({ employeeId: "e2", supervisorName: "Lead A", kpiName: "Quality" }),
+        item({ employeeId: "e3", supervisorName: "Lead A", kpiName: "AHT" }),
+      ]),
+    );
+
+    expect(roster[0].teamLeads[0].topKpi).toEqual({ name: "Quality", count: 2 });
+  });
+
+  it("puts the leader who owes the most root causes at the top", () => {
+    // The roster opens on the work, not on the alphabet.
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", supervisorName: "Zeta", hasRca: false, hasActionPlan: false }),
+        item({ employeeId: "e2", supervisorName: "Alpha" }),
+      ]),
+    );
+
+    expect(roster[0].teamLeads.map((l) => l.name)).toEqual(["Zeta", "Alpha"]);
+  });
+
+  it("names a team by the site most of it is at, rather than whoever sorts first", () => {
+    const roster = groupIntoRoster(
+      board([
+        item({ employeeId: "e1", supervisorName: "Lead A", site: "MANILA" }),
+        item({ employeeId: "e2", supervisorName: "Lead A", site: "CEBU" }),
+        item({ employeeId: "e3", supervisorName: "Lead A", site: "CEBU" }),
+      ]),
+    );
+
+    expect(roster[0].teamLeads[0].site).toBe("CEBU");
+  });
+
+  it("gives back nothing for a board with nobody on it", () => {
+    expect(groupIntoRoster([])).toEqual([]);
   });
 });
