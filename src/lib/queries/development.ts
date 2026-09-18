@@ -1,10 +1,13 @@
+import { SUSTAINED_WEEKS } from "@/lib/development/sustained";
 import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
 import { OPEN_STATUSES, getActionItems } from "./performance";
 import type { ActionItemListRow } from "./performance";
 
-/** Weeks of sustained passing required to close an issue (spec section 26). */
-export const SUSTAINED_WEEKS = 4;
+// Re-exported from its own module so a client component can have the
+// number without dragging this one (and the database) into the browser —
+// see lib/development/sustained.ts.
+export { SUSTAINED_WEEKS } from "@/lib/development/sustained";
 
 /**
  * Who the board is for. A leader reads what they owe, an agent reads whose
@@ -23,6 +26,9 @@ export interface DevelopmentRow {
   employeeName: string;
   /** The team leader as the roster records them; the support queue groups by it. */
   supervisorName: string | null;
+  /** The manager above that leader, and the site, for the admin/manager roster's grouping. */
+  managerName: string | null;
+  site: string | null;
   items: ActionItemListRow[];
   openItems: number;
   /** Items with no root cause recorded yet — the first thing a supervisor owes. */
@@ -44,6 +50,143 @@ export interface DevelopmentRow {
   nextStep: string;
   /** Lower sorts first on a leader's board: the more blocked on the supervisor, the higher up. */
   urgency: number;
+}
+
+/**
+ * A team leader's own row on the roster: their agents, and what the leader
+ * owes across them.
+ */
+export interface RosterTeamLead {
+  /** The leader's name, which is also what the board groups by. */
+  name: string;
+  site: string | null;
+  headcount: number;
+  openItems: number;
+  missingRca: number;
+  missingPlan: number;
+  awaitingAcknowledgement: number;
+  needsTraining: number;
+  needsCoaching: number;
+  /** People, not items — the chip reads "3 nearing close" about three agents. */
+  nearingClose: number;
+  /** The KPI most of this team's items are about, with how many. */
+  topKpi: { name: string; count: number } | null;
+  agents: DevelopmentRow[];
+}
+
+export interface RosterManager {
+  name: string;
+  teamLeadCount: number;
+  headcount: number;
+  teamLeads: RosterTeamLead[];
+}
+
+/** Where somebody lands when the roster has not recorded who they report to. */
+export const NO_TEAM_LEAD = "No team leader on record";
+export const NO_MANAGER = "No manager on record";
+
+/** Most owed first: the leader with unwritten root causes before one only monitoring. */
+function byMostOwed(a: RosterTeamLead, b: RosterTeamLead): number {
+  return (
+    b.missingRca - a.missingRca ||
+    b.missingPlan - a.missingPlan ||
+    b.awaitingAcknowledgement - a.awaitingAcknowledgement ||
+    b.openItems - a.openItems ||
+    a.name.localeCompare(b.name)
+  );
+}
+
+/**
+ * The KPI this team's items are mostly about.
+ *
+ * Counted over items rather than people, so someone with the same KPI open
+ * twice counts twice — that is what makes it the team's theme. Ties break
+ * alphabetically so the label does not change between two equal KPIs from
+ * one page load to the next.
+ */
+function topKpiOf(agents: DevelopmentRow[]): { name: string; count: number } | null {
+  const counts = new Map<string, number>();
+  for (const agent of agents) {
+    for (const item of agent.items) counts.set(item.kpiName, (counts.get(item.kpiName) ?? 0) + 1);
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return ranked.length ? { name: ranked[0][0], count: ranked[0][1] } : null;
+}
+
+/**
+ * Turns the flat board into the roster an admin or a manager reads:
+ * manager, then team leader, then agent.
+ *
+ * A leader with a hundred and forty people in development cannot read them
+ * as one list of names — the flat table is the right shape for a supervisor
+ * with eight, and the wrong one for a span. Grouping puts the question
+ * "which of my team leaders is behind on this" in front of the answer.
+ *
+ * Nobody is dropped for having a gap in the roster. An agent whose
+ * supervisor or manager the import never recorded is grouped under a named
+ * bucket instead of vanishing from a board that exists to make sure nobody
+ * goes unnoticed — the same reason the team roster keeps its unmeasured
+ * rows.
+ *
+ * Agents keep the order the board gave them, which is already "most blocked
+ * first". Team leaders and managers are sorted by what they owe, so the
+ * roster opens on the work rather than on the alphabet.
+ */
+export function groupIntoRoster(rows: DevelopmentRow[]): RosterManager[] {
+  const byLead = new Map<string, DevelopmentRow[]>();
+  for (const row of rows) {
+    const key = row.supervisorName ?? NO_TEAM_LEAD;
+    byLead.set(key, [...(byLead.get(key) ?? []), row]);
+  }
+
+  const leads: Array<RosterTeamLead & { manager: string }> = [...byLead.entries()].map(([name, agents]) => {
+    const sum = (pick: (row: DevelopmentRow) => number) => agents.reduce((n, r) => n + pick(r), 0);
+    return {
+      // A team can straddle sites and managers in the raw data; the one most
+      // of its people carry is the one the row names, the same rule the team
+      // roster uses rather than picking whoever happens to sort first.
+      manager: commonest(agents.map((a) => a.managerName ?? NO_MANAGER)) ?? NO_MANAGER,
+      name,
+      site: commonest(agents.map((a) => a.site).filter((s): s is string => s !== null)),
+      headcount: agents.length,
+      openItems: sum((r) => r.openItems),
+      missingRca: sum((r) => r.missingRca),
+      missingPlan: sum((r) => r.missingPlan),
+      awaitingAcknowledgement: sum((r) => r.awaitingAcknowledgement),
+      needsTraining: sum((r) => r.needsTraining),
+      needsCoaching: sum((r) => r.needsCoaching),
+      nearingClose: agents.filter((r) => r.bestProgress >= SUSTAINED_WEEKS - 1).length,
+      topKpi: topKpiOf(agents),
+      agents,
+    };
+  });
+
+  const byManager = new Map<string, RosterTeamLead[]>();
+  for (const { manager, ...lead } of leads) {
+    byManager.set(manager, [...(byManager.get(manager) ?? []), lead]);
+  }
+
+  return [...byManager.entries()]
+    .map(([name, teamLeads]) => ({
+      name,
+      teamLeadCount: teamLeads.length,
+      headcount: teamLeads.reduce((n, l) => n + l.headcount, 0),
+      teamLeads: [...teamLeads].sort(byMostOwed),
+    }))
+    .sort(
+      (a, b) =>
+        b.teamLeads.reduce((n, l) => n + l.missingRca, 0) - a.teamLeads.reduce((n, l) => n + l.missingRca, 0) ||
+        b.headcount - a.headcount ||
+        a.name.localeCompare(b.name),
+    );
+}
+
+/** The value most of a list carries; null for an empty list. Ties break alphabetically. */
+function commonest(values: string[]): string | null {
+  const counts = new Map<string, number>();
+  for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return ranked.length ? ranked[0][0] : null;
 }
 
 export interface DevelopmentBoard {
@@ -202,6 +345,8 @@ export function buildDevelopmentBoard(items: ActionItemListRow[], reader: BoardR
         employeeId,
         employeeName: list[0].employeeName,
         supervisorName: list[0].supervisorName,
+        managerName: list[0].managerName,
+        site: list[0].site,
         items: list,
         openItems: list.length,
         missingRca: list.filter((i) => !i.hasRca).length,

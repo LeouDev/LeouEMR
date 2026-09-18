@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { NavLink } from "@/components/nav-link";
 import { Card, CardHeader, EmptyState, PageBand, StatCard, StatusBadge } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
-import { SUSTAINED_WEEKS, boardReaderFor, getDevelopmentBoard } from "@/lib/queries/development";
+import { SUSTAINED_WEEKS, boardReaderFor, getDevelopmentBoard, groupIntoRoster } from "@/lib/queries/development";
+import { DevelopmentRoster } from "./roster";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 const ACTION_LINK =
@@ -87,6 +88,13 @@ export default async function DevelopmentPage({
   // away. For an admin or manager this board was the second-largest
   // response in the app (59 kB, measured), every item of every person in
   // development rendered into a box that shows twenty rows.
+  // The roster replaces the flat table for the two roles whose span is too
+  // large to read as one list. `boardReaderFor` already put them in
+  // "leader"; this narrows that to the two who need the grouping, leaving a
+  // supervisor's own eight-person board exactly as it was.
+  const rosterView = reader === "leader" && (user.role === "admin" || user.role === "manager");
+  const roster = rosterView ? groupIntoRoster(board.rows) : [];
+
   const showAll = params.all === "1";
   const rows = showAll ? board.rows : board.rows.slice(0, VISIBLE_ROWS);
   const abridged = rows.length < board.rows.length;
@@ -187,173 +195,199 @@ export default async function DevelopmentPage({
           )}
         </div>
 
-        <Card>
-          <CardHeader
-            title={
-              isAgent
-                ? "My development plan"
-                : support
-                  ? floor
-                    ? "Every open item"
-                    : "Support queue"
-                  : "Development board"
-            }
-            subtitle={
-              board.rows.length === 0
-                ? support && !floor
-                  ? "No team leader has asked for training or coaching"
-                  : "Nothing in development"
-                : abridged
-                  ? support
-                    ? `The first ${rows.length} of ${board.rows.length} people — ${ordering}`
-                    : `The ${rows.length} most blocked of ${board.rows.length} people — an item with no root cause cannot move at all`
-                  : scrolls
-                    ? `Showing ${VISIBLE_ROWS} of ${board.rows.length} — ${ordering}, scroll for the rest`
-                    : support
-                      ? "Grouped by KPI, then by team leader — coach the repeats together"
-                      : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
-            }
-            action={
-              support || abridged ? (
-                <div className="flex flex-wrap gap-2">
-                  {support && (
-                    <NavLink href={hubHref({ floor: !floor })} prefetch={false} className={ACTION_LINK}>
-                      {floor ? "Support requested only" : "Every open item"}
-                    </NavLink>
-                  )}
-                  {abridged && (
-                    <NavLink href={hubHref({ all: true, floor })} prefetch={false} className={ACTION_LINK}>
-                      Show all {board.rows.length}
-                    </NavLink>
-                  )}
-                </div>
-              ) : undefined
-            }
-          />
-
-          {board.rows.length === 0 ? (
-            <EmptyState
-              title={support && !floor ? "Nothing waiting on you" : "Nothing in development"}
-              description={
-                isAgent
-                  ? "You have no open action items. Anything raised will appear here with the plan agreed with your supervisor."
-                  : support && !floor
-                    ? "A person appears here once a team leader's action plan marks training or coaching as required. Every open item on the floor is one click away above."
-                    : support
-                      ? "No one on the floor has an open action item."
-                      : "No one on your team has an open action item. They appear here as soon as a KPI fails."
+        {/* An admin or a manager reads a roster instead of the flat table:
+            their span is a hundred-odd people in development, which is a
+            list of names rather than a board. A supervisor's own team is
+            eight or so, where the table is still the better shape, so it is
+            kept for them rather than replaced everywhere. */}
+        {rosterView ? (
+          <Card>
+            <CardHeader
+              title="Development board"
+              subtitle={
+                user.role === "admin"
+                  ? "Grouped by manager, then team leader — expand a roster to see each agent's plan"
+                  : "Grouped by team leader — expand a roster to see each agent's plan"
               }
             />
-          ) : (
-            <>
-              {stuckOnRca && (
-                <div className="border-b-2 border-line bg-cream px-6 py-3 text-xs text-muted">
-                  Most of what&rsquo;s below is waiting on a root cause, so the ordering can&rsquo;t
-                  tell you much beyond that — items with the same KPI often share one. Look for
-                  repeats in the list before writing each one from scratch.
-                </div>
-              )}
-              <div
-                className="overflow-x-auto"
-                style={
-                  scrolls
-                    ? { maxHeight: `${VISIBLE_ROWS * 57 + 42}px`, overflowY: "auto" }
-                    : undefined
+            {roster.length === 0 ? (
+              <EmptyState
+                title="Nobody in development"
+                description="Open development items appear here as issues are raised across your span."
+              />
+            ) : (
+              <DevelopmentRoster managers={roster} groupByManager={user.role === "admin"} />
+            )}
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader
+              title={
+                isAgent
+                  ? "My development plan"
+                  : support
+                    ? floor
+                      ? "Every open item"
+                      : "Support queue"
+                    : "Development board"
+              }
+              subtitle={
+                board.rows.length === 0
+                  ? support && !floor
+                    ? "No team leader has asked for training or coaching"
+                    : "Nothing in development"
+                  : abridged
+                    ? support
+                      ? `The first ${rows.length} of ${board.rows.length} people — ${ordering}`
+                      : `The ${rows.length} most blocked of ${board.rows.length} people — an item with no root cause cannot move at all`
+                    : scrolls
+                      ? `Showing ${VISIBLE_ROWS} of ${board.rows.length} — ${ordering}, scroll for the rest`
+                      : support
+                        ? "Grouped by KPI, then by team leader — coach the repeats together"
+                        : "Ordered by what is most blocked, not by severity — an item with no root cause cannot move at all"
+              }
+              action={
+                support || abridged ? (
+                  <div className="flex flex-wrap gap-2">
+                    {support && (
+                      <NavLink href={hubHref({ floor: !floor })} prefetch={false} className={ACTION_LINK}>
+                        {floor ? "Support requested only" : "Every open item"}
+                      </NavLink>
+                    )}
+                    {abridged && (
+                      <NavLink href={hubHref({ all: true, floor })} prefetch={false} className={ACTION_LINK}>
+                        Show all {board.rows.length}
+                      </NavLink>
+                    )}
+                  </div>
+                ) : undefined
+              }
+            />
+
+            {board.rows.length === 0 ? (
+              <EmptyState
+                title={support && !floor ? "Nothing waiting on you" : "Nothing in development"}
+                description={
+                  isAgent
+                    ? "You have no open action items. Anything raised will appear here with the plan agreed with your supervisor."
+                    : support && !floor
+                      ? "A person appears here once a team leader's action plan marks training or coaching as required. Every open item on the floor is one click away above."
+                      : support
+                        ? "No one on the floor has an open action item."
+                        : "No one on your team has an open action item. They appear here as soon as a KPI fails."
                 }
-              >
-                <table className="w-full min-w-[900px] border-collapse text-sm">
-                  <thead className={scrolls ? "sticky top-0 z-20" : undefined}>
-                    <tr className="border-b-2 border-ink bg-cream">
-                      {!isAgent && <th className={`${HEAD} px-6`}>Employee</th>}
-                      {support && <th className={HEAD}>Team leader</th>}
-                      <th className={`${HEAD} ${isAgent ? "px-6" : ""}`}>Open items</th>
-                      <th className={HEAD}>Sustained progress</th>
-                      <th className={`${HEAD} px-6`}>Next step</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((row) => {
-                      // Red marks the reader's own move: for a leader the RCA and
-                      // plan they owe, for an agent the plan waiting on their
-                      // acknowledgement. A support role owns none of the steps,
-                      // so only reopened work is coloured, as a heads-up.
-                      const tone = support
-                        ? row.urgency === 3
-                          ? "text-warn"
-                          : "text-muted"
-                        : isAgent
-                          ? row.urgency === 2
-                            ? "text-fail"
+              />
+            ) : (
+              <>
+                {stuckOnRca && (
+                  <div className="border-b-2 border-line bg-cream px-6 py-3 text-xs text-muted">
+                    Most of what&rsquo;s below is waiting on a root cause, so the ordering can&rsquo;t
+                    tell you much beyond that — items with the same KPI often share one. Look for
+                    repeats in the list before writing each one from scratch.
+                  </div>
+                )}
+                <div
+                  className="overflow-x-auto"
+                  style={
+                    scrolls
+                      ? { maxHeight: `${VISIBLE_ROWS * 57 + 42}px`, overflowY: "auto" }
+                      : undefined
+                  }
+                >
+                  <table className="w-full min-w-[900px] border-collapse text-sm">
+                    <thead className={scrolls ? "sticky top-0 z-20" : undefined}>
+                      <tr className="border-b-2 border-ink bg-cream">
+                        {!isAgent && <th className={`${HEAD} px-6`}>Employee</th>}
+                        {support && <th className={HEAD}>Team leader</th>}
+                        <th className={`${HEAD} ${isAgent ? "px-6" : ""}`}>Open items</th>
+                        <th className={HEAD}>Sustained progress</th>
+                        <th className={`${HEAD} px-6`}>Next step</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => {
+                        // Red marks the reader's own move: for a leader the RCA and
+                        // plan they owe, for an agent the plan waiting on their
+                        // acknowledgement. A support role owns none of the steps,
+                        // so only reopened work is coloured, as a heads-up.
+                        const tone = support
+                          ? row.urgency === 3
+                            ? "text-warn"
                             : "text-muted"
-                          : row.urgency <= 1
-                            ? "text-fail"
-                            : row.urgency <= 3
-                              ? "text-warn"
-                              : "text-muted";
-                      return (
-                        <tr
-                          key={row.employeeId}
-                          className="border-b-2 border-line bg-surface last:border-0 hover:bg-cream/60"
-                        >
-                          {!isAgent && (
-                            <td className="px-6 py-3 align-top">
-                              <Link
-                                href={`/employees/${row.employeeId}`}
-                                prefetch={false}
-                                className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                              >
-                                {row.employeeName}
-                              </Link>
+                          : isAgent
+                            ? row.urgency === 2
+                              ? "text-fail"
+                              : "text-muted"
+                            : row.urgency <= 1
+                              ? "text-fail"
+                              : row.urgency <= 3
+                                ? "text-warn"
+                                : "text-muted";
+                        return (
+                          <tr
+                            key={row.employeeId}
+                            className="border-b-2 border-line bg-surface last:border-0 hover:bg-cream/60"
+                          >
+                            {!isAgent && (
+                              <td className="px-6 py-3 align-top">
+                                <Link
+                                  href={`/employees/${row.employeeId}`}
+                                  prefetch={false}
+                                  className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                                >
+                                  {row.employeeName}
+                                </Link>
+                              </td>
+                            )}
+                            {support && (
+                              <td className="px-3 py-3 align-top text-muted">{row.supervisorName ?? "—"}</td>
+                            )}
+                            <td className={`py-3 align-top ${isAgent ? "px-6" : "px-3"}`}>
+                              {/* A vertical stack here would center each line on its own axis —
+                                  readable as one line, ragged as a group, since the chips are
+                                  different widths. Wrapping them into one centered flex group
+                                  keeps the table's centering but reads as a single block. */}
+                              <ul className="flex flex-wrap items-center justify-center gap-1.5">
+                                {row.items.map((item) => (
+                                  <li key={item.actionItemId}>
+                                    <Link
+                                      href={`/action-items/${item.actionItemId}`}
+                                      prefetch={false}
+                                      className="inline-flex items-center gap-1.5 text-xs font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
+                                    >
+                                      {item.kpiName}
+                                      {!item.hasRca ? (
+                                        <span className="bg-fail-bg px-1.5 py-0.5 text-[10px] font-bold text-fail no-underline">
+                                          RCA
+                                        </span>
+                                      ) : !item.hasActionPlan ? (
+                                        <span className="bg-warn-bg px-1.5 py-0.5 text-[10px] font-bold text-warn no-underline">
+                                          Plan
+                                        </span>
+                                      ) : (
+                                        <StatusBadge status={item.status} />
+                                      )}
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
                             </td>
-                          )}
-                          {support && (
-                            <td className="px-3 py-3 align-top text-muted">{row.supervisorName ?? "—"}</td>
-                          )}
-                          <td className={`py-3 align-top ${isAgent ? "px-6" : "px-3"}`}>
-                            {/* A vertical stack here would center each line on its own axis —
-                                readable as one line, ragged as a group, since the chips are
-                                different widths. Wrapping them into one centered flex group
-                                keeps the table's centering but reads as a single block. */}
-                            <ul className="flex flex-wrap items-center justify-center gap-1.5">
-                              {row.items.map((item) => (
-                                <li key={item.actionItemId}>
-                                  <Link
-                                    href={`/action-items/${item.actionItemId}`}
-                                    prefetch={false}
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                                  >
-                                    {item.kpiName}
-                                    {!item.hasRca ? (
-                                      <span className="bg-fail-bg px-1.5 py-0.5 text-[10px] font-bold text-fail no-underline">
-                                        RCA
-                                      </span>
-                                    ) : !item.hasActionPlan ? (
-                                      <span className="bg-warn-bg px-1.5 py-0.5 text-[10px] font-bold text-warn no-underline">
-                                        Plan
-                                      </span>
-                                    ) : (
-                                      <StatusBadge status={item.status} />
-                                    )}
-                                  </Link>
-                                </li>
-                              ))}
-                            </ul>
-                          </td>
-                          <td className="px-3 py-3 align-top">
-                            <Progress weeks={row.bestProgress} />
-                          </td>
-                          <td className="px-6 py-3 align-top">
-                            <span className={`text-xs font-semibold ${tone}`}>{row.nextStep}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </Card>
+                            <td className="px-3 py-3 align-top">
+                              <Progress weeks={row.bestProgress} />
+                            </td>
+                            <td className="px-6 py-3 align-top">
+                              <span className={`text-xs font-semibold ${tone}`}>{row.nextStep}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </Card>
+        )}
       </main>
     </>
   );
