@@ -54,6 +54,7 @@ export const CASE_DECISIONS = [
   "NEITP",
   "DNF",
   "MNF",
+  "SPA-NPP",
 ] as const;
 
 export type CaseDecision = (typeof CASE_DECISIONS)[number];
