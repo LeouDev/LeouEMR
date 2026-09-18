@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { levenshtein, matchActivity, skillCodesForActivities } from "./activities";
 import {
+  CASE_DECISIONS,
   activityNameFrom,
   blockHours,
   csvField,
@@ -366,5 +367,29 @@ describe("local date", () => {
     // must open on the 8th.
     const local = new Date(2026, 8, 8, 0, 30);
     expect(localDateString(local)).toBe("2026-09-08");
+  });
+});
+
+describe("CASE_DECISIONS", () => {
+  it("offers every decision the floor logs, including SPA-NPP", () => {
+    expect([...CASE_DECISIONS]).toEqual([
+      "Pend",
+      "Deny",
+      "Approved",
+      "Fax for Appls",
+      "Merged",
+      "RARA",
+      "RAFA",
+      "RAFC-C",
+      "NEITAP",
+      "NEITP",
+      "DNF",
+      "MNF",
+      "SPA-NPP",
+    ]);
+  });
+
+  it("has no duplicates, which would show the same option twice in the form", () => {
+    expect(new Set(CASE_DECISIONS).size).toBe(CASE_DECISIONS.length);
   });
 });
