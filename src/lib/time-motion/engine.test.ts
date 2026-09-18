@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { computeVarianceStatus, scoreSegments } from "./engine";
+import {
+  DEFAULT_PLAYBACK_SPEED,
+  PLAYBACK_SPEEDS,
+  computeVarianceStatus,
+  elapsedCallMs,
+  scoreSegments,
+} from "./engine";
 
 /**
  * Ported exactly from the reference tool's `variance()` — these pin down the
@@ -55,5 +61,36 @@ describe("scoreSegments", () => {
   it("handles no segments without dividing by zero or throwing", () => {
     const result = scoreSegments([]);
     expect(result).toEqual({ segments: [], totalActualSeconds: 0, totalBaselineSeconds: 0 });
+  });
+});
+
+describe("elapsedCallMs", () => {
+  it("counts desk time as call time at 1x", () => {
+    expect(elapsedCallMs(0, 30_000, 1)).toBe(30_000);
+  });
+
+  it("counts a minute of call for thirty seconds of listening at 2x", () => {
+    // The direction that matters: multiply. Divided instead, a study done at
+    // 2x would halve the very handle time it exists to measure.
+    expect(elapsedCallMs(0, 30_000, 2)).toBe(60_000);
+    expect(elapsedCallMs(0, 30_000, 3)).toBe(90_000);
+    expect(elapsedCallMs(0, 10_000, 1.5)).toBe(15_000);
+  });
+
+  it("leaves banked time at the speed it was banked at", () => {
+    // Two minutes already timed at 1x, then the evaluator speeds up to 3x
+    // and ten more seconds pass: the first two minutes stay two minutes.
+    expect(elapsedCallMs(120_000, 10_000, 3)).toBe(150_000);
+  });
+
+  it("ignores a clock that appears to run backwards", () => {
+    // A system clock correction mid-segment must not subtract from a
+    // segment that has already been counted.
+    expect(elapsedCallMs(45_000, -5_000, 2)).toBe(45_000);
+  });
+
+  it("offers speeds up to 3x, in half steps, starting at 1x", () => {
+    expect([...PLAYBACK_SPEEDS]).toEqual([1, 1.5, 2, 2.5, 3]);
+    expect(DEFAULT_PLAYBACK_SPEED).toBe(1);
   });
 });

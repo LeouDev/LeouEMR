@@ -20,6 +20,37 @@ export const DEFAULT_SEGMENTS = [
   { code: "closing", label: "Closing", defaultBaselineSeconds: 30 },
 ] as const;
 
+/**
+ * Playback speeds an evaluator can listen at, since a study is timed
+ * against a recording rather than a live call.
+ *
+ * Whole and half steps to 3x: past that the words stop being intelligible,
+ * and the point is to hear the call, not to finish it.
+ */
+export const PLAYBACK_SPEEDS = [1, 1.5, 2, 2.5, 3] as const;
+export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1;
+
+/**
+ * How much of the CALL has passed, from how much of the evaluator's own
+ * time has.
+ *
+ * Multiplied, not divided, and getting that backwards is the whole risk
+ * here: a recording played at 2x covers two seconds of call in one second
+ * of listening, so thirty seconds at the desk is a minute of call. Timed on
+ * the wall clock alone, every segment of a sped-up audit would read short
+ * against a baseline written in real call seconds, and a study done at 2x
+ * would quietly halve the handle time it exists to measure.
+ *
+ * `banked` is call milliseconds already counted at whatever speeds were in
+ * force when they were counted — a hold, or a change of speed mid-segment,
+ * bank what has run so far and restart the clock, so an earlier stretch
+ * keeps its own rate rather than being rescaled by the latest one.
+ */
+export function elapsedCallMs(banked: number, sinceMs: number, speed: number): number {
+  return banked + Math.max(0, sinceMs) * speed;
+}
+
 export interface TimeMotionSegmentResult {
   code: string;
   label: string;
