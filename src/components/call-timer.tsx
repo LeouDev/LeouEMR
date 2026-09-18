@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { computeVarianceStatus, type TimeMotionStatus } from "@/lib/time-motion/engine";
+import {
+  DEFAULT_PLAYBACK_SPEED,
+  PLAYBACK_SPEEDS,
+  computeVarianceStatus,
+  elapsedCallMs,
+  type PlaybackSpeed,
+  type TimeMotionStatus,
+} from "@/lib/time-motion/engine";
 
 /**
  * The call stopwatch: one call timed segment by segment against an
@@ -14,6 +21,12 @@ import { computeVarianceStatus, type TimeMotionStatus } from "@/lib/time-motion/
  * up one tick at a time, so a throttled background tab cannot make a
  * segment read short: the tick only forces a re-render every 250ms, the
  * actual number always comes from `Date.now() - segmentStart`.
+ *
+ * What it records is CALL time, not desk time. A study is timed against a
+ * recording, and an evaluator listening at 2x covers a minute of call in
+ * thirty seconds — so every reading is scaled by the playback speed (see
+ * `elapsedCallMs`). At 1x the two are the same thing, which is what the
+ * clock did before the speed control existed.
  */
 
 export interface TimerSegment {
@@ -80,21 +93,29 @@ export function CallTimer({
    */
   const [liveElapsedSeconds, setLiveElapsedSeconds] = useState(0);
 
+  const [speed, setSpeed] = useState<PlaybackSpeed>(DEFAULT_PLAYBACK_SPEED);
+
   const segmentStart = useRef(0);
+  /** Call milliseconds already counted for this segment, at the speeds they were counted at. */
   const accumulated = useRef(0);
 
   const started = currentIndex >= 0;
 
+  /** Call milliseconds for the segment running right now. */
+  function elapsedNow(): number {
+    return holding ? accumulated.current : elapsedCallMs(accumulated.current, Date.now() - segmentStart.current, speed);
+  }
+
   useEffect(() => {
     if (!started || ended) return;
     const tick = () => {
-      const ms = holding ? accumulated.current : accumulated.current + (Date.now() - segmentStart.current);
+      const ms = holding ? accumulated.current : elapsedCallMs(accumulated.current, Date.now() - segmentStart.current, speed);
       setLiveElapsedSeconds(ms / 1000);
     };
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [started, ended, holding]);
+  }, [started, ended, holding, speed]);
 
   function emit(next: TimerSegment[], nextStarted: boolean, nextEnded: boolean) {
     onChange?.({ started: nextStarted, ended: nextEnded, segments: next });
@@ -112,7 +133,7 @@ export function CallTimer({
   function toggleHold() {
     if (!started || ended) return;
     if (!holding) {
-      accumulated.current = accumulated.current + (Date.now() - segmentStart.current);
+      accumulated.current = elapsedCallMs(accumulated.current, Date.now() - segmentStart.current, speed);
       setHolding(true);
     } else {
       segmentStart.current = Date.now();
@@ -120,9 +141,30 @@ export function CallTimer({
     }
   }
 
+  /**
+   * Changing speed mid-segment banks what has run at the OLD speed before
+   * the new one takes effect, exactly as a hold does. Without that, two
+   * minutes already timed at 1x would be re-read at 3x the moment the
+   * evaluator sped the recording up, and the segment would jump to six.
+   *
+   * Reads the speed off the button rather than taking it as an argument so
+   * that it is the event handler itself, not a closure built during render:
+   * the clock's handlers touch `Date.now()`, which React's purity rule only
+   * allows where it can see that the call cannot happen while rendering.
+   */
+  function changeSpeed(event: React.MouseEvent<HTMLButtonElement>) {
+    const next = Number(event.currentTarget.dataset.speed) as PlaybackSpeed;
+    if (!next || next === speed) return;
+    if (started && !ended && !holding) {
+      accumulated.current = elapsedCallMs(accumulated.current, Date.now() - segmentStart.current, speed);
+      segmentStart.current = Date.now();
+    }
+    setSpeed(next);
+  }
+
   function completeSegment() {
     if (!started || ended) return;
-    const ms = holding ? accumulated.current : accumulated.current + (Date.now() - segmentStart.current);
+    const ms = elapsedNow();
     const next = segments.map((s, i) => (i === currentIndex ? { ...s, actualSeconds: ms / 1000 } : s));
     setSegments(next);
 
@@ -188,6 +230,36 @@ export function CallTimer({
         {!started && (
           <p className="mt-1.5 text-xs text-muted">Adjust before starting — these are the targets.</p>
         )}
+      </div>
+
+      {/* Changeable mid-call on purpose: an evaluator speeds through the
+          hold music and drops back to 1x for the part they are actually
+          listening to. */}
+      <div>
+        <span className="mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase">
+          Playback speed
+        </span>
+        <div className="flex flex-wrap border-2 border-ink" role="group" aria-label="Playback speed">
+          {PLAYBACK_SPEEDS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={speed === option}
+              data-speed={option}
+              onClick={changeSpeed}
+              className={`flex-1 px-3 py-2 font-mono text-sm font-bold transition ${
+                speed === option ? "bg-orange-brand text-white" : "bg-surface text-ink hover:bg-orange-brand-100"
+              }`}
+            >
+              {option}&times;
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-xs text-muted">
+          {speed === 1
+            ? "Times below are call seconds, matching the baselines."
+            : `Listening at ${speed}\u00d7 — the times below are still real call seconds, not seconds at your desk.`}
+        </p>
       </div>
 
       <div className="space-y-2">
