@@ -272,10 +272,18 @@ export default async function TeamRosterPage({
             value={kpis?.quality == null ? "—" : `${Math.floor(kpis.quality)}%`}
             note={!kpis || kpis.qualityScored === 0 ? "nobody scored" : `avg of ${kpis.qualityScored}`}
           />
+          {/* "Team NPS", not "Avg NPS": this is every survey the team
+              received pooled into one score, which is what NPS means. The
+              note carries the survey count rather than the member count,
+              because the surveys are what the figure is over. */}
           <StripCell
-            label="Avg NPS"
+            label="Team NPS"
             value={kpis?.nps == null ? "—" : String(Math.floor(kpis.nps))}
-            note={!kpis || kpis.npsScored === 0 ? "no surveys" : `avg of ${kpis.npsScored}`}
+            note={
+              !kpis || kpis.npsSurveys === 0
+                ? "no surveys"
+                : `${kpis.npsSurveys} survey${kpis.npsSurveys === 1 ? "" : "s"} · ${kpis.npsScored} rated`
+            }
           />
           <StripCell
             label="Below target"

@@ -322,7 +322,11 @@ export function ManagerDashboard({
                     />
                     <Figure
                       value={whole(s.nps)}
-                      label={s.npsScored === 0 ? "no surveys" : `avg of ${s.npsScored}`}
+                      label={
+                        s.npsSurveys === 0
+                          ? "no surveys"
+                          : `${s.npsSurveys} survey${s.npsSurveys === 1 ? "" : "s"}`
+                      }
                       tone={npsLow ? "fail" : undefined}
                     />
                     <Figure
