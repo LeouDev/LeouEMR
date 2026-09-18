@@ -269,7 +269,27 @@ export function computeScorecard(inputs: ScorecardInputs): Scorecard {
   // Weight the hour split assigned but nothing measured against; a zero
   // share is not a gap, it is a row that does not apply.
   const weightMissing = rows.filter((r) => r.status === "no-data").reduce((sum, r) => sum + r.weight, 0);
-  const finalScore = weightScored > 0 ? rawScore / weightScored : null;
+
+  /**
+   * A month with no productive hours has no score at all, rather than a
+   * high one.
+   *
+   * Everything keyed to hours falls away at zero. Productivity has no skill
+   * to rate, and Ancillary Quality, Phone Quality, Critical Error and NPS
+   * are each weighted by the phone/ancillary hour split, so at a zero split
+   * they carry no weight to begin with. That is 80% of the card gone.
+   * What is left is IRE, PKT and LH Utilization — and until the Monthly
+   * sheet exists, every one of those stands in at MONTHLY_DEFAULTS, which
+   * rate 5, 5 and 5.
+   *
+   * So the arithmetic returned a perfect 5.00 over a quarter of the card,
+   * not one point of it measured, and the stack rank duly put people who
+   * had not worked a single productive hour above everyone who had.
+   * Rescaling is meant to read a partial card fairly; it cannot invent a
+   * card out of three placeholders.
+   */
+  const productiveHours = phoneHours + ancillaryHours;
+  const finalScore = weightScored > 0 && productiveHours > 0 ? rawScore / weightScored : null;
 
   return {
     rows,

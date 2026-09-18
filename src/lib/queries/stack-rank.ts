@@ -56,6 +56,22 @@ export function rank(rows: Omit<RankRow, "rank">[]): RankRow[] {
     .map((row, i) => ({ ...row, rank: i + 1 }));
 }
 
+/**
+ * The ranking, over the people who have a score and nobody else.
+ *
+ * Somebody unscored is not last in the ranking, they are not in it — a
+ * ranking is over the people the month measured. `rank` does sort the
+ * unscored to the back, which was harmless while an unscored card had no
+ * score; a card with no productive hours was scoring a perfect 5.00 off
+ * three defaulted rows and sitting at the TOP instead (fixed in
+ * computeScorecard, which is the root of it). Leaving the unscored out of
+ * the list is the other half, and the counts that let a page say how many
+ * that was travel beside it as `rosterSize` and `teamSize`.
+ */
+export function rankScored(rows: Omit<RankRow, "rank">[]): RankRow[] {
+  return rank(rows.filter((row) => row.score !== null));
+}
+
 /** Pulls the ranking metrics for a set of employees over one period. */
 async function metricsFor(employeeIds: string[], period: Period) {
   const metrics = await getPeriodMetrics(employeeIds, period);
@@ -69,10 +85,19 @@ async function metricsFor(employeeIds: string[], period: Period) {
 }
 
 export interface StackRanks {
+  /** The viewer's team, scored members only. */
   team: RankRow[];
-  /** Everyone active, across every site. */
+  /** Everyone scored, across every site. */
   org: RankRow[];
   supervisors: SupervisorRankRow[];
+  /**
+   * How many people counted for the period at all, scored or not, so a page
+   * can still say "142 of 410" after the unscored are left out of the
+   * ranking itself.
+   */
+  rosterSize: number;
+  /** The same, for the viewer's own team. */
+  teamSize: number;
   teamLabel: string | null;
   siteLabel: string | null;
 }
@@ -136,6 +161,8 @@ export async function getStackRanks(
       team: [],
       org: [],
       supervisors: [],
+      rosterSize: 0,
+      teamSize: 0,
       teamLabel: self?.supervisorName ?? null,
       siteLabel: self?.site ?? null,
     };
@@ -149,22 +176,23 @@ export async function getStackRanks(
   ]);
 
   const build = (rows: typeof roster) =>
-    rank(
-      rows.map((r) => {
-        const m = byEmployee.get(r.id) ?? {};
-        return {
-          employeeId: r.id,
-          eid: r.eid,
-          name: r.name,
-          site: r.site,
-          supervisorName: r.supervisorName,
-          score: cards.get(r.id)?.finalScore ?? null,
-          productionRate: m.PRODUCTION_RATE ?? null,
-          mbo: m.MBO ?? null,
-          quality: visible.has(r.id) ? (m.QUALITY ?? null) : null,
-          attendance: visible.has(r.id) ? (m.ATTENDANCE ?? null) : null,
-        };
-      }),
+    rankScored(
+      rows
+        .map((r) => {
+          const m = byEmployee.get(r.id) ?? {};
+          return {
+            employeeId: r.id,
+            eid: r.eid,
+            name: r.name,
+            site: r.site,
+            supervisorName: r.supervisorName,
+            score: cards.get(r.id)?.finalScore ?? null,
+            productionRate: m.PRODUCTION_RATE ?? null,
+            mbo: m.MBO ?? null,
+            quality: visible.has(r.id) ? (m.QUALITY ?? null) : null,
+            attendance: visible.has(r.id) ? (m.ATTENDANCE ?? null) : null,
+          };
+        }),
     );
 
   const org = build(roster);
@@ -172,11 +200,12 @@ export async function getStackRanks(
   // A leader has no roster row, so "my team" cannot come from their own
   // supervisor name — it is their scope. Without this the page showed every
   // supervisor and manager an "Account not linked" empty state.
-  const team = self?.supervisorName
-    ? build(roster.filter((r) => r.supervisorName === self.supervisorName))
+  const teamRoster = self?.supervisorName
+    ? roster.filter((r) => r.supervisorName === self.supervisorName)
     : viewer.role === "agent"
       ? []
-      : build(roster.filter((r) => visible.has(r.id)));
+      : roster.filter((r) => visible.has(r.id));
+  const team = build(teamRoster);
 
   // Supervisors are ranked by their team's mean rating, over the members who
   // actually have one — otherwise a team with sparse data would rank low for
@@ -193,6 +222,8 @@ export async function getStackRanks(
     team,
     org,
     supervisors,
+    rosterSize: roster.length,
+    teamSize: teamRoster.length,
     teamLabel:
       self?.supervisorName ??
       (viewer.role === "manager" ? "Your span" : viewer.role === "supervisor" ? viewer.name : null),
