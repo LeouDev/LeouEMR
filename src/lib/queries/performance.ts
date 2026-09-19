@@ -792,6 +792,114 @@ export interface EmployeeMatrix {
 }
 
 /**
+ * Everything the matrix reads that depends only on the employee, as plain
+ * rows, cached until the next import.
+ *
+ * This is the read that pulls an agent's entire weekly history — every KPI,
+ * every week, no date bound — and the Development Hub roster turned it into a
+ * click on any of four hundred agents rather than a deliberate visit to an
+ * employee page. Uncached, a team leader working down their roster paid the
+ * whole read again for every agent they opened, and again the next time they
+ * opened the same one: the same rows leaving Postgres over and over, which is
+ * exactly the shape of egress a Supabase quota notices.
+ *
+ * The employee row itself is deliberately not in here. It is a single lookup
+ * by primary key, so there is nothing to save, and caching it would send its
+ * timestamps through JSON and hand callers strings where the type promises
+ * Dates.
+ *
+ * Plain arrays only, and no Date among them: `cachedRead` serialises what it
+ * stores, so the Maps and Sets the matrix is built from are assembled at the
+ * call site. `weekly_issue_history.created_at` is left unselected for that
+ * reason and because nothing reads it.
+ */
+const readMatrixRows = cachedRead(
+  "employee-matrix",
+  [CACHE_TAG.imports, CACHE_TAG.reference, CACHE_TAG.ews, CACHE_TAG.issues],
+  async (employeeId: string) => {
+    // Three independent reads with no data dependency between them — issued
+    // together rather than as sequential round trips, which is most of what
+    // made this page feel slow to open.
+    const [rows, assessments, issueRows] = await Promise.all([
+      db
+        .select({
+          week: weeklyMetricResults.weekStart,
+          kpiCode: kpiDefinitions.code,
+          kpiName: kpiDefinitions.name,
+          direction: kpiDefinitions.direction,
+          actualValue: weeklyMetricResults.actualValue,
+          targetValue: weeklyMetricResults.targetValue,
+          status: weeklyMetricResults.status,
+          sampleSize: weeklyMetricResults.sampleSize,
+        })
+        .from(weeklyMetricResults)
+        .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
+        // Every KPI, not only the scorecard's: the week list has to cover a
+        // week that so far has only skill results (a backfill, or a partial
+        // week), or an item opened on such a week points at a week the page
+        // does not show. The grid itself stays the scorecard, below.
+        .where(eq(weeklyMetricResults.employeeId, employeeId))
+        .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
+      db
+        .select({
+          week: ewsAssessments.week,
+          riskLevel: ewsAssessments.riskLevel,
+          score: ewsAssessments.score,
+        })
+        .from(ewsAssessments)
+        .where(eq(ewsAssessments.employeeId, employeeId)),
+      db
+        .select({
+          actionItemId: actionItems.id,
+          actionItemCode: actionItems.code,
+          issueId: performanceIssues.id,
+          kpiCode: kpiDefinitions.code,
+          kpiName: kpiDefinitions.name,
+          status: performanceIssues.status,
+          openedWeek: performanceIssues.openedWeek,
+          consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
+          rcaId: rcaEntries.id,
+          planId: actionPlans.id,
+        })
+        .from(actionItems)
+        .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
+        .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
+        .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
+        .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
+        // The development timeline is a list, so it honours the same flag every
+        // other list does. MBO is assessed monthly and no longer opens weekly
+        // work; its historical rows stay in the database but off this plan.
+        .where(and(eq(performanceIssues.employeeId, employeeId), OPENS_ACTION_ITEMS))
+        .orderBy(desc(performanceIssues.openedWeek)),
+    ]);
+
+    // The issue history and the notes depend only on what the first batch
+    // returned (the issue ids), not on each other, so they are read together.
+    const [historyRows, noteRows] = await Promise.all([
+      issueRows.length
+        ? db
+            .select({
+              performanceIssueId: weeklyIssueHistory.performanceIssueId,
+              week: weeklyIssueHistory.week,
+              result: weeklyIssueHistory.result,
+              consecutiveCountAfter: weeklyIssueHistory.consecutiveCountAfter,
+            })
+            .from(weeklyIssueHistory)
+            .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId)))
+        : Promise.resolve([]),
+      issueRows.length
+        ? db
+            .select({ actionItemId: rcaNotes.actionItemId, week: rcaNotes.week })
+            .from(rcaNotes)
+            .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId)))
+        : Promise.resolve([]),
+    ]);
+
+    return { rows, assessments, issueRows, historyRows, noteRows };
+  },
+);
+
+/**
  * Every week for one employee in a single result, so the development plan
  * can be read as one continuous picture rather than a week at a time.
  */
@@ -803,61 +911,11 @@ export async function getEmployeeMatrix(
   if (ids === null || (Array.isArray(ids) && ids.length === 0)) return null;
   if (ids !== "all" && !ids.includes(employeeId)) return null;
 
-  // Four independent reads, all keyed only on employeeId with no data
-  // dependency between them — issued together rather than as four sequential
-  // round trips, which is most of what made this page feel slow to open.
-  const [[employee], rows, assessments, issueRows] = await Promise.all([
+  // The employee row and the cached bundle do not depend on each other, so
+  // they still go out together.
+  const [[employee], { rows, assessments, issueRows, historyRows, noteRows }] = await Promise.all([
     db.select().from(employees).where(eq(employees.id, employeeId)).limit(1),
-    db
-      .select({
-        week: weeklyMetricResults.weekStart,
-        kpiCode: kpiDefinitions.code,
-        kpiName: kpiDefinitions.name,
-        direction: kpiDefinitions.direction,
-        actualValue: weeklyMetricResults.actualValue,
-        targetValue: weeklyMetricResults.targetValue,
-        status: weeklyMetricResults.status,
-        sampleSize: weeklyMetricResults.sampleSize,
-      })
-      .from(weeklyMetricResults)
-      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, weeklyMetricResults.kpiId))
-      // Every KPI, not only the scorecard's: the week list has to cover a
-      // week that so far has only skill results (a backfill, or a partial
-      // week), or an item opened on such a week points at a week the page
-      // does not show. The grid itself stays the scorecard, below.
-      .where(eq(weeklyMetricResults.employeeId, employeeId))
-      .orderBy(weeklyMetricResults.weekStart, kpiDefinitions.name),
-    db
-      .select({
-        week: ewsAssessments.week,
-        riskLevel: ewsAssessments.riskLevel,
-        score: ewsAssessments.score,
-      })
-      .from(ewsAssessments)
-      .where(eq(ewsAssessments.employeeId, employeeId)),
-    db
-      .select({
-        actionItemId: actionItems.id,
-        actionItemCode: actionItems.code,
-        issueId: performanceIssues.id,
-        kpiCode: kpiDefinitions.code,
-        kpiName: kpiDefinitions.name,
-        status: performanceIssues.status,
-        openedWeek: performanceIssues.openedWeek,
-        consecutivePassingWeeks: performanceIssues.consecutivePassingWeeks,
-        rcaId: rcaEntries.id,
-        planId: actionPlans.id,
-      })
-      .from(actionItems)
-      .innerJoin(performanceIssues, eq(performanceIssues.id, actionItems.performanceIssueId))
-      .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
-      .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
-      .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
-      // The development timeline is a list, so it honours the same flag every
-      // other list does. MBO is assessed monthly and no longer opens weekly
-      // work; its historical rows stay in the database but off this plan.
-      .where(and(eq(performanceIssues.employeeId, employeeId), OPENS_ACTION_ITEMS))
-      .orderBy(desc(performanceIssues.openedWeek)),
+    readMatrixRows(employeeId),
   ]);
   if (!employee) return null;
 
@@ -880,22 +938,6 @@ export async function getEmployeeMatrix(
     });
   }
 
-  // The issue history and the notes depend only on what the first batch
-  // returned (the issue ids), not on each other, so they are read together.
-  const [historyRows, noteRows] = await Promise.all([
-    issueRows.length
-      ? db
-          .select()
-          .from(weeklyIssueHistory)
-          .where(inArray(weeklyIssueHistory.performanceIssueId, issueRows.map((r) => r.issueId)))
-      : Promise.resolve([]),
-    issueRows.length
-      ? db
-          .select({ actionItemId: rcaNotes.actionItemId, week: rcaNotes.week })
-          .from(rcaNotes)
-          .where(inArray(rcaNotes.actionItemId, issueRows.map((r) => r.actionItemId)))
-      : Promise.resolve([]),
-  ]);
   return {
     employee,
     weeks,
