@@ -7,9 +7,11 @@ import {
   evaluateWeeklyResult,
   replayEmployeeKpiHistory,
   runWeeklyHistory,
+  noLongerMeasured,
   shouldAgeOut,
   submitRcaAndActionPlan,
 } from "./engine";
+import { DEFAULT_ACTION_ITEM_ENGINE_CONFIG } from "./types";
 import type { PerformanceIssueState } from "./types";
 
 /**
@@ -191,7 +193,7 @@ describe("configurable consecutive-pass requirement", () => {
     ];
     const { issue } = runWeeklyHistory(
       weeks,
-      { requiredConsecutivePasses: 2, ageOutAfterDays: 60 },
+      { requiredConsecutivePasses: 2, ageOutAfterDays: 60, notMeasuredAfterWeeks: 6 },
       { autoAcknowledgeAfterFailure: true },
     );
     expect(issue).toMatchObject({ status: "SUSTAINED", consecutivePassingWeeks: 2 });
@@ -338,6 +340,7 @@ describe("shouldAgeOut", () => {
       shouldAgeOut(recovered, "2026-06-20", {
         requiredConsecutivePasses: 4,
         ageOutAfterDays: 14,
+        notMeasuredAfterWeeks: 6,
       }),
     ).toBe(true);
   });
@@ -424,5 +427,56 @@ describe("separationResolutionWeeks — where the open work of someone who left 
 
   it("is empty when nobody has left", () => {
     expect(separationResolutionWeeks([{ id: "i1", employeeId: "a", openedWeek: "2026-06-01" }], new Map(), weekStartOf).size).toBe(0);
+  });
+});
+
+describe("noLongerMeasured", () => {
+  // The case this exists for: an item opened on a failing week, and then the
+  // KPI went quiet — the agent moved queue, went on leave, or left the
+  // account. Jake Potot's Fax item, opened 25 April on a fail, with nothing
+  // recorded since.
+  const stranded = {
+    status: "OPEN" as const,
+    latestResultWeek: "2026-04-25",
+  };
+
+  it("closes an item whose KPI has gone quiet for six weeks, though its last week failed", () => {
+    // Six weeks to the day, and the five months Jake's actually sat there.
+    expect(noLongerMeasured(stranded, "2026-06-06")).toBe(true);
+    expect(noLongerMeasured(stranded, "2026-09-13")).toBe(true);
+  });
+
+  it("leaves it alone while the weeks are still arriving", () => {
+    expect(noLongerMeasured(stranded, "2026-05-30")).toBe(false); // five weeks
+    expect(noLongerMeasured(stranded, "2026-05-02")).toBe(false); // the next week
+  });
+
+  it("says nothing about whether the KPI passed or failed", () => {
+    // The whole point: shouldAgeOut refuses a failing last week for ever, and
+    // this rule does not look at the result at all. A pass, a fail and a
+    // warning that all stopped on the same week close on the same day.
+    expect(noLongerMeasured({ ...stranded, status: "MONITORING" }, "2026-09-13")).toBe(true);
+    expect(noLongerMeasured({ ...stranded, status: "REOPENED" }, "2026-09-13")).toBe(true);
+  });
+
+  it("leaves an issue with nothing behind it alone", () => {
+    // No last week to count six from, and an item with no results under it is
+    // the kind to look at rather than close quietly.
+    expect(noLongerMeasured({ ...stranded, latestResultWeek: null }, "2026-12-31")).toBe(false);
+    expect(noLongerMeasured({ status: "OPEN" }, "2026-12-31")).toBe(false);
+  });
+
+  it("does not reopen anything already closed", () => {
+    expect(noLongerMeasured({ ...stranded, status: "COMPLETED" }, "2026-12-31")).toBe(false);
+  });
+
+  it("honours a different threshold", () => {
+    expect(noLongerMeasured(stranded, "2026-05-23", { ...DEFAULT_ACTION_ITEM_ENGINE_CONFIG, notMeasuredAfterWeeks: 4 })).toBe(true);
+    expect(noLongerMeasured(stranded, "2026-05-23", { ...DEFAULT_ACTION_ITEM_ENGINE_CONFIG, notMeasuredAfterWeeks: 8 })).toBe(false);
+  });
+
+  it("is not thrown by an unparseable week", () => {
+    expect(noLongerMeasured({ ...stranded, latestResultWeek: "not a date" }, "2026-09-13")).toBe(false);
+    expect(noLongerMeasured(stranded, "not a date")).toBe(false);
   });
 });

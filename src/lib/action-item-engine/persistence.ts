@@ -20,6 +20,7 @@ import {
   evaluateWeeklyResult,
   replayEmployeeKpiHistory,
   separationResolutionWeeks,
+  noLongerMeasured,
   shouldAgeOut,
 } from "./engine";
 import {
@@ -446,10 +447,17 @@ async function ageOutRecoveredIssues(
   // Reporting time, not wall-clock: a database imported late must not age
   // every open item out at once.
   const [asOf] = await db
-    .select({ week: sql<string | null>`max(${weeklyMetricResults.weekEnd})::text` })
+    .select({
+      week: sql<string | null>`max(${weeklyMetricResults.weekEnd})::text`,
+      start: sql<string | null>`max(${weeklyMetricResults.weekStart})::text`,
+    })
     .from(weeklyMetricResults);
-  if (!asOf?.week) return 0;
+  if (!asOf?.week || !asOf.start) return 0;
   const asOfWeek = asOf.week;
+  // Counted from week start to week start: the unmeasured rule is in whole
+  // reporting weeks, and measuring one week's end against another's start
+  // would quietly hand it six days of slack.
+  const asOfStart = asOf.start;
 
   const issues = [...live.values()];
   const latest = await db
@@ -472,29 +480,55 @@ async function ageOutRecoveredIssues(
   // holding each pair's most recent result — and, separately, its most
   // recent failure, which is where the age is measured from.
   const lastByPair = new Map<string, "pass" | "warning" | "fail">();
+  const lastWeekByPair = new Map<string, string>();
   const lastFailByPair = new Map<string, string>();
   for (const row of latest) {
     const key = `${row.employeeId}|${row.kpiId}`;
     lastByPair.set(key, row.status);
+    lastWeekByPair.set(key, row.week);
     if (row.status === "fail") lastFailByPair.set(key, row.week);
   }
 
-  const closing = issues.filter((issue) =>
-    shouldAgeOut(
-      {
-        status: issue.state.status,
-        openedWeek: issue.state.openedWeek,
-        lastFailedWeek: lastFailByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
-        latestResult: lastByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
-      },
-      asOfWeek,
-    ),
-  );
+  // Two different grounds, kept apart all the way to the audit log. Recovery
+  // is a statement about the agent; going unmeasured is a statement about the
+  // data, and reading the second as the first would tell a team leader their
+  // agent improved when the truth is that nobody measures them any more.
+  const recovered: LiveIssue[] = [];
+  const unmeasured: LiveIssue[] = [];
+  for (const issue of issues) {
+    const key = `${issue.employeeId}|${issue.kpiId}`;
+    const shape = {
+      status: issue.state.status,
+      openedWeek: issue.state.openedWeek,
+      lastFailedWeek: lastFailByPair.get(key) ?? null,
+      latestResult: lastByPair.get(key) ?? null,
+      latestResultWeek: lastWeekByPair.get(key) ?? null,
+    };
+    // Recovery first: an issue that qualifies both ways recovered before it
+    // went quiet, and that is the kinder and more accurate of the two.
+    if (shouldAgeOut(shape, asOfWeek)) recovered.push(issue);
+    else if (noLongerMeasured(shape, asOfStart)) unmeasured.push(issue);
+  }
+
+  const closing = [...recovered, ...unmeasured];
   if (closing.length === 0) return 0;
 
   if (dryRun) return closing.length;
 
   const ids = closing.map((i) => i.id);
+  const entry = (issue: LiveIssue, action: string, reason: string) => ({
+    action,
+    entityType: "performance_issue",
+    entityId: issue.id,
+    before: {
+      status: issue.state.status,
+      openedWeek: issue.state.openedWeek,
+      lastFailedWeek: lastFailByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
+      lastResultWeek: lastWeekByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
+    },
+    after: { status: "COMPLETED", resolvedWeek: asOfWeek, reason },
+  });
+
   await db.transaction(async (tx) => {
     await tx
       .update(performanceIssues)
@@ -504,21 +538,15 @@ async function ageOutRecoveredIssues(
       .update(actionItems)
       .set({ status: "COMPLETED", updatedAt: sql`now()` })
       .where(inArray(actionItems.performanceIssueId, ids));
-    // Recorded under its own action, so a closure on age is never mistaken
-    // for one earned through four passing weeks.
-    await tx.insert(auditLog).values(
-      closing.map((issue) => ({
-        action: "issue.aged_out",
-        entityType: "performance_issue",
-        entityId: issue.id,
-        before: {
-          status: issue.state.status,
-          openedWeek: issue.state.openedWeek,
-          lastFailedWeek: lastFailByPair.get(`${issue.employeeId}|${issue.kpiId}`) ?? null,
-        },
-        after: { status: "COMPLETED", resolvedWeek: asOfWeek, reason: "recovered and past age threshold" },
-      })),
-    );
+    // Each recorded under its own action, so a closure on age is never
+    // mistaken for one earned through four passing weeks — and a KPI that
+    // went quiet is never mistaken for either.
+    await tx.insert(auditLog).values([
+      ...recovered.map((issue) => entry(issue, "issue.aged_out", "recovered and past age threshold")),
+      ...unmeasured.map((issue) =>
+        entry(issue, "issue.closed_not_measured", "KPI no longer measured for this employee"),
+      ),
+    ]);
   });
 
   for (const issue of closing) live.delete(`${issue.employeeId}|${issue.kpiId}`);

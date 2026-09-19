@@ -55,9 +55,26 @@ export interface ActionItemEngineConfig {
    * surface, and hiding it would be the one outcome worse than a long list.
    */
   ageOutAfterDays: number;
+  /**
+   * After this many weeks with no new result at all, an issue closes because
+   * its KPI has stopped being measured — whatever the last week said.
+   *
+   * `ageOutAfterDays` above cannot reach these: it refuses to close anything
+   * whose last recorded week was a failure, so an agent who moved queue, went
+   * on leave or left the account while their last week was red holds an item
+   * that can never pass (no weeks arrive) and can never age out (the last
+   * week failed). 132 items across thirteen KPIs were sitting in exactly that
+   * deadlock, one of them for five months.
+   *
+   * Six weeks is the owner's line, and it is deliberately longer than the
+   * four a recovery takes: a KPI quiet for six reporting weeks is a KPI
+   * nobody is being held to any more.
+   */
+  notMeasuredAfterWeeks: number;
 }
 
 export const DEFAULT_ACTION_ITEM_ENGINE_CONFIG: ActionItemEngineConfig = {
   requiredConsecutivePasses: 4,
   ageOutAfterDays: 60,
+  notMeasuredAfterWeeks: 6,
 };
