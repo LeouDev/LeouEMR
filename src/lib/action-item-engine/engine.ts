@@ -296,6 +296,53 @@ export function shouldAgeOut(
 }
 
 /**
+ * Whether an issue's KPI has simply stopped being measured.
+ *
+ * A second, separate ground for closing, and the one `shouldAgeOut` above
+ * cannot reach. That rule refuses to close anything whose last recorded week
+ * was a failure — "still failing is never aged out" — which is right while
+ * weeks are still arriving and a deadlock once they stop. An agent who moved
+ * queue, went on leave or left the account while their last week was red then
+ * holds an item that can never pass, because no weeks arrive to pass, and can
+ * never age out, because the last one failed. It sits on their team leader's
+ * board for ever, counted among the work that leader owes.
+ *
+ * So a KPI that has gone quiet for `notMeasuredAfterWeeks` closes the item on
+ * that ground alone, whatever the last week said. That is a different
+ * statement from recovery and the audit log records it as a different one:
+ * nobody is claiming this agent improved, only that there is nothing left to
+ * measure them against.
+ *
+ * Measured from the last week on record rather than from the last failing
+ * week, because the question is when the data stopped, not when it last went
+ * wrong. Both weeks are the same one in the case this exists for.
+ *
+ * An issue with no result at all behind it is still left alone: there is no
+ * last week to count six from, and an item with nothing underneath it is the
+ * kind to look at rather than close quietly.
+ */
+export function noLongerMeasured(
+  issue: {
+    status: IssueStatus;
+    /** The week of the most recent result on record, when there is one. */
+    latestResultWeek?: string | null;
+  },
+  /** The newest reporting week in the ledger — this data's "today". */
+  asOf: string,
+  config: ActionItemEngineConfig = DEFAULT_ACTION_ITEM_ENGINE_CONFIG,
+): boolean {
+  if (issue.status === "COMPLETED") return false;
+  if (!issue.latestResultWeek) return false;
+
+  const last = Date.parse(`${issue.latestResultWeek}T00:00:00Z`);
+  const now = Date.parse(`${asOf}T00:00:00Z`);
+  if (Number.isNaN(last) || Number.isNaN(now)) return false;
+
+  const weeks = (now - last) / 86_400_000 / 7;
+  return weeks >= config.notMeasuredAfterWeeks;
+}
+
+/**
  * The separations the sweep may act on: only those the employee row
  * confirms. Both ways a person really leaves — a masterlist's attrition
  * pass and an EWS separating tag — also mark the row `separated` as they
