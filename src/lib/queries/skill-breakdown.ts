@@ -1,4 +1,5 @@
 import { and, eq, gte, lte } from "drizzle-orm";
+import { CACHE_TAG, cachedRead } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { skillFacts } from "@/lib/db/schema";
 import { computeSkillRating, computeSkillRatio } from "@/lib/kpi-engine/par-mbo";
@@ -31,6 +32,40 @@ export interface SkillBreakdownRow {
   cells: Map<string, SkillWeekCell>;
 }
 
+/**
+ * The daily skill facts behind one employee's breakdown, cached on the tag
+ * the import that writes them carries.
+ *
+ * A row per skill per day across every week the matrix covers, and the other
+ * half of what opening an agent on the Development Hub costs — read in full,
+ * uncached, on every open. The range is part of the key, so a newly imported
+ * week widens it and the previous entry simply falls out of use.
+ *
+ * Returns rows exactly as they come back: `cachedRead` serialises what it
+ * stores, and these are strings and numbers all the way down.
+ */
+const readSkillFacts = cachedRead(
+  "employee-skill-facts",
+  [CACHE_TAG.imports],
+  (employeeId: string, rangeStart: string, rangeEnd: string) =>
+    db
+      .select({
+        skillLabel: skillFacts.skillLabel,
+        factDate: skillFacts.factDate,
+        cases: skillFacts.cases,
+        hours: skillFacts.hours,
+        prodWeight: skillFacts.prodWeight,
+      })
+      .from(skillFacts)
+      .where(
+        and(
+          eq(skillFacts.employeeId, employeeId),
+          gte(skillFacts.factDate, rangeStart),
+          lte(skillFacts.factDate, rangeEnd),
+        ),
+      ),
+);
+
 function weekEndFor(weekStart: string): string {
   const d = new Date(`${weekStart}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 6);
@@ -59,22 +94,7 @@ export async function getEmployeeSkillBreakdown(
   const rangeEnd = weekEndFor(sortedWeeks[sortedWeeks.length - 1]);
 
   const [facts, refs, rampTargets] = await Promise.all([
-    db
-      .select({
-        skillLabel: skillFacts.skillLabel,
-        factDate: skillFacts.factDate,
-        cases: skillFacts.cases,
-        hours: skillFacts.hours,
-        prodWeight: skillFacts.prodWeight,
-      })
-      .from(skillFacts)
-      .where(
-        and(
-          eq(skillFacts.employeeId, employeeId),
-          gte(skillFacts.factDate, rangeStart),
-          lte(skillFacts.factDate, rangeEnd),
-        ),
-      ),
+    readSkillFacts(employeeId, rangeStart, rangeEnd),
     loadSkillReferences(),
     loadRampTargets(),
   ]);
