@@ -1812,11 +1812,12 @@ from every environment this project gets worked on in.
   day with the app role's string fails pg_dump with "query would be
   affected by row-level security policy" — the app role is subject to
   RLS and cannot dump; only the postgres role can — and is to be
-  deleted. The 06:15 rsync to the SSD had NOT copied the 14 and 21 Sep
-  dumps although the drive was mounted; copied by hand. If the next
-  Monday's copy is missing again, grant `/usr/sbin/cron` Full Disk
-  Access (System Settings → Privacy & Security), which macOS requires
-  for cron to reach external volumes.
+  deleted. The 06:15 rsync to the SSD had not copied the 14 and 21 Sep
+  dumps: the owner normally keeps the SSD unplugged, and the cron line
+  only copies when `/Volumes/Mac Storage` is mounted. The routine is to
+  plug it in and run the rsync by hand every week or two — it adds and
+  never deletes, and the Mac mini keeps eight weeks of dumps, so nothing
+  is lost as long as a copy happens within that window.
 - **Audit after the false separations (17 Sep): how the app decides
   someone left, and the guards now on it.** Two sources feed
   `separationDates` (eligibility.ts): an EWS Black/Absconding tag, or a
