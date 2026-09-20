@@ -33,3 +33,34 @@ describe("the development roster's imports", () => {
     expect(source).toContain('from "@/lib/development/sustained"');
   });
 });
+
+/**
+ * The plan card promises a reader that a root cause or a plan can be read,
+ * and links to the part of the record that holds it. Two files have to agree
+ * for that to be true, and nothing at runtime notices when they stop: a
+ * missing anchor scrolls to the top of a long record instead of erroring, so
+ * the link still "works" while quietly not doing what the line says.
+ */
+const record = readFileSync(
+  join(process.cwd(), "src/app/(shell)/records/[actionItemId]/page.tsx"),
+  "utf8",
+);
+
+describe("reading a root cause from the plan card", () => {
+  it("links each line to its own section of the record", () => {
+    expect(source).toMatch(/href=\{`\/records\/\$\{item\.actionItemId\}#rca`\}/);
+    expect(source).toMatch(/href=\{`\/records\/\$\{item\.actionItemId\}#action-plan`\}/);
+  });
+
+  it("lands on sections the record actually has", () => {
+    expect(record).toContain('id="rca"');
+    expect(record).toContain('id="action-plan"');
+  });
+
+  it("offers nothing to click where nothing has been written", () => {
+    // A link to an empty section is a worse answer than plain text saying so.
+    expect(source).toContain("Not yet recorded — the item cannot progress until the team leader writes this.");
+    expect(source).toContain("No action plan written yet.");
+    expect(source).not.toContain("open the item to read it");
+  });
+});

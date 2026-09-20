@@ -161,6 +161,10 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
           </div>
         </Card>
 
+        {/* Anchored so the development plan can link straight here. That page
+            says a root cause is recorded; the link it puts on that line has
+            to land on the root cause, not on the top of a long record. */}
+        <section id="rca" className="scroll-mt-24">
         <Card className={section}>
           <CardHeader title="Root cause analysis" subtitle={rcaBy ? `Entered by ${rcaBy}` : "Entered by the supervisor"} />
           {rca ? (
@@ -175,6 +179,7 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
             <p className="px-6 py-5 text-sm text-muted">No RCA recorded.</p>
           )}
         </Card>
+        </section>
 
         {notes.length > 0 && (
           <Card className={section}>
@@ -265,6 +270,7 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
           </Card>
         )}
 
+        <section id="action-plan" className="scroll-mt-24">
         <Card className={section}>
           <CardHeader title="Action plan" subtitle={planBy ? `Entered by ${planBy}` : "Entered by the supervisor"} />
           {plan ? (
@@ -285,6 +291,7 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
             <p className="px-6 py-5 text-sm text-muted">No action plan recorded.</p>
           )}
         </Card>
+        </section>
 
         <Card className={section}>
           <CardHeader title="Acknowledgement" />
