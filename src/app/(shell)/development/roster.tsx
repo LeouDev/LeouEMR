@@ -342,19 +342,47 @@ function PlanCard({ item }: { item: DevelopmentRow["items"][number] }) {
         )}
       </div>
       {/* The two lines are always both present, missing or not: a plan with
-          no root cause under it should look unfinished, not tidy. */}
+          no root cause under it should look unfinished, not tidy.
+
+          Where there is something written, the line is the way to it —
+          carrying its own underline rather than waiting for a hover, since
+          the previous wording told the reader to open the item and then gave
+          them nothing to click. The anchors land on the section itself: the
+          record is long, and "recorded" is a promise about one part of it.
+          Where nothing is written there is nothing to read, so the line stays
+          plain rather than offering a link that leads to an empty section. */}
       <p className={`mt-2 text-xs leading-relaxed ${item.hasRca ? "text-muted" : "text-fail"}`}>
         <strong className="text-ink">RCA — </strong>
-        {item.hasRca ? "Recorded; open the item to read it." : "Not yet recorded — the item cannot progress until the team leader writes this."}
+        {item.hasRca ? (
+          <Link href={`/records/${item.actionItemId}#rca`} className={READ_LINK}>
+            Recorded — read what the team leader wrote
+          </Link>
+        ) : (
+          "Not yet recorded — the item cannot progress until the team leader writes this."
+        )}
       </p>
       <p className={`mt-1.5 text-xs leading-relaxed ${item.hasActionPlan ? "text-muted" : "text-warn"}`}>
         <strong className="text-ink">Action plan — </strong>
-        {item.hasActionPlan ? "Written; open the item to read it." : "No action plan written yet."}
+        {item.hasActionPlan ? (
+          <Link href={`/records/${item.actionItemId}#action-plan`} className={READ_LINK}>
+            Written — read the plan
+          </Link>
+        ) : (
+          "No action plan written yet."
+        )}
       </p>
       {footer.length > 0 && <p className="mt-2 text-[11px] text-muted">{footer.join(" · ")}</p>}
     </div>
   );
 }
+
+/**
+ * A link that looks like one before it is hovered. The plan card's two lines
+ * read as prose, so the underline is what tells a reader the rest of the
+ * root cause is a click away rather than somewhere else in the app.
+ */
+const READ_LINK =
+  "font-semibold text-ink underline decoration-line underline-offset-4 transition hover:text-orange-brand hover:decoration-orange-brand";
 
 /** The same tone the flat board gives a row's next step. */
 function toneOf(urgency: number): string {
