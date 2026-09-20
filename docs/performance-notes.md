@@ -1804,6 +1804,20 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Backups, checked 21 Sep (Manila).** The Monday 06:00 cron on the
+  administrator's Mac mini is running (dumps for 14 and 21 Sep in
+  `~/EMR-backups`, 21–23 MB, logged in `backup.log`); the working
+  checkout it uses is `/Users/leou/OptumRx EMR`, whose `.env.local`
+  carries the postgres role. A second clone made at `~/LeouEMR` that
+  day with the app role's string fails pg_dump with "query would be
+  affected by row-level security policy" — the app role is subject to
+  RLS and cannot dump; only the postgres role can — and is to be
+  deleted. The 06:15 rsync to the SSD had not copied the 14 and 21 Sep
+  dumps: the owner normally keeps the SSD unplugged, and the cron line
+  only copies when `/Volumes/Mac Storage` is mounted. The routine is to
+  plug it in and run the rsync by hand every week or two — it adds and
+  never deletes, and the Mac mini keeps eight weeks of dumps, so nothing
+  is lost as long as a copy happens within that window.
 - **Audit after the false separations (17 Sep): how the app decides
   someone left, and the guards now on it.** Two sources feed
   `separationDates` (eligibility.ts): an EWS Black/Absconding tag, or a
