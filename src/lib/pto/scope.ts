@@ -105,6 +105,34 @@ export async function managerNameFor(user: CurrentUser): Promise<string | null> 
   return null;
 }
 
+/**
+ * Accounts belonging to the managers over a set of employees, as of one
+ * month.
+ *
+ * The counterpart of `leaderAccountsOver`, and it cannot be written the same
+ * way. A team leader is an EID on their reports' rows, so their account is
+ * found by joining on it. A manager is only ever a *name* — the workbook
+ * carries no manager EID — so the join is on the explicit link an
+ * administrator sets on the account (users.managerName), never on the
+ * account's display name. The schema says why: two spellings of one name
+ * silently match nobody, and two managers sharing a name would collide.
+ *
+ * A manager with no link set simply does not appear, which is the same way a
+ * supervisor with no EID link does not: it fails closed rather than guessing.
+ */
+export async function managerAccountsOver(employeeIds: string[], period: DateRange): Promise<string[]> {
+  if (employeeIds.length === 0) return [];
+
+  const owner = periodOwnerSubquery(period);
+  const rows = await db
+    .selectDistinct({ id: users.id })
+    .from(employees)
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .innerJoin(users, and(eq(users.role, "manager"), eq(users.managerName, managerOfRecord(owner))))
+    .where(inArray(employees.id, employeeIds));
+  return rows.map((r) => r.id);
+}
+
 /** Whether `decider` may approve leave for `requester`, neither having an employee row. */
 export async function canDecideForLeader(
   decider: CurrentUser,
@@ -248,16 +276,77 @@ export type PtoView = "team" | "cluster";
  * read differently (cover for a floor, cover for a team), so each gets a
  * calendar of its own.
  */
-export type CalendarView = PtoView | "everyone" | "agents" | "leaders";
+export type CalendarView = PtoView | "everyone" | "agents" | "leaders" | "managers";
 
 const MANAGER_VIEWS: readonly CalendarView[] = ["everyone", "agents", "leaders"];
 const SUPERVISOR_VIEWS: readonly CalendarView[] = ["team", "cluster"];
+/**
+ * An administrator's: the manager's three, plus the managers themselves.
+ *
+ * The fourth exists because an organisation-wide calendar is the only one a
+ * manager's own leave belongs on — nobody else's scope contains them — and
+ * it was the one place it could not be seen (see managerAccountsOver).
+ */
+const ADMIN_VIEWS: readonly CalendarView[] = ["everyone", "agents", "leaders", "managers"];
 
 /** The view a role may ask for, falling back to its default for anything else. */
 export function calendarViewFor(role: CurrentUser["role"], requested: string | undefined): CalendarView {
   const allowed: readonly CalendarView[] =
-    role === "manager" ? MANAGER_VIEWS : role === "supervisor" ? SUPERVISOR_VIEWS : ["team"];
+    role === "admin"
+      ? ADMIN_VIEWS
+      : role === "manager"
+        ? MANAGER_VIEWS
+        : role === "supervisor"
+          ? SUPERVISOR_VIEWS
+          : ["team"];
   return allowed.includes(requested as CalendarView) ? (requested as CalendarView) : allowed[0];
+}
+
+/**
+ * Which kinds of person a view draws.
+ *
+ * Three groups rather than one list because they are found three different
+ * ways: agents have rows in the source data, team leaders exist only as an
+ * EID on those rows, and managers only as a name. The calendar needs to know
+ * which to ask for before it can ask.
+ *
+ * Kept here, pure, rather than as conditions on the page: "which people does
+ * this view show" is the rule the whole feature turns on, and it was already
+ * three nested ternaries deep when it only had to answer two of them.
+ *
+ * The viewer's own account is always drawn on top of whatever this returns,
+ * so a person's own request appears on their own calendar in every view.
+ */
+export interface CalendarAudience {
+  /** The employees in scope — everyone the source data carries a row for. */
+  agents: boolean;
+  /** The team leaders over them. */
+  leaders: boolean;
+  /** The managers over them. */
+  managers: boolean;
+}
+
+export function calendarAudience(role: CurrentUser["role"], view: CalendarView): CalendarAudience {
+  switch (view) {
+    case "agents":
+      return { agents: true, leaders: false, managers: false };
+    case "leaders":
+      return { agents: false, leaders: true, managers: false };
+    case "managers":
+      return { agents: false, leaders: false, managers: true };
+    // A team leader arranges cover with their peers, not with another
+    // team's agents, so the cluster is the other leaders and nobody else.
+    case "cluster":
+      return { agents: false, leaders: true, managers: false };
+    // Only an administrator's span contains managers at all. For a manager,
+    // "everyone" is their own span, and the only manager over it is
+    // themselves — already drawn, as every viewer is.
+    case "everyone":
+      return { agents: true, leaders: true, managers: role === "admin" };
+    case "team":
+    default:
+      return { agents: true, leaders: true, managers: false };
+  }
 }
 
 /**

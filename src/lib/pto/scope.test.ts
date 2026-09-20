@@ -48,6 +48,7 @@ vi.mock("@/lib/db/client", () => {
 });
 
 const {
+  calendarAudience,
   calendarViewFor,
   canDecideForLeader,
   decidableLeaderIds,
@@ -327,8 +328,49 @@ describe("calendarViewFor", () => {
     expect(calendarViewFor("supervisor", "leaders")).toBe("team");
   });
 
-  it("keeps an agent and an administrator on the one view they have", () => {
+  it("lets an administrator pick any of the four, defaulting to everyone", () => {
+    expect(calendarViewFor("admin", undefined)).toBe("everyone");
+    expect(calendarViewFor("admin", "agents")).toBe("agents");
+    expect(calendarViewFor("admin", "leaders")).toBe("leaders");
+    expect(calendarViewFor("admin", "managers")).toBe("managers");
+    // A supervisor's view names mean nothing to an administrator either.
+    expect(calendarViewFor("admin", "cluster")).toBe("everyone");
+  });
+
+  it("keeps the managers view to the only role whose scope contains them", () => {
+    expect(calendarViewFor("manager", "managers")).toBe("everyone");
+    expect(calendarViewFor("supervisor", "managers")).toBe("team");
+    expect(calendarViewFor("agent", "managers")).toBe("team");
+  });
+
+  it("keeps an agent on the one view they have", () => {
     expect(calendarViewFor("agent", "cluster")).toBe("team");
-    expect(calendarViewFor("admin", "leaders")).toBe("team");
+  });
+});
+
+describe("calendarAudience", () => {
+  it("draws only the kind of person a single-kind view names", () => {
+    expect(calendarAudience("admin", "agents")).toEqual({ agents: true, leaders: false, managers: false });
+    expect(calendarAudience("admin", "leaders")).toEqual({ agents: false, leaders: true, managers: false });
+    expect(calendarAudience("admin", "managers")).toEqual({ agents: false, leaders: false, managers: true });
+  });
+
+  it("gives an administrator's everyone the managers too, and a manager's not", () => {
+    // The one calendar a manager's own leave belongs on: no other viewer's
+    // scope reaches them. A manager's own span has only themselves above it,
+    // and they are drawn anyway as the viewer.
+    expect(calendarAudience("admin", "everyone").managers).toBe(true);
+    expect(calendarAudience("manager", "everyone")).toEqual({ agents: true, leaders: true, managers: false });
+  });
+
+  it("keeps a supervisor's cluster to the other leaders", () => {
+    // A team leader arranges cover with their peers, not with another
+    // team's agents.
+    expect(calendarAudience("supervisor", "cluster")).toEqual({ agents: false, leaders: true, managers: false });
+  });
+
+  it("carries a team's own leader onto the team calendar", () => {
+    expect(calendarAudience("supervisor", "team")).toEqual({ agents: true, leaders: true, managers: false });
+    expect(calendarAudience("agent", "team")).toEqual({ agents: true, leaders: true, managers: false });
   });
 });

@@ -24,6 +24,18 @@ export const MANAGER_TABS: readonly ViewTab[] = [
 ];
 
 /**
+ * An administrator's choice: the manager's three, and the managers
+ * themselves. Organisation-wide is the only calendar a manager's own leave
+ * belongs on, since no other viewer's scope reaches them.
+ */
+export const ADMIN_TABS: readonly ViewTab[] = [
+  { key: "everyone", label: "Everyone" },
+  { key: "agents", label: "Agents" },
+  { key: "leaders", label: "Team leaders" },
+  { key: "managers", label: "Managers" },
+];
+
+/**
  * Switches the calendar between the views a role has. Only rendered when
  * there is more than one — an agent's team is all they have, and a
  * supervisor without a resolvable cluster has only their team.

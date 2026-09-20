@@ -3,21 +3,25 @@ import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
+import type { CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { employees, ptoRequests, users } from "@/lib/db/schema";
 import { resolveScopedIds } from "@/lib/queries/performance";
 import {
+  calendarAudience,
   calendarViewFor,
+  type CalendarView,
   canSeeLeaveType,
   decidableLeaderIds,
   hasCluster,
   leaderAccountsOver,
+  managerAccountsOver,
   ptoViewIds,
 } from "@/lib/pto/scope";
 import { separatedBefore } from "@/lib/queries/eligibility";
 import { countDays, daysIn } from "@/lib/pto/rules";
 import { CancelButton, DecisionButtons, RequestForm } from "./pto-forms";
-import { MANAGER_TABS, SUPERVISOR_TABS, ViewPicker } from "./view-picker";
+import { ADMIN_TABS, MANAGER_TABS, SUPERVISOR_TABS, ViewPicker } from "./view-picker";
 import { PtoCalendar } from "./calendar";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -193,24 +197,26 @@ export default async function PtoPage({
         .limit(100)
     : Promise.resolve([]);
 
-  const [leadersOver, pending, mine, upcoming] = await Promise.all([
-    leaderAccountsOver(calendarIds, monthPeriod),
+  const audience = calendarAudience(user.role, view);
+  const [leadersOver, managersOver, pending, mine, upcoming] = await Promise.all([
+    // Each of these is a join of its own, and a view that does not draw a
+    // kind of person has no use for one: an "Agents" calendar should not pay
+    // to find the leaders it will not show, and only an administrator's
+    // views reach managers at all.
+    audience.leaders ? leaderAccountsOver(calendarIds, monthPeriod) : Promise.resolve([]),
+    audience.managers ? managerAccountsOver(calendarIds, monthPeriod) : Promise.resolve([]),
     pendingQuery,
     mineQuery,
     upcomingQuery,
   ]);
-  // The leaders-only views: a manager's "Team leaders", and a supervisor's
-  // "My cluster", which shows the leave of every team leader under the same
-  // manager and none of the other teams' agents — a team leader arranges
-  // cover with their peers, not with another leader's reports. The agent
-  // ids still drive which leaders are found (leadersOver above); they are
-  // simply not drawn. A manager's "Agents" view is the reverse. Every other
-  // view carries both, since a team's calendar needs to show its own leader
-  // out. Your own account always counts, so your own request shows on your
-  // calendar whichever view.
-  const leadersOnly = view === "leaders" || (user.role === "supervisor" && view === "cluster");
-  const agentIds = leadersOnly ? [] : calendarIds;
-  const leaderVisibleIds = view === "agents" ? [user.id] : [...new Set([user.id, ...leadersOver])];
+  // Which kinds of person this view draws is decided once, in the scope
+  // module, because it is the rule the whole calendar turns on (see
+  // calendarAudience). The agent ids still drive which leaders and managers
+  // are *found* above even in a view that draws neither — a leaders-only
+  // calendar is still the leaders over these people. Your own account is
+  // always added, so your own request shows on your calendar whichever view.
+  const agentIds = audience.agents ? calendarIds : [];
+  const leaderVisibleIds = [...new Set([user.id, ...leadersOver, ...managersOver])];
 
   // Everything overlapping the visible month, for the calendar. Never
   // skipped for a month with no agents in it: a leader's own request, and
@@ -277,23 +283,11 @@ export default async function PtoPage({
         <Card>
           <CardHeader
             title="Calendar"
-            subtitle={
-              user.role === "agent"
-                ? "Approved and pending leave across your team"
-                : user.role === "supervisor"
-                  ? view === "cluster"
-                    ? "Approved and pending leave of the team leaders in your manager's cluster"
-                    : "Approved and pending leave for your direct reports"
-                  : user.role === "manager"
-                    ? view === "agents"
-                      ? "Approved and pending leave for the agents in your span"
-                      : view === "leaders"
-                        ? "Approved and pending leave for your team leaders"
-                        : "Approved and pending leave across your span"
-                    : "Approved and pending leave, organization-wide"
-            }
+            subtitle={calendarSubtitle(user.role, view)}
             action={
-              user.role === "manager" ? (
+              user.role === "admin" ? (
+                <ViewPicker month={month} view={view} tabs={ADMIN_TABS} />
+              ) : user.role === "manager" ? (
                 <ViewPicker month={month} view={view} tabs={MANAGER_TABS} />
               ) : clusterAvailable ? (
                 <ViewPicker month={month} view={view} tabs={SUPERVISOR_TABS} />
@@ -484,4 +478,30 @@ export default async function PtoPage({
       </main>
     </>
   );
+}
+
+/**
+ * What the calendar is showing, in the viewer's own terms.
+ *
+ * A table rather than the nested ternaries this replaced: with a fourth
+ * administrator view added they were five deep, and a caption that says the
+ * wrong thing about whose leave you are looking at is worse than no caption.
+ */
+function calendarSubtitle(role: CurrentUser["role"], view: CalendarView): string {
+  const leave = "Approved and pending leave";
+  if (role === "agent") return `${leave} across your team`;
+  if (role === "supervisor") {
+    return view === "cluster"
+      ? `${leave} of the team leaders in your manager's cluster`
+      : `${leave} for your direct reports`;
+  }
+  if (role === "manager") {
+    if (view === "agents") return `${leave} for the agents in your span`;
+    if (view === "leaders") return `${leave} for your team leaders`;
+    return `${leave} across your span`;
+  }
+  if (view === "agents") return `${leave} for every agent`;
+  if (view === "leaders") return `${leave} for every team leader`;
+  if (view === "managers") return `${leave} for every manager`;
+  return `${leave}, organization-wide`;
 }
