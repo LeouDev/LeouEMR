@@ -5,11 +5,13 @@ import {
   employeeRampAssignments,
   employees,
   actionItems,
+  actionPlanCategories,
   actionPlans,
   kpiDefinitions,
   performanceIssues,
   rcaEntries,
   rcaNotes,
+  rootCauseCategories,
   skillFacts,
   skillReferences,
   weeklyMetricResults,
@@ -333,7 +335,11 @@ export interface StageNote {
   status: string;
   openedWeek: string;
   problemStatement: string | null;
+  /** The chosen root-cause category, which is the part a reader can count. */
+  rootCauseCategory: string | null;
   rootCauseDetails: string | null;
+  /** Null on a plan written before the category list existed. */
+  planCategory: string | null;
   correctiveAction: string | null;
   expectedBehavior: string | null;
   /** Lines written against the root cause for this week alone. */
@@ -364,7 +370,9 @@ export async function getStageDetail(employeeId: string, stage: number): Promise
       status: performanceIssues.status,
       openedWeek: performanceIssues.openedWeek,
       problemStatement: rcaEntries.problemStatement,
+      rootCauseCategory: rootCauseCategories.label,
       rootCauseDetails: rcaEntries.rootCauseDetails,
+      planCategory: actionPlanCategories.label,
       correctiveAction: actionPlans.correctiveAction,
       expectedBehavior: actionPlans.expectedBehavior,
     })
@@ -373,6 +381,11 @@ export async function getStageDetail(employeeId: string, stage: number): Promise
     .innerJoin(kpiDefinitions, eq(kpiDefinitions.id, performanceIssues.kpiId))
     .leftJoin(rcaEntries, eq(rcaEntries.actionItemId, actionItems.id))
     .leftJoin(actionPlans, eq(actionPlans.actionItemId, actionItems.id))
+    // Both categories left-joined through their own nullable columns: the
+    // RCA may not be written yet, and a plan from before the category list
+    // existed has prose and no category. Either way the prose still shows.
+    .leftJoin(rootCauseCategories, eq(rootCauseCategories.id, rcaEntries.rootCauseCategoryId))
+    .leftJoin(actionPlanCategories, eq(actionPlanCategories.id, actionPlans.categoryId))
     // Open by that week: an item opened later says nothing about it, and one
     // opened before was still the work in hand.
     .where(and(eq(performanceIssues.employeeId, employeeId), lte(performanceIssues.openedWeek, week)))

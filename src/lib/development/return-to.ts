@@ -21,6 +21,9 @@ export interface ReturnTo {
 /** The token the Development Hub roster sends with every item link it draws. */
 export const FROM_DEVELOPMENT = "development";
 
+/** The ramp progression's side panel, which links out to the item it quotes. */
+export const FROM_RAMP = "ramp";
+
 /**
  * A Map rather than an object literal, which is not a detail. An object's
  * prototype answers for keys nobody put in it: `?from=constructor` reads
@@ -29,6 +32,7 @@ export const FROM_DEVELOPMENT = "development";
  */
 const RETURNS = new Map<string, ReturnTo>([
   [FROM_DEVELOPMENT, { href: "/development", label: "← Back to the development hub" }],
+  [FROM_RAMP, { href: "/ramp", label: "← Back to the ramp progression" }],
 ]);
 
 export function returnTo(from: string | undefined, fallback: ReturnTo): ReturnTo {

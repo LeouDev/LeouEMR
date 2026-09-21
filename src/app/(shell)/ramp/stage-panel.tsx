@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect } from "react";
+import { FROM_RAMP, withReturn } from "@/lib/development/return-to";
 import type { StageDetail } from "@/lib/queries/ramp-progression";
 
 /**
@@ -15,6 +17,11 @@ import type { StageDetail } from "@/lib/queries/ramp-progression";
  * per-week part, written when that week differed from the original root
  * cause. Showing them as one block would make a plan written in March look
  * like a note about this week.
+ *
+ * Each category is shown above the prose it labels rather than beside it.
+ * The category is the countable part — four stalls that were all Process
+ * Refresher is a finding, where four paragraphs is reading — and a reader
+ * scanning several weeks should get it without reading a word of the prose.
  */
 export function StagePanel({
   agentName,
@@ -82,14 +89,23 @@ export function StagePanel({
               <article key={item.actionItemId} className="border border-line px-3.5 py-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-[13px] font-bold text-ink">{item.kpiName}</h3>
-                  <span className="text-[10px] tracking-[0.06em] text-muted uppercase">
+                  {/* The code is the way to the item itself, for a reader who
+                      reads the plan and then wants to change it. It carries
+                      the ramp token so the item page sends them back here
+                      rather than to a list they never came from. */}
+                  <Link
+                    href={withReturn(`/records/${item.actionItemId}`, FROM_RAMP)}
+                    className="text-[10px] tracking-[0.06em] text-muted uppercase underline decoration-dotted underline-offset-4 transition hover:text-orange-brand hover:decoration-solid"
+                  >
                     {item.actionItemCode} · opened {item.openedWeek}
-                  </span>
+                  </Link>
                 </div>
 
+                <Category>{item.rootCauseCategory}</Category>
                 <Field label="Root cause">
                   {item.rootCauseDetails ?? item.problemStatement}
                 </Field>
+                <Category>{item.planCategory}</Category>
                 <Field label="Action plan">{item.correctiveAction}</Field>
                 <Field label="Expected behavior">{item.expectedBehavior}</Field>
 
@@ -113,6 +129,24 @@ export function StagePanel({
         )}
       </aside>
     </div>
+  );
+}
+
+/**
+ * The chosen category, as a chip above the prose it labels.
+ *
+ * Omitted entirely when there is none — an RCA not yet written, or a plan
+ * from before the list existed. An empty chip would read as a category
+ * somebody chose and left blank.
+ */
+function Category({ children }: { children: string | null }) {
+  if (!children) return null;
+  return (
+    <p className="mt-2.5">
+      <span className="bg-orange-brand-100 px-1.5 py-0.5 text-[10px] font-semibold tracking-[0.06em] text-ink uppercase">
+        {children}
+      </span>
+    </p>
   );
 }
 

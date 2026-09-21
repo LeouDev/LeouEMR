@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FROM_DEVELOPMENT, returnTo, withReturn } from "./return-to";
+import { FROM_DEVELOPMENT, FROM_RAMP, returnTo, withReturn } from "./return-to";
 
 const LIST = { href: "/action-items", label: "← All action items" };
 
@@ -8,6 +8,13 @@ describe("returnTo", () => {
     expect(returnTo(FROM_DEVELOPMENT, LIST)).toEqual({
       href: "/development",
       label: "← Back to the development hub",
+    });
+  });
+
+  it("sends the ramp panel's reader back to the ramp page", () => {
+    expect(returnTo(FROM_RAMP, LIST)).toEqual({
+      href: "/ramp",
+      label: "← Back to the ramp progression",
     });
   });
 
