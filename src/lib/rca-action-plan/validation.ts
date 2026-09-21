@@ -25,7 +25,11 @@ export const rcaSchema = z.object({
 
 export const actionPlanSchema = z.object({
   actionItemId: z.string().uuid(),
-  correctiveAction: z.string().trim().min(10, "Describe the corrective action").max(PROSE_MAX),
+  // Required here though the column is nullable: plans written before the
+  // list existed keep their prose and no category, and the form must not
+  // let a new one be saved without one.
+  categoryId: z.string().uuid("Select an action plan category"),
+  correctiveAction: z.string().trim().min(10, "Describe the plan in at least 10 characters").max(PROSE_MAX),
   expectedBehavior: z.string().trim().min(10, "Describe the expected behavior").max(PROSE_MAX),
   targetMetric: z.string().trim().min(1, "Name the target metric").max(200),
   targetValue: z.number().finite("Enter a target value"),

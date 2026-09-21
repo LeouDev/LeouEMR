@@ -83,6 +83,7 @@ export default async function RecordPage({
     notes,
     timeMotion,
     rootCauseCategory,
+    actionPlanCategory,
     rcaBy,
     planBy,
   } = detail;
@@ -283,7 +284,12 @@ export default async function RecordPage({
           <CardHeader title="Action plan" subtitle={planBy ? `Entered by ${planBy}` : "Entered by the supervisor"} />
           {plan ? (
             <dl className="space-y-4 px-6 py-5">
-              <Field label="Corrective action">{plan.correctiveAction}</Field>
+              {/* Omitted rather than shown empty for a plan written before
+                  the category list existed. */}
+              {actionPlanCategory && (
+                <Field label="Action plan category">{actionPlanCategory}</Field>
+              )}
+              <Field label="Plan details">{plan.correctiveAction}</Field>
               <Field label="Expected behavior">{plan.expectedBehavior}</Field>
               <div className="grid gap-4 sm:grid-cols-3">
                 <Field label="Target">{`${plan.targetMetric} → ${plan.targetValue}`}</Field>
