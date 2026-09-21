@@ -36,6 +36,12 @@ export const IDEAS_DAILY_GOAL = 5;
 
 export const TEXT_MAX = 500;
 export const NOTE_MAX = 300;
+/**
+ * The notepad's ceiling — roughly three pages, far above anything anyone
+ * types into a scratchpad and low enough that a stuck key cannot grow the
+ * database a megabyte at a time.
+ */
+export const PAD_MAX = 10_000;
 
 export function emptyBoard(): Board {
   return { todos: [], decisions: [], ideas: [], letgo: [] };

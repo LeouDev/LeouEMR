@@ -6,6 +6,7 @@ import { BOXES, boardProgress, type Board, type BoxKey } from "@/lib/my-space/bo
 import type { SavedDay } from "@/lib/queries/my-space";
 import { describeActionError } from "@/lib/ui/action-error";
 import { addItem, deleteItem, editItem, saveDay, toggleItem } from "./actions";
+import { Notepad } from "./notepad";
 import { BoxCard } from "./box-card";
 import { HistoryPanel } from "./history-panel";
 import { ProgressRail } from "./progress-rail";
@@ -25,12 +26,15 @@ type Toast = { text: string; tone: "ok" | "fail" };
 export function MySpaceBoard({
   initialBoard,
   initialDays,
+  initialNote,
   today,
   todayLabel,
   roleLabel,
 }: {
   initialBoard: Board;
   initialDays: SavedDay[];
+  /** The notepad's text, or null when it could not be read (see getMySpace). */
+  initialNote: string | null;
   /** Manila's today, YYYY-MM-DD. */
   today: string;
   todayLabel: string;
@@ -176,6 +180,11 @@ export function MySpaceBoard({
               onDelete={(id) => void remove(box, id)}
             />
           ))}
+          {/* Fifth panel, full width under the four: a notepad is written in
+              lines, not in a column half a board wide. Outside BOXES on
+              purpose — it has no items to complete, so no place on the rail
+              and nothing for "Save day" to freeze. */}
+          <Notepad initial={initialNote} />
         </div>
         <div className="w-full md:sticky md:top-6 md:w-[220px] md:flex-none">
           <ProgressRail progress={progress} />

@@ -5,11 +5,12 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { mySpaceDays, mySpaceItems } from "@/lib/db/schema";
+import { mySpaceDays, mySpaceItems, mySpaceNotes } from "@/lib/db/schema";
 import {
   BOXES,
   BOX_META,
   NOTE_MAX,
+  PAD_MAX,
   TEXT_MAX,
   canUseMySpace,
   emptyBoard,
@@ -41,6 +42,12 @@ const noteSchema = z.string().trim().max(NOTE_MAX, `Keep the note under ${NOTE_M
 const addSchema = z.object({ box: boxSchema, text: textSchema, note: noteSchema });
 const editSchema = z.object({ id: z.string().uuid(), text: textSchema, note: noteSchema });
 const idSchema = z.object({ id: z.string().uuid() });
+// Not trimmed, unlike an item's text: the indentation and blank lines in a
+// notepad are the writer's, and stripping them would rewrite what they typed
+// under them. Only the ceiling is enforced.
+const padSchema = z.object({
+  text: z.string().max(PAD_MAX, `Keep the notepad under ${PAD_MAX} characters`),
+});
 
 async function owner(): Promise<CurrentUser | Failure> {
   const user = await getCurrentUser();
@@ -168,4 +175,35 @@ export async function saveDay(): Promise<SaveDayResult> {
 
   revalidatePath("/my-space");
   return { ok: true, day, boxes, savedAt: savedAt.toISOString() };
+}
+
+/**
+ * The notepad, written whole on each save.
+ *
+ * An upsert onto the one row the unique constraint on user_id allows, so a
+ * person's pad cannot fork in two if a slow save and a fast one cross.
+ *
+ * Deliberately no revalidatePath. The pad autosaves while its owner types,
+ * and revalidating would re-render the entire board — every box, the rail
+ * and the history — on each of those saves, for a value the client already
+ * holds. The four boxes revalidate because their writes change what the
+ * server computes from; this one changes nothing but itself.
+ */
+export async function saveNote(input: unknown): Promise<ActionResult> {
+  const user = await owner();
+  if (isFailure(user)) return user;
+
+  const parsed = padSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
+
+  const now = new Date();
+  await db
+    .insert(mySpaceNotes)
+    .values({ userId: user.id, text: parsed.data.text, updatedAt: now })
+    .onConflictDoUpdate({
+      target: mySpaceNotes.userId,
+      set: { text: parsed.data.text, updatedAt: now },
+    });
+
+  return { ok: true };
 }
