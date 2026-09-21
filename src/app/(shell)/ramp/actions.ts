@@ -3,12 +3,20 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canRunTeamPrograms, employeeScope } from "@/lib/auth/scope";
+import { canRunTeamPrograms, employeeScope, isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CACHE_TAG, invalidateCache } from "@/lib/cache";
 import { db } from "@/lib/db/client";
 import { auditLog, employeeRampAssignments, employees } from "@/lib/db/schema";
 import { periodContaining } from "@/lib/queries/period";
+import {
+  getRampProgression,
+  getStageDetail,
+  loadTeamAgents,
+  type AgentProgression,
+  type StageDetail,
+} from "@/lib/queries/ramp-progression";
+import { LAST_STAGE } from "@/lib/ramp/engine";
 import { reapplyRampToStoredWeeks, revertRampOnStoredWeeks } from "@/lib/ramp/reapply";
 
 export type RampResult =
@@ -200,4 +208,64 @@ export async function reapplyAllRamps(): Promise<ReapplyAllResult> {
 
   revalidatePath("/ramp");
   return { ok: true, assignments: assignments.length, weeksCorrected };
+}
+
+export type TeamAgentsResult = { ok: true; agents: AgentProgression[] } | { ok: false; error: string };
+export type StageDetailResult = { ok: true; detail: StageDetail } | { ok: false; error: string };
+
+/**
+ * One team's agents, fetched when the team is opened rather than with the
+ * page — the reason only the team level is cached (see ramp-progression.ts).
+ *
+ * Authorised against the caller's own scope by name: a supervisor may open
+ * their own team and nobody else's, and a team name in the argument is a
+ * request rather than a grant.
+ */
+export async function loadRampTeamAgents(supervisor: unknown): Promise<TeamAgentsResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (user.role === "agent" || isSupportRole(user)) return { ok: false, error: "Not allowed" };
+
+  const name = z.string().min(1).safeParse(supervisor);
+  if (!name.success) return { ok: false, error: "Unknown team" };
+
+  const visible = await visibleTeams(user);
+  if (!visible.has(name.data)) return { ok: false, error: "Unknown team" };
+
+  return { ok: true, agents: await loadTeamAgents(name.data) };
+}
+
+/**
+ * What the supervisor wrote about one agent during one stage, for the side
+ * panel. Scoped the same way, through the team the agent belongs to.
+ */
+export async function loadRampStageDetail(input: unknown): Promise<StageDetailResult> {
+  const user = await getCurrentUser();
+  if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (user.role === "agent" || isSupportRole(user)) return { ok: false, error: "Not allowed" };
+
+  const parsed = z
+    .object({ employeeId: z.string().uuid(), stage: z.number().int().min(0).max(LAST_STAGE) })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Unknown agent or stage" };
+
+  const scoped = await loadScopedEmployee(user, parsed.data.employeeId);
+  if (!scoped) return { ok: false, error: "Unknown agent or stage" };
+
+  return { ok: true, detail: await getStageDetail(parsed.data.employeeId, parsed.data.stage) };
+}
+
+/** The team names this caller may open, from the progression they can already see. */
+async function visibleTeams(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>): Promise<Set<string>> {
+  const teams = await getRampProgression();
+  const scope = employeeScope(user);
+  if (scope === null) return new Set();
+
+  const mine = await db
+    .select({ supervisor: employees.supervisorName })
+    .from(employees)
+    .where(scope === "all" ? undefined : scope);
+
+  const allowed = new Set(mine.map((r) => r.supervisor ?? "Unassigned"));
+  return new Set(teams.map((t) => t.supervisor).filter((name) => allowed.has(name)));
 }

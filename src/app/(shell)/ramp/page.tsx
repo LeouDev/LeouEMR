@@ -1,13 +1,19 @@
 import { redirect } from "next/navigation";
-import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
+import { EmptyState, PageBand, StatCard } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
 import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getRampBoard } from "@/lib/queries/ramp";
+import { getRampProgression } from "@/lib/queries/ramp-progression";
+import { employeeScope } from "@/lib/auth/scope";
+import { db } from "@/lib/db/client";
+import { employees } from "@/lib/db/schema";
 import { LAST_STAGE, isNesting } from "@/lib/ramp/engine";
 import { ClearRampButton, RampForm } from "./ramp-form";
 import { RampDateEditor } from "./ramp-date-editor";
 import { ReapplyAllButton } from "./reapply-all-button";
+import { CollapsibleCard } from "./collapsible-card";
+import { ProgressionBoard } from "./progression-board";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
@@ -35,7 +41,22 @@ export default async function RampPage() {
   if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
   const canEdit = canManageActionItems(user);
-  const board = await getRampBoard(user, todayIso());
+  // Organisation-wide and cached, then narrowed here: the progression is one
+  // answer for everybody and computing it per viewer is what the cache
+  // exists to prevent (see lib/queries/ramp-progression.ts).
+  const scope = employeeScope(user);
+  const [board, everyTeam, mine] = await Promise.all([
+    getRampBoard(user, todayIso()),
+    getRampProgression(),
+    scope === null
+      ? Promise.resolve([])
+      : db
+          .select({ supervisor: employees.supervisorName })
+          .from(employees)
+          .where(scope === "all" ? undefined : scope),
+  ]);
+  const visible = new Set(mine.map((r) => r.supervisor ?? "Unassigned"));
+  const teams = everyTeam.filter((team) => visible.has(team.supervisor));
 
   const nesting = board.rows.filter((r) => isNesting(r.stage)).length;
   const completingThisWeek = board.rows.filter((r) => r.stage === LAST_STAGE).length;
@@ -56,16 +77,45 @@ export default async function RampPage() {
           />
         </div>
 
-        <Card>
-          <CardHeader
-            title="Board"
-            subtitle={
-              board.rows.length === 0
-                ? "Nobody currently ramping"
-                : "Ordered by stage — Nesting first, closest to standard last"
-            }
-            action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
-          />
+        <CollapsibleCard
+          id="ramp:progression"
+          title="Progression by stage"
+          subtitle="Every ramp on record, averaged per team — open a team for its agents, then a figure for what the supervisor wrote"
+          action={
+            teams.length > 0 ? (
+              <span className="flex items-center gap-2">
+                {/* Plain links, not buttons: a download is a navigation, and
+                    this way it works with a middle click and a right click
+                    like every other file in the app. */}
+                <a
+                  href="/ramp/export"
+                  className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  CSV
+                </a>
+                <a
+                  href="/ramp/export?format=xlsx"
+                  className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  Excel
+                </a>
+              </span>
+            ) : undefined
+          }
+        >
+          <ProgressionBoard teams={teams} />
+        </CollapsibleCard>
+
+        <CollapsibleCard
+          id="ramp:board"
+          title="Board"
+          subtitle={
+            board.rows.length === 0
+              ? "Nobody currently ramping"
+              : "Ordered by stage — Nesting first, closest to standard last"
+          }
+          action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
+        >
           {board.rows.length === 0 ? (
             <EmptyState
               title="Nobody currently ramping"
@@ -138,7 +188,7 @@ export default async function RampPage() {
             ) : (
               <RampForm employees={board.eligibleEmployees} skills={board.skills} />
             ))}
-        </Card>
+        </CollapsibleCard>
       </main>
     </>
   );
