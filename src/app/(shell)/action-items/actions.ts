@@ -148,6 +148,7 @@ export async function saveActionPlan(input: unknown): Promise<ActionResult> {
 
   const values = {
     actionItemId: parsed.data.actionItemId,
+    categoryId: parsed.data.categoryId,
     correctiveAction: parsed.data.correctiveAction,
     expectedBehavior: parsed.data.expectedBehavior,
     targetMetric: parsed.data.targetMetric,

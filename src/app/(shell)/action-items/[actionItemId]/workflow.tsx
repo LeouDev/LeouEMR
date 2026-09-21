@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { groupCategories, type PlanCategory } from "@/lib/rca-action-plan/plan-categories";
 import { useState } from "react";
 import { acknowledge, saveActionPlan, saveRca, sendToAgent } from "../actions";
 import { describeActionError } from "@/lib/ui/action-error";
@@ -18,6 +19,7 @@ export interface RcaValues {
 }
 
 export interface PlanValues {
+  categoryId: string;
   correctiveAction: string;
   expectedBehavior: string;
   targetMetric: string;
@@ -209,11 +211,14 @@ function SupportFlags({
 export function ActionPlanForm({
   actionItemId,
   initial,
+  categories,
   readOnly,
   flagsOnly = false,
 }: {
   actionItemId: string;
   initial: PlanValues;
+  /** Active categories, already ordered; grouped in the select by groupLabel. */
+  categories: PlanCategory[];
   readOnly: boolean;
   /**
    * A support role on a plan someone else wrote: the plan reads as a
@@ -238,6 +243,7 @@ export function ActionPlanForm({
     try {
       result = await saveActionPlan({
         actionItemId,
+        categoryId: values.categoryId,
         correctiveAction: values.correctiveAction,
         expectedBehavior: values.expectedBehavior,
         targetMetric: values.targetMetric,
@@ -267,7 +273,11 @@ export function ActionPlanForm({
     return (
       <div>
         <dl className="space-y-3 px-6 py-5 text-sm">
-          <Readonly term="Corrective action" value={values.correctiveAction} />
+          <Readonly
+            term="Action plan category"
+            value={categories.find((c) => c.id === values.categoryId)?.label ?? "—"}
+          />
+          <Readonly term="Plan details" value={values.correctiveAction} />
           <Readonly term="Expected behavior" value={values.expectedBehavior} />
           <Readonly term="Target" value={`${values.targetMetric} → ${values.targetValue}`} />
           <Readonly term="Due date" value={values.dueDate} />
@@ -305,7 +315,42 @@ export function ActionPlanForm({
   return (
     <form onSubmit={submit} className="space-y-4 px-6 py-5">
       <label className="block">
-        <span className={label}>Corrective action</span>
+        <span className={label}>Action plan category</span>
+        <select
+          required
+          value={values.categoryId}
+          onChange={(e) => setValues({ ...values, categoryId: e.target.value })}
+          className={field}
+        >
+          <option value="">Select a category…</option>
+          {/* Grouped in the order the rows came back, so the list reads in
+              thirds rather than as seventeen flat options. A row with no
+              group still renders, ungrouped, rather than disappearing. */}
+          {groupCategories(categories).map(([heading, options]) =>
+            heading ? (
+              <optgroup key={heading} label={heading}>
+                {options.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.label}
+                  </option>
+                ))}
+              </optgroup>
+            ) : (
+              options.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.label}
+                </option>
+              ))
+            ),
+          )}
+        </select>
+      </label>
+
+      <label className="block">
+        {/* The same field it has always been — the column is still
+            corrective_action — renamed to read as the detail under the
+            category rather than a second, competing answer. */}
+        <span className={label}>Plan details</span>
         <textarea
           required
           rows={2}

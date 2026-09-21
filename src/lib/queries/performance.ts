@@ -12,6 +12,7 @@ import {
   performanceIssues,
   rcaEntries,
   rcaNotes,
+  actionPlanCategories,
   rootCauseCategories,
   timeMotionStudies,
   users,
@@ -666,7 +667,7 @@ export async function getCoachingRecordDetail(user: CurrentUser, actionItemId: s
   if (!detail) return null;
 
   const authorIds = [...new Set([detail.rca?.createdBy, detail.plan?.createdBy].filter((id): id is string => !!id))];
-  const [authors, categories] = await Promise.all([
+  const [authors, categories, planCategories] = await Promise.all([
     authorIds.length > 0
       ? db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, authorIds))
       : Promise.resolve([]),
@@ -677,12 +678,24 @@ export async function getCoachingRecordDetail(user: CurrentUser, actionItemId: s
           .where(eq(rootCauseCategories.id, detail.rca.rootCauseCategoryId))
           .limit(1)
       : Promise.resolve([]),
+    // A plan written before the list existed has no category, and the table
+    // itself only arrives with migration 0060 — either way the record shows
+    // the plan's prose and simply omits the line.
+    detail.plan?.categoryId
+      ? db
+          .select({ label: actionPlanCategories.label })
+          .from(actionPlanCategories)
+          .where(eq(actionPlanCategories.id, detail.plan.categoryId))
+          .limit(1)
+          .catch(() => [])
+      : Promise.resolve([]),
   ]);
   const nameOf = (id: string | undefined) => (id ? (authors.find((a) => a.id === id)?.name ?? null) : null);
 
   return {
     ...detail,
     rootCauseCategory: categories[0]?.label ?? null,
+    actionPlanCategory: planCategories[0]?.label ?? null,
     rcaBy: nameOf(detail.rca?.createdBy),
     planBy: nameOf(detail.plan?.createdBy),
   };

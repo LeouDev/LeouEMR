@@ -10,6 +10,7 @@ const validRca = {
 
 const validPlan = {
   actionItemId: "11111111-1111-4111-8111-111111111111",
+  categoryId: "22222222-2222-4222-8222-222222222222",
   correctiveAction: "Daily check-ins with the supervisor for two weeks.",
   expectedBehavior: "Meets the weekly CPH target without supervision.",
   targetMetric: "CPH",
@@ -47,6 +48,17 @@ describe("rcaSchema", () => {
 describe("actionPlanSchema", () => {
   it("accepts a normal submission", () => {
     expect(actionPlanSchema.safeParse(validPlan).success).toBe(true);
+  });
+
+  it("requires a category, and one that is an id rather than a label", () => {
+    // Nullable in the table so plans written before the list survive; new
+    // ones are gated here. A label arriving instead of an id would mean the
+    // form sent the wrong half of the option.
+    expect(actionPlanSchema.safeParse({ ...validPlan, categoryId: "" }).success).toBe(false);
+    expect(actionPlanSchema.safeParse({ ...validPlan, categoryId: "Comms Training" }).success).toBe(false);
+    const withoutCategory: Record<string, unknown> = { ...validPlan };
+    delete withoutCategory.categoryId;
+    expect(actionPlanSchema.safeParse(withoutCategory).success).toBe(false);
   });
 
   it("rejects an oversized corrective action", () => {

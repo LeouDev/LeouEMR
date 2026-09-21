@@ -7,7 +7,7 @@ import { canAcknowledge, canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
-import { rootCauseCategories } from "@/lib/db/schema";
+import { actionPlanCategories, rootCauseCategories } from "@/lib/db/schema";
 import { SUPPORT_PLAN_LOCKED, SUPPORT_RCA_LOCKED, canRewriteRecord } from "@/lib/development/support";
 import { getActionItemDetail } from "@/lib/queries/performance";
 import { AcknowledgeButton, ActionPlanForm, RcaForm, SendToAgentButton } from "./workflow";
@@ -47,13 +47,28 @@ export default async function ActionItemPage({
   if (!isUuid(actionItemId)) notFound();
   // The category list is a static reference table with no dependency on the
   // item, so it is fetched alongside it rather than after it.
-  const [detail, categories] = await Promise.all([
+  const [detail, categories, planCategories] = await Promise.all([
     getActionItemDetail(user, actionItemId),
     db
       .select({ id: rootCauseCategories.id, label: rootCauseCategories.label })
       .from(rootCauseCategories)
       .where(eq(rootCauseCategories.active, true))
       .orderBy(asc(rootCauseCategories.label)),
+    // Ordered here rather than in the component: the list's order, and the
+    // headings it groups under, are the table's to decide so they can be
+    // changed without a deploy. The table arrives with migration 0060 and
+    // the code deploys first, so a missing one costs the dropdown its
+    // options and nothing else on the page.
+    db
+      .select({
+        id: actionPlanCategories.id,
+        label: actionPlanCategories.label,
+        groupLabel: actionPlanCategories.groupLabel,
+      })
+      .from(actionPlanCategories)
+      .where(eq(actionPlanCategories.active, true))
+      .orderBy(asc(actionPlanCategories.sortOrder), asc(actionPlanCategories.label))
+      .catch(() => []),
   ]);
   if (!detail) notFound();
 
@@ -295,7 +310,9 @@ export default async function ActionItemPage({
             actionItemId={actionItem.id}
             readOnly={!canWrite}
             flagsOnly={canWrite && planLocked}
+            categories={planCategories}
             initial={{
+              categoryId: plan?.categoryId ?? "",
               correctiveAction: plan?.correctiveAction ?? "",
               expectedBehavior: plan?.expectedBehavior ?? "",
               targetMetric: plan?.targetMetric ?? kpi.name,

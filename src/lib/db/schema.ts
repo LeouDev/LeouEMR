@@ -848,9 +848,46 @@ export const rcaNotes = pgTable(
   (table) => [index("rca_notes_item_week_idx").on(table.actionItemId, table.week)],
 );
 
+/**
+ * What a team leader is going to do about an item, as a configurable list —
+ * the action plan's counterpart to root_cause_categories.
+ *
+ * The plan used to be free text alone, which describes one agent well and
+ * answers nothing across four hundred: how often a KPI ends in a ticket
+ * rather than coaching, or how many items are really PAS complaints. The
+ * prose stays underneath; this classifies it.
+ *
+ * `groupLabel` is the heading the form groups options under. Seventeen flat
+ * options is a lot to read at the end of a shift, and the list falls into
+ * natural thirds — done with the agent, raised elsewhere, or still being
+ * worked out. Kept in the row rather than in the component so the grouping
+ * is editable with the list, without a deploy.
+ */
+export const actionPlanCategories = pgTable("action_plan_categories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull().unique(),
+  label: text("label").notNull(),
+  /** The optgroup this option sits under; ordered by sortOrder, then label. */
+  groupLabel: text("group_label").notNull().default(""),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+});
+
 export const actionPlans = pgTable("action_plans", {
   id: uuid("id").primaryKey().defaultRandom(),
   actionItemId: uuid("action_item_id").notNull().unique().references(() => actionItems.id),
+  /**
+   * What kind of plan this is. Nullable because every plan written before
+   * the list existed has prose and no category, and classifying those after
+   * the fact would mean inventing a choice nobody made. The form requires
+   * one for anything new.
+   */
+  categoryId: uuid("category_id").references(() => actionPlanCategories.id),
+  /**
+   * The plan in the author's own words — shown as "Plan details" beneath the
+   * category. The column keeps its original name: the field is the same
+   * field, and renaming a column of live records buys nothing.
+   */
   correctiveAction: text("corrective_action").notNull(),
   expectedBehavior: text("expected_behavior").notNull(),
   targetMetric: text("target_metric").notNull(),

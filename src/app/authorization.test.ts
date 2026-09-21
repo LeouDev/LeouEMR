@@ -229,6 +229,7 @@ describe("RCA, action plan and send to agent", () => {
   };
   const plan = {
     actionItemId: rca.actionItemId,
+    categoryId: "77777777-7777-4777-8777-777777777777",
     correctiveAction: "Side-by-side on the second system twice a week.",
     expectedBehavior: "Holds under a minute on ordinary calls.",
     targetMetric: "AHT",
@@ -283,6 +284,21 @@ describe("RCA, action plan and send to agent", () => {
     expect(await saveActionPlan({ ...plan, dueDate: "" })).toEqual({
       ok: false,
       error: "Set a due date",
+    });
+  });
+
+  it("rejects a plan with no category before any database access", async () => {
+    // The column is nullable so plans written before the list survive; the
+    // gate against a new one arriving uncategorised is here, on the server,
+    // rather than only on the form's required attribute.
+    currentUser.value = signedInAs("supervisor");
+    expect(await saveActionPlan({ ...plan, categoryId: "" })).toEqual({
+      ok: false,
+      error: "Select an action plan category",
+    });
+    expect(await saveActionPlan({ ...plan, categoryId: "not-a-uuid" })).toEqual({
+      ok: false,
+      error: "Select an action plan category",
     });
   });
 
