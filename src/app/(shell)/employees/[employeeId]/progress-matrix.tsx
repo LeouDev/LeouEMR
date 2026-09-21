@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { EwsRiskBadge, formatMetric, formatWeek } from "@/components/ui";
 import { actionItemLinks, cellKey, linkTitle, type CellLink } from "@/lib/development/item-links";
+import { withReturn } from "@/lib/development/return-to";
 import type { EmployeeMatrix } from "@/lib/queries/performance";
 
 const CELL = "min-w-28 border-l border-line/60 px-3 py-2 font-mono text-sm tabular-nums";
@@ -25,11 +26,23 @@ function toneFor(status: "pass" | "warning" | "fail" | null): string {
  * week links to the item — the grid is the index of the plans, which is why
  * there is no separate table of them.
  */
-/** A figure that an action item was tracking that week: the whole cell opens the item. */
-export function LinkedFigure({ link, children }: { link: CellLink; children: React.ReactNode }) {
+/**
+ * A figure that an action item was tracking that week: the whole cell opens
+ * the item. `from` travels with it so the item's own back link returns the
+ * reader where they were rather than to the top of a list.
+ */
+export function LinkedFigure({
+  link,
+  from,
+  children,
+}: {
+  link: CellLink;
+  from?: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link
-      href={`/action-items/${link.actionItemId}`}
+      href={withReturn(`/action-items/${link.actionItemId}`, from)}
       prefetch={false}
       title={linkTitle(link)}
       className="block underline decoration-dotted underline-offset-4 hover:decoration-solid"
@@ -41,7 +54,7 @@ export function LinkedFigure({ link, children }: { link: CellLink; children: Rea
   );
 }
 
-export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
+export function ProgressMatrix({ matrix, from }: { matrix: EmployeeMatrix; from?: string }) {
   const { weeks, kpis, cells, ews, issues } = matrix;
   const links = actionItemLinks(issues);
 
@@ -101,7 +114,7 @@ export function ProgressMatrix({ matrix }: { matrix: EmployeeMatrix }) {
                   >
                     {link ? (
                       <span className="block px-3 py-2">
-                        <LinkedFigure link={link}>{figure}</LinkedFigure>
+                        <LinkedFigure link={link} from={from}>{figure}</LinkedFigure>
                       </span>
                     ) : (
                       figure

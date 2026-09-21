@@ -48,8 +48,26 @@ const record = readFileSync(
 
 describe("reading a root cause from the plan card", () => {
   it("links each line to its own section of the record", () => {
-    expect(source).toMatch(/href=\{`\/records\/\$\{item\.actionItemId\}#rca`\}/);
-    expect(source).toMatch(/href=\{`\/records\/\$\{item\.actionItemId\}#action-plan`\}/);
+    // The href is wrapped to carry the return token, so this pins the
+    // destination rather than the exact spelling of the call around it.
+    expect(source).toMatch(/`\/records\/\$\{item\.actionItemId\}#rca`/);
+    expect(source).toMatch(/`\/records\/\$\{item\.actionItemId\}#action-plan`/);
+  });
+
+  it("tells the record where the reader came from", () => {
+    // Without this the record's back link sends a reader three levels into
+    // the roster to the top of a list they were never in.
+    for (const target of [
+      /withReturn\(`\/records\/\$\{item\.actionItemId\}`, FROM_DEVELOPMENT\)/,
+      /withReturn\(`\/records\/\$\{item\.actionItemId\}#rca`, FROM_DEVELOPMENT\)/,
+      /withReturn\(`\/records\/\$\{item\.actionItemId\}#action-plan`, FROM_DEVELOPMENT\)/,
+    ]) {
+      expect(source).toMatch(target);
+    }
+    // And the same for the figures in the grid and the skill table, which
+    // are the other way into an item from here.
+    expect(source).toContain("<ProgressMatrix matrix={detail.matrix} from={FROM_DEVELOPMENT} />");
+    expect(source).toContain("from={FROM_DEVELOPMENT}");
   });
 
   it("lands on sections the record actually has", () => {

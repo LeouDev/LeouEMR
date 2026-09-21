@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
+import { returnTo } from "@/lib/development/return-to";
 import { notFound, redirect } from "next/navigation";
 import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { canAcknowledge, canManageActionItems } from "@/lib/auth/scope";
@@ -26,14 +27,22 @@ function Recorded() {
 
 export default async function ActionItemPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ actionItemId: string }>;
+  searchParams: Promise<{ from?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
 
   const { actionItemId } = await params;
+  // Where the reader came from, so "back" returns them there rather than to
+  // the top of a list they were never in (see lib/development/return-to.ts).
+  const back = returnTo((await searchParams).from, {
+    href: "/action-items",
+    label: "← All action items",
+  });
   // Same reason as the employee page: a bad id is "not found", not a crash.
   if (!isUuid(actionItemId)) notFound();
   // The category list is a static reference table with no dependency on the
@@ -91,10 +100,10 @@ export default async function ActionItemPage({
 
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Link
-          href="/action-items"
+          href={back.href}
           className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
         >
-          ← All action items
+          {back.label}
         </Link>
 
         <div className="mt-4 mb-6 flex flex-wrap items-start justify-between gap-3">

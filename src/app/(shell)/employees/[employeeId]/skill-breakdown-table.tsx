@@ -51,11 +51,14 @@ export function SkillBreakdownTable({
   rows,
   weeks,
   links,
+  from,
 }: {
   rows: SkillBreakdownRow[];
   weeks: string[];
   /** Action items by skill KPI and week (actionItemLinks); a figure with one opens it. */
   links: ReadonlyMap<string, CellLink>;
+  /** Passed to each item link so its back link returns where the reader was. */
+  from?: string;
 }) {
   if (rows.length === 0) return null;
 
@@ -111,7 +114,7 @@ export function SkillBreakdownTable({
                   <td key={week} className={`${CELL} ${link ? "p-0" : ""}`} title={link ? undefined : detail}>
                     {link ? (
                       <span className="block px-3 py-2">
-                        <LinkedFigure link={link}>{figure}</LinkedFigure>
+                        <LinkedFigure link={link} from={from}>{figure}</LinkedFigure>
                       </span>
                     ) : (
                       figure
