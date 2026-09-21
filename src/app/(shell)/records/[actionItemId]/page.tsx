@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { returnTo } from "@/lib/development/return-to";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
@@ -49,13 +50,20 @@ function formatDate(value: Date | string): string {
  * (the Download PDF button) hides the header, the band, the back link and
  * the button, and keeps each section on one page where it can.
  */
-export default async function RecordPage({ params }: { params: Promise<{ actionItemId: string }> }) {
+export default async function RecordPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ actionItemId: string }>;
+  searchParams: Promise<{ from?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
   if (!canViewRecords(user)) redirect("/dashboard");
 
   const { actionItemId } = await params;
+  const back = returnTo((await searchParams).from, { href: "/records", label: "← All records" });
   // A bad id is "not found", not a crash — same rule as the action-item page.
   if (!isUuid(actionItemId)) notFound();
 
@@ -99,10 +107,10 @@ export default async function RecordPage({ params }: { params: Promise<{ actionI
 
       <main className="mx-auto max-w-5xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
         <Link
-          href="/records"
+          href={back.href}
           className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline print:hidden"
         >
-          ← All records
+          {back.label}
         </Link>
 
         <header className="mt-4 mb-6 print:mt-0 print:break-inside-avoid">

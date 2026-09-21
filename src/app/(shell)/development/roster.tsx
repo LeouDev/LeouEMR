@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useSyncExternalStore, useTransition } from "react";
 import { StatusBadge } from "@/components/ui";
 import { actionItemLinks } from "@/lib/development/item-links";
 import { SUSTAINED_WEEKS } from "@/lib/development/sustained";
+import { rosterViewStore, toggled } from "@/lib/development/roster-view";
+import { FROM_DEVELOPMENT, withReturn } from "@/lib/development/return-to";
 // Types only: importing a VALUE from the query module would pull the
 // database into this client bundle (see sustained.ts).
 import type { DevelopmentRow, RosterManager, RosterTeamLead } from "@/lib/queries/development";
@@ -52,17 +54,30 @@ export function DevelopmentRoster({
   /** Admins read the managers; a manager is already inside one, so theirs opens at their team leaders. */
   groupByManager: boolean;
 }) {
-  const [openManagers, setOpenManagers] = useState<Record<string, boolean>>({});
-  const [openLeads, setOpenLeads] = useState<Record<string, boolean>>({});
-  const [allOpen, setAllOpen] = useState(false);
+  // Where this reader was, kept in the tab rather than in state: following
+  // an item's link and coming back would otherwise land them on a collapsed
+  // roster with their place lost (see lib/development/roster-view.ts).
+  const view = useSyncExternalStore(
+    rosterViewStore.subscribe,
+    rosterViewStore.read,
+    rosterViewStore.serverRead,
+  );
 
   const leads = managers.flatMap((m) => m.teamLeads);
+  // Derived rather than stored: "expand all" is a statement about the rows
+  // on screen, and a stored flag would disagree with them the moment one
+  // was closed by hand.
+  const allOpen =
+    leads.length > 0 && leads.every((l) => view.leads.includes(l.name)) &&
+    managers.every((m) => view.managers.includes(m.name));
 
   function toggleAll() {
     const next = !allOpen;
-    setAllOpen(next);
-    setOpenManagers(Object.fromEntries(managers.map((m) => [m.name, next])));
-    setOpenLeads(Object.fromEntries(leads.map((l) => [l.name, next])));
+    rosterViewStore.save({
+      ...view,
+      managers: next ? managers.map((m) => m.name) : [],
+      leads: next ? leads.map((l) => l.name) : [],
+    });
   }
 
   return (
@@ -82,17 +97,17 @@ export function DevelopmentRoster({
             <div key={manager.name} className="border-b-2 border-ink last:border-b-0">
               <button
                 type="button"
-                aria-expanded={!!openManagers[manager.name]}
-                onClick={() => setOpenManagers((s) => ({ ...s, [manager.name]: !s[manager.name] }))}
+                aria-expanded={view.managers.includes(manager.name)}
+                onClick={() => rosterViewStore.save({ ...view, managers: toggled(view.managers, manager.name) })}
                 // Quieter than an open team leader's row below it, on
                 // purpose: with both bands the same accent the tree read
                 // flat, and the level you are actually reading is the one
                 // that should carry the colour.
                 className={`flex w-full items-center gap-3 px-5 py-3.5 text-left transition hover:bg-cream ${
-                  openManagers[manager.name] ? "bg-cream" : "bg-surface"
+                  view.managers.includes(manager.name) ? "bg-cream" : "bg-surface"
                 }`}
               >
-                <Chevron open={!!openManagers[manager.name]} />
+                <Chevron open={view.managers.includes(manager.name)} />
                 <span className="min-w-0 flex-1">
                   <strong className="text-sm font-bold text-ink">{manager.name}</strong>
                   <span className="ml-2 text-xs text-muted">
@@ -101,14 +116,14 @@ export function DevelopmentRoster({
                   </span>
                 </span>
               </button>
-              {openManagers[manager.name] && (
+              {view.managers.includes(manager.name) && (
                 <div className="bg-cream/40 pl-5">
                   {manager.teamLeads.map((lead) => (
                     <TeamLeadRow
                       key={lead.name}
                       lead={lead}
-                      open={!!openLeads[lead.name]}
-                      onToggle={() => setOpenLeads((s) => ({ ...s, [lead.name]: !s[lead.name] }))}
+                      open={view.leads.includes(lead.name)}
+                      onToggle={() => rosterViewStore.save({ ...view, leads: toggled(view.leads, lead.name) })}
                     />
                   ))}
                 </div>
@@ -119,8 +134,8 @@ export function DevelopmentRoster({
             <TeamLeadRow
               key={lead.name}
               lead={lead}
-              open={!!openLeads[lead.name]}
-              onToggle={() => setOpenLeads((s) => ({ ...s, [lead.name]: !s[lead.name] }))}
+              open={view.leads.includes(lead.name)}
+              onToggle={() => rosterViewStore.save({ ...view, leads: toggled(view.leads, lead.name) })}
             />
           ))}
     </>
@@ -136,7 +151,11 @@ function TeamLeadRow({
   open: boolean;
   onToggle: () => void;
 }) {
-  const [openAgents, setOpenAgents] = useState<Record<string, boolean>>({});
+  const view = useSyncExternalStore(
+    rosterViewStore.subscribe,
+    rosterViewStore.read,
+    rosterViewStore.serverRead,
+  );
 
   return (
     <div className="border-b-2 border-line last:border-b-0">
@@ -191,9 +210,9 @@ function TeamLeadRow({
             <AgentRow
               key={agent.employeeId}
               agent={agent}
-              open={!!openAgents[agent.employeeId]}
+              open={view.agents.includes(agent.employeeId)}
               onToggle={() =>
-                setOpenAgents((s) => ({ ...s, [agent.employeeId]: !s[agent.employeeId] }))
+                rosterViewStore.save({ ...view, agents: toggled(view.agents, agent.employeeId) })
               }
             />
           ))}
@@ -216,11 +235,16 @@ function AgentRow({
   const [failed, setFailed] = useState(false);
   const [loading, startLoading] = useTransition();
 
-  function toggle() {
-    onToggle();
-    // Fetched once and kept: re-opening a row the reader has already looked
-    // at should not ask the server for the same grid again.
-    if (open || detail || loading) return;
+  // Fetched because the row is open, not because it was clicked. A row can
+  // now arrive already open — the reader followed an item's link and came
+  // back — and a fetch hung off the click would leave that row showing its
+  // plan with no figures above it until it was closed and opened again.
+  //
+  // Fetched once and kept: re-opening a row already looked at should not ask
+  // the server for the same grid, and a failure is not retried on every
+  // render either.
+  useEffect(() => {
+    if (!open || detail || failed || loading) return;
     startLoading(async () => {
       try {
         const next = await loadAgentDetail(agent.employeeId);
@@ -230,14 +254,14 @@ function AgentRow({
         setFailed(true);
       }
     });
-  }
+  }, [open, detail, failed, loading, agent.employeeId]);
 
   return (
     <div className="border-b border-line last:border-b-0">
       <button
         type="button"
         aria-expanded={open}
-        onClick={toggle}
+        onClick={onToggle}
         className={`flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition hover:bg-cream ${
           open ? "bg-cream" : "bg-surface"
         }`}
@@ -273,7 +297,7 @@ function AgentRow({
               <div>
                 <h4 className={`${SECTION} mb-2`}>Weekly KPI</h4>
                 <div className="overflow-x-auto border border-line">
-                  <ProgressMatrix matrix={detail.matrix} />
+                  <ProgressMatrix matrix={detail.matrix} from={FROM_DEVELOPMENT} />
                 </div>
               </div>
               {detail.skills.length > 0 && (
@@ -284,6 +308,7 @@ function AgentRow({
                       rows={detail.skills}
                       weeks={detail.matrix.weeks}
                       links={actionItemLinks(detail.matrix.issues)}
+                      from={FROM_DEVELOPMENT}
                     />
                   </div>
                 </div>
@@ -328,7 +353,7 @@ function PlanCard({ item }: { item: DevelopmentRow["items"][number] }) {
     <div className="border border-line px-3.5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
-          href={`/records/${item.actionItemId}`}
+          href={withReturn(`/records/${item.actionItemId}`, FROM_DEVELOPMENT)}
           className="text-[13px] font-bold text-ink underline-offset-4 transition hover:text-orange-brand hover:underline"
         >
           {item.kpiName}
@@ -354,7 +379,7 @@ function PlanCard({ item }: { item: DevelopmentRow["items"][number] }) {
       <p className={`mt-2 text-xs leading-relaxed ${item.hasRca ? "text-muted" : "text-fail"}`}>
         <strong className="text-ink">RCA — </strong>
         {item.hasRca ? (
-          <Link href={`/records/${item.actionItemId}#rca`} className={READ_LINK}>
+          <Link href={withReturn(`/records/${item.actionItemId}#rca`, FROM_DEVELOPMENT)} className={READ_LINK}>
             Recorded — read what the team leader wrote
           </Link>
         ) : (
@@ -364,7 +389,7 @@ function PlanCard({ item }: { item: DevelopmentRow["items"][number] }) {
       <p className={`mt-1.5 text-xs leading-relaxed ${item.hasActionPlan ? "text-muted" : "text-warn"}`}>
         <strong className="text-ink">Action plan — </strong>
         {item.hasActionPlan ? (
-          <Link href={`/records/${item.actionItemId}#action-plan`} className={READ_LINK}>
+          <Link href={withReturn(`/records/${item.actionItemId}#action-plan`, FROM_DEVELOPMENT)} className={READ_LINK}>
             Written — read the plan
           </Link>
         ) : (
