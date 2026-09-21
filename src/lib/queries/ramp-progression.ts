@@ -198,7 +198,11 @@ async function placeEveryRampedWeek(): Promise<Placed[]> {
       })
       .from(skillFacts)
       .where(and(inArray(skillFacts.employeeId, employeeIds), gte(skillFacts.factDate, earliest)))
-      .groupBy(skillFacts.employeeId, skillFacts.skillLabel, reportingWeekStart(skillFacts.factDate)),
+      // Grouped by output position, not by repeating the expression: the
+      // week rule binds its cut-over dates as parameters, and a second copy
+      // binds them under different numbers, which Postgres cannot see is the
+      // same expression. See week-sql.ts.
+      .groupBy(skillFacts.employeeId, skillFacts.skillLabel, sql`3`),
     db
       .select({
         employeeId: weeklyMetricResults.employeeId,

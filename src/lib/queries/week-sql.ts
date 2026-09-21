@@ -11,6 +11,13 @@ import { LAST_LEGACY_WEEK_START, WEEK_CUTOVER } from "./period";
  * own, or a week straddling the cut-over would be split two ways.
  *
  * Yields a `date`; cast to text where the row is read as a string.
+ *
+ * Group by the output position (GROUP BY 3), never by calling this a second
+ * time in the GROUP BY. The cut-over dates are bound as parameters, so a
+ * second call binds them under fresh numbers and Postgres — which matches
+ * grouped expressions structurally, and reads $1 and $6 as two different
+ * things — rejects the query with "column must appear in the GROUP BY
+ * clause". The SQL looks identical on the page; only the placeholders differ.
  */
 export function reportingWeekStart(column: AnyPgColumn | SQL): SQL {
   return sql`(case
