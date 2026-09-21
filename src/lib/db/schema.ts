@@ -681,6 +681,33 @@ export const mySpaceDays = pgTable(
   (table) => [uniqueIndex("my_space_days_user_day_idx").on(table.userId, table.day)],
 );
 
+/**
+ * A leader's own notepad: one running page per account, beside the four
+ * boxes rather than inside them.
+ *
+ * Not a box and not part of a saved day. The boxes are lists of items with
+ * something to complete, snapshotted and cleared when the day is saved; this
+ * is free text that carries on across days, which is what a notepad is for.
+ * Putting it in `my_space_items` would have meant an item with no text limit,
+ * no completion and no place on the progress rail.
+ *
+ * One row per account, which is what the unique constraint on user_id is for:
+ * every write is an upsert onto it, so a pad cannot fork into two rows for
+ * the same person.
+ *
+ * Private, like the rest of My Space — read and written only by its owner,
+ * never audited, and never shown to a leader's own manager.
+ */
+export const mySpaceNotes = pgTable("my_space_notes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id),
+  text: text("text").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ---------------------------------------------------------------------------
 // Action item engine: performance issues, action items, RCA, action plans
 // ---------------------------------------------------------------------------

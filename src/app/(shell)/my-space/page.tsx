@@ -17,12 +17,13 @@ export default async function MySpacePage() {
   if (!canUseMySpace(user.role)) redirect("/dashboard");
 
   const today = todayInManila();
-  const { board, days } = await getMySpace(user.id);
+  const { board, days, note } = await getMySpace(user.id);
 
   return (
     <MySpaceBoard
       initialBoard={board}
       initialDays={days}
+      initialNote={note}
       today={today}
       todayLabel={dayHeadline(today)}
       roleLabel={workspaceLabel(user.role)}

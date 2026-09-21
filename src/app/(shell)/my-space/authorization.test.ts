@@ -27,7 +27,7 @@ vi.mock("@/lib/db/client", () => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { addItem, deleteItem, editItem, saveDay, toggleItem } = await import("./actions");
+const { addItem, deleteItem, editItem, saveDay, saveNote, toggleItem } = await import("./actions");
 
 function signedInAs(role: UserRole): CurrentUser {
   return {
@@ -56,12 +56,14 @@ describe("who may write to a board", () => {
     expect(await editItem({ id: ITEM, text: "x" })).toEqual(REFUSED);
     expect(await deleteItem({ id: ITEM })).toEqual(REFUSED);
     expect(await saveDay()).toEqual(REFUSED);
+    expect(await saveNote({ text: "x" })).toEqual(REFUSED);
   });
 
   it("refuses a signed-out or pending caller", async () => {
     expect(await addItem({ box: "todos", text: "x" })).toEqual({ ok: false, error: "Not signed in" });
     currentUser.value = { ...signedInAs("supervisor"), status: "pending" };
     expect(await saveDay()).toEqual({ ok: false, error: "Not signed in" });
+    expect(await saveNote({ text: "x" })).toEqual({ ok: false, error: "Not signed in" });
   });
 
   it.each(["supervisor", "manager", "trainer", "sme", "admin"] as UserRole[])("lets a %s through to the board", async (role) => {
@@ -96,5 +98,39 @@ describe("what an item may hold", () => {
   it("refuses an id that is not a uuid", async () => {
     expect((await toggleItem({ id: "nope" })).ok).toBe(false);
     expect((await deleteItem({ id: 12 })).ok).toBe(false);
+  });
+});
+
+describe("what the notepad may hold", () => {
+  beforeEach(() => {
+    currentUser.value = signedInAs("supervisor");
+  });
+
+  it("caps the page, so a stuck key cannot grow the database", () => {
+    // Checked before the database is touched: the mock throws on any use,
+    // so an error rather than a throw is the proof.
+    return expect(saveNote({ text: "x".repeat(10_001) })).resolves.toEqual({
+      ok: false,
+      error: "Keep the notepad under 10000 characters",
+    });
+  });
+
+  it("refuses anything that is not text at all", async () => {
+    expect((await saveNote({ text: 12 })).ok).toBe(false);
+    expect((await saveNote({})).ok).toBe(false);
+    expect((await saveNote(null)).ok).toBe(false);
+  });
+
+  it("does not trim what was written", async () => {
+    // A notepad's indentation and blank lines are the writer's, so the
+    // schema must not strip them — unlike an item's text, which is trimmed.
+    // Reaching the database is what proves the value passed validation.
+    await expect(saveNote({ text: "   \n  indented  \n" })).rejects.toThrow(
+      "database reached before the authorization check",
+    );
+    // And an empty pad is a legitimate state: clearing it must be allowed.
+    await expect(saveNote({ text: "" })).rejects.toThrow(
+      "database reached before the authorization check",
+    );
   });
 });
