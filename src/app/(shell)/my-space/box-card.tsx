@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, type KeyboardEvent, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 import { BOX_META, NOTE_MAX, TEXT_MAX, type BoardItem, type BoxKey } from "@/lib/my-space/board";
+import { cardViewStore, toggled } from "@/lib/my-space/card-view";
+import { CardChevron } from "./card-chevron";
 
 /**
  * One of the four boxes: its items, the row being edited, and the add
@@ -28,6 +30,12 @@ export function BoxCard({
   onDelete: (id: string) => void;
 }) {
   const meta = BOX_META[box];
+  const collapsedCards = useSyncExternalStore(
+    cardViewStore.subscribe,
+    cardViewStore.read,
+    cardViewStore.serverRead,
+  );
+  const collapsed = collapsedCards.includes(box);
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
   const [noteOpen, setNoteOpen] = useState(false);
@@ -75,14 +83,30 @@ export function BoxCard({
 
   return (
     <section className="flex flex-col border-2 border-ink bg-surface" aria-label={meta.title}>
-      <div className="flex items-center gap-2.5 border-b-2 border-ink px-5 py-4">
+      {/* The whole header is the handle. The count line stays visible while
+          folded, so a shut box still says how much is in it — which is most
+          of why someone would glance at a box they have folded away. */}
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        onClick={() => cardViewStore.save(toggled(collapsedCards, box))}
+        className="flex w-full items-center gap-2.5 border-b-2 border-ink px-5 py-4 text-left transition hover:bg-cream"
+      >
         <BoxIcon box={box} />
-        <div>
-          <h2 className="text-[15px] font-bold text-ink">{meta.title}</h2>
-          <p className="mt-0.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">{countLine}</p>
-        </div>
-      </div>
+        {/* Spans, not a heading and a paragraph: a button's content model is
+            phrasing content. The card's name is on the section's aria-label,
+            so nothing is lost by saying it here in plain text. */}
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-bold text-ink">{meta.title}</span>
+          <span className="mt-0.5 block text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+            {countLine}
+          </span>
+        </span>
+        <CardChevron open={!collapsed} />
+      </button>
 
+      {collapsed ? null : (
+        <>
       <ul className="flex-1 px-5 pt-0.5 pb-1.5">
         {items.map((item) =>
           editingId === item.id ? (
@@ -191,6 +215,8 @@ export function BoxCard({
           />
         )}
       </div>
+        </>
+      )}
     </section>
   );
 }
