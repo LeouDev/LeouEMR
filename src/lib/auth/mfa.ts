@@ -79,3 +79,19 @@ export function totpFactors(all: readonly MfaFactor[]): { verified: MfaFactor | 
     stale: totp.filter((f) => f.status !== "verified"),
   };
 }
+
+/**
+ * Who has a verified authenticator, from the accounts as the Auth admin
+ * API lists them (each carries its factors). The Users page reads the
+ * factor table directly when the database role may; when it may not,
+ * this is the same answer by the other road.
+ */
+export function verifiedTotpUserIds(
+  accounts: ReadonlyArray<{ id: string; factors?: readonly MfaFactor[] | null }>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const account of accounts) {
+    if (totpFactors(account.factors ?? []).verified) out.add(account.id);
+  }
+  return out;
+}

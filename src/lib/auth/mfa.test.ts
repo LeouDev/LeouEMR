@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { graceUntilSetting, mfaDecision, mfaExempt, mfaRequiredFor, totpFactors } from "./mfa";
+import { graceUntilSetting, mfaDecision, mfaExempt, mfaRequiredFor, totpFactors, verifiedTotpUserIds } from "./mfa";
 
 describe("mfaRequiredFor", () => {
   it("covers everyone who sees a whole team, and not agents", () => {
@@ -87,5 +87,19 @@ describe("totpFactors", () => {
 
   it("has nothing for an account that never started", () => {
     expect(totpFactors([])).toEqual({ verified: null, stale: [] });
+  });
+});
+
+describe("verifiedTotpUserIds", () => {
+  it("names the accounts with a verified authenticator and nobody else", () => {
+    const ids = verifiedTotpUserIds([
+      { id: "paired", factors: [{ id: "f1", factor_type: "totp", status: "verified" }] },
+      { id: "half", factors: [{ id: "f2", factor_type: "totp", status: "unverified" }] },
+      { id: "phone", factors: [{ id: "f3", factor_type: "phone", status: "verified" }] },
+      { id: "none", factors: [] },
+      { id: "missing" },
+      { id: "nulled", factors: null },
+    ]);
+    expect([...ids]).toEqual(["paired"]);
   });
 });
