@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackLink } from "@/components/back-link";
 import { Card, CardHeader, PageBand, formatWeek } from "@/components/ui";
 import { canRunTeamPrograms, isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -99,12 +100,7 @@ export default async function EmployeePage({
       <PageBand title={employee.name} subtitle={employee.eid} />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <Link
-          href="/employees"
-          className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
-        >
-          ← Back to employees
-        </Link>
+        <BackLink fallbackHref="/employees" fallbackLabel="← Back to employees" />
 
         <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>

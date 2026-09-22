@@ -1804,6 +1804,13 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **An employee page's back link goes back (22 Sep).** "← Back to
+  employees" sent everyone to the roster whichever list they came from
+  (MBO, EWS, stack rank, a scorecard, an action item). `BackLink`
+  (`src/components/back-link.tsx`, client) presses the browser's back
+  when there is a history entry — `useSyncExternalStore` over
+  `history.length`, so the server render and the first paint agree — and
+  falls back to the fixed link for a shared link opened in a fresh tab.
 - **EWS My Team is the month's roster (22 Sep).** The first cut listed
   everyone whose current row named the leader — every person they had
   ever held, leavers included. `getEwsRoster(user, team, month)` now takes
