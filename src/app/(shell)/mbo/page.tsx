@@ -1,59 +1,43 @@
-import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { NavLink } from "@/components/nav-link";
 import { PeriodPicker } from "@/components/period-picker";
 import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/session";
+import { groupByLeader, matchesMboFilter, MBO_FILTERS, parseMboFilter, type MboFilter } from "@/lib/mbo/teams";
 import { getMboRoster } from "@/lib/queries/mbo";
 import { parseGranularity, periodContaining, periodsBetween } from "@/lib/queries/period";
 import { getFactDateRange } from "@/lib/queries/period-metrics";
-
-type Filter = "all" | "pass" | "fail" | "unscored";
-
-const TABS: Array<{ key: Filter; label: string }> = [
-  { key: "all", label: "Everyone" },
-  { key: "fail", label: "Failing" },
-  { key: "pass", label: "Passing" },
-  { key: "unscored", label: "No score" },
-];
+import { MboTeamTable, type MboTeamView } from "./team-table";
 
 /**
  * What an empty tab means, in words that read as a sentence. Derived from
  * the tab label this used to say "No employee in your scope is everyone" and
  * "…is no score", which are not sentences anyone would write.
  */
-const EMPTY_BY_FILTER: Record<Filter, (period: string) => string> = {
+const EMPTY_BY_FILTER: Record<MboFilter, (period: string) => string> = {
   all: (period) => `Nobody in your scope was measured in ${period}. Pick another period above, or check that this month's data has been imported.`,
   fail: (period) => `Nobody in your scope failed MBO in ${period}.`,
   pass: (period) => `Nobody in your scope passed MBO in ${period}.`,
   unscored: (period) => `Everyone in your scope has an MBO score for ${period}.`,
 };
 
-const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
-
 /**
- * Rows rendered before "Show all". Failing people sort first, so for the
- * list's purpose — working through who is not passing — the first fifty
- * are the ones that matter; an admin's full roster of six hundred was
- * 43 kB per view (measured) for a page nobody reads to the bottom.
- */
-const ROWS_SHOWN = 50;
-
-function pct(value: number | null, digits = 1) {
-  return value === null ? "—" : `${value.toFixed(digits)}%`;
-}
-
-/**
- * Who is passing MBO and who is not, for a period.
+ * Who is passing MBO and who is not, for a period, team by team.
  *
  * MBO is a composite of gates, so a bare pass/fail is not actionable on its
- * own — each row carries the gate values and names the ones that were missed.
+ * own — each row carries the gate values and names the ones that were
+ * missed, and each team's band carries the same figures for the team.
+ *
+ * Every team's agents are in the page but the bands open on demand; the
+ * "first fifty" cut this table used to make has gone with them, since a
+ * closed band costs the reader nothing and the file is 43 kB at the most
+ * for an admin's whole roster (measured before the change).
  */
 export default async function MboPage({
   searchParams,
 }: {
-  searchParams: Promise<{ granularity?: string; period?: string; status?: string; all?: string }>;
+  searchParams: Promise<{ granularity?: string; period?: string; status?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -86,7 +70,7 @@ export default async function MboPage({
   if (!period) {
     return (
       <>
-        <PageBand title="MBO" subtitle="Pass and fail by employee" />
+        <PageBand title="MBO" subtitle="Pass and fail by team" />
         <main className="mx-auto max-w-7xl px-6 py-8">
           <Card>
             <EmptyState
@@ -100,28 +84,20 @@ export default async function MboPage({
   }
 
   const roster = await getMboRoster(user, period);
-  const status = (TABS.find((t) => t.key === params.status)?.key ?? "all") as Filter;
+  const status = parseMboFilter(params.status);
 
-  const shown = roster.rows.filter((r) =>
-    status === "pass"
-      ? r.passing === true
-      : status === "fail"
-        ? r.passing === false
-        : status === "unscored"
-          ? r.passing === null
-          : true,
-  );
+  // The bands carry whole-team figures whichever tab is open; the tab only
+  // decides which agents show under them, and a team with none drops out.
+  const teams: MboTeamView[] = groupByLeader(roster.rows)
+    .map((team) => ({ team, rows: team.rows.filter((row) => matchesMboFilter(row, status)) }))
+    .filter(({ rows }) => rows.length > 0);
+  const shown = teams.reduce((sum, { rows }) => sum + rows.length, 0);
 
-  const query = (next: Filter, everyone = false) => {
+  const query = (next: MboFilter) => {
     const p = new URLSearchParams({ granularity, period: period.start });
     if (next !== "all") p.set("status", next);
-    if (everyone) p.set("all", "1");
     return `/mbo?${p}`;
   };
-
-  const showAll = params.all === "1";
-  const visible = showAll ? shown : shown.slice(0, ROWS_SHOWN);
-  const abridged = visible.length < shown.length;
 
   return (
     <>
@@ -168,100 +144,51 @@ export default async function MboPage({
 
         <Card>
           <CardHeader
-            title={TABS.find((t) => t.key === status)!.label}
-            subtitle={
-              abridged
-                ? `First ${visible.length} of ${shown.length} employees · ${period.label}`
-                : `${shown.length} employee${shown.length === 1 ? "" : "s"} · ${period.label}`
-            }
+            title={MBO_FILTERS.find((t) => t.key === status)!.label}
+            subtitle={`${shown} employee${shown === 1 ? "" : "s"} across ${teams.length} team${teams.length === 1 ? "" : "s"} · ${period.label}`}
             action={
               <div className="flex flex-wrap items-center gap-3">
-                {abridged && (
-                  <NavLink
-                    href={query(status, true)}
-                    prefetch={false}
-                    className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                {/* A plain link, not a button: a download is a navigation, and
+                    it works with a middle click like every other file in the
+                    app. Carries the period and tab so the file holds what the
+                    bands show. */}
+                {shown > 0 && (
+                  <a
+                    href={`/mbo/export?${new URLSearchParams({
+                      granularity,
+                      period: period.start,
+                      ...(status === "all" ? {} : { status }),
+                    })}`}
+                    className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
                   >
-                    Show all {shown.length}
-                  </NavLink>
+                    Export CSV
+                  </a>
                 )}
-              <div className="flex border-2 border-ink">
-                {TABS.map((tab, i) => (
-                  <NavLink
-                    key={tab.key}
-                    href={query(tab.key)}
-                    prefetch={false}
-                    className={`px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase ${
-                      i > 0 ? "border-l-2 border-ink" : ""
-                    } ${status === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
-                  >
-                    {tab.label}
-                  </NavLink>
-                ))}
-              </div>
+                <div className="flex border-2 border-ink">
+                  {MBO_FILTERS.map((tab, i) => (
+                    <NavLink
+                      key={tab.key}
+                      href={query(tab.key)}
+                      prefetch={false}
+                      className={`px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase ${
+                        i > 0 ? "border-l-2 border-ink" : ""
+                      } ${status === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
+                    >
+                      {tab.label}
+                    </NavLink>
+                  ))}
+                </div>
               </div>
             }
           />
 
-          {shown.length === 0 ? (
+          {shown === 0 ? (
             <EmptyState
               title={status === "all" ? "No MBO data for this period" : "Nobody in this group"}
               description={EMPTY_BY_FILTER[status](period.label)}
             />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[840px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b-2 border-ink bg-cream">
-                    <th className={`${HEAD} px-6`}>Employee</th>
-                    <th className={HEAD}>Supervisor</th>
-                    <th className={HEAD}>MBO</th>
-                    <th className={HEAD}>Production rate</th>
-                    <th className={HEAD}>DPU</th>
-                    <th className={HEAD}>DPO</th>
-                    <th className={`${HEAD} px-6`}>Gates missed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((row) => (
-                    <tr key={row.employeeId} className="border-b-2 border-line last:border-0 hover:bg-cream">
-                      <td className="px-6 py-2.5">
-                        <Link
-                          href={`/employees/${row.employeeId}`}
-                          prefetch={false}
-                          className="font-medium text-ink underline-offset-4 hover:text-orange-brand hover:underline"
-                        >
-                          {row.name}
-                        </Link>
-                        <span className="ml-2 font-mono text-xs text-muted">{row.eid}</span>
-                      </td>
-                      <td className="px-3 py-2.5 text-xs text-muted">{row.supervisorName ?? "—"}</td>
-                      <td
-                        className={`px-3 py-2.5 font-mono font-semibold tabular-nums ${
-                          row.passing === null ? "text-muted" : row.passing ? "text-pass" : "text-fail"
-                        }`}
-                      >
-                        {pct(row.mbo, 0)}
-                      </td>
-                      <td className="px-3 py-2.5 font-mono text-muted tabular-nums">
-                        {row.productionRate === null ? "—" : row.productionRate.toFixed(3)}
-                      </td>
-                      <td className="px-3 py-2.5 font-mono text-muted tabular-nums">{pct(row.dpu)}</td>
-                      <td className="px-3 py-2.5 font-mono text-muted tabular-nums">{pct(row.dpo)}</td>
-                      <td className="px-6 py-2.5 text-xs">
-                        {row.failedGates.length === 0 ? (
-                          <span className="text-muted">{row.passing === null ? "no data" : "—"}</span>
-                        ) : (
-                          <span className="bg-fail-bg px-2 py-1 font-semibold text-fail">
-                            {row.failedGates.join(", ")}
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MboTeamTable teams={teams} />
           )}
         </Card>
       </main>

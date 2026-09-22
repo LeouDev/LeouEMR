@@ -1804,6 +1804,31 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **MBO: one band per team leader that opens onto its agents, and an
+  Export CSV (22 Sep).** `groupByLeader` in `src/lib/mbo/teams.ts` folds
+  the roster into teams (`supervisorName`, "Unassigned" for nobody of
+  record) with headcount, passing/failing/unscored, pass rate of the
+  scored, the mean of each gate over the agents who have it and how many
+  agents missed which gate; worst pass rate first, teams with nobody
+  scored after, Unassigned last. The page (`mbo/page.tsx`) renders
+  `MboTeamTable` (`mbo/team-table.tsx`, client, a `useState` open map as
+  on the ramp progression board): a band row per team with a full-width
+  `aria-expanded` button and the team figures in the gate columns, the
+  agent rows under it when open, a single team open by itself and an
+  Expand all / Collapse all link when there are several. The status tabs
+  stay: the band's figures always cover the whole team, the tab only
+  decides which agents show under it, and a team with none in the tab is
+  left off. The Supervisor column is gone (the band is the supervisor)
+  and so is the "first fifty · Show all" cut, since a closed band costs
+  the reader nothing and an admin's whole roster is 43 kB at most.
+  `/mbo/export` (`mbo/export/route.ts`) writes the same period and tab
+  as a CSV — one line per agent under their team leader, MBO %, result,
+  the three gates as figures, gates missed, the team's pass rate —
+  through `mboExportRows` in `src/lib/mbo/export.ts` (pure, tested),
+  with the page's `getMboRoster` scope; the file is named
+  `mbo-<period start>-<tab>`. The filter (`MboFilter`, `MBO_FILTERS`,
+  `parseMboFilter`, `matchesMboFilter`) moved out of the page so the
+  route and the page agree by construction.
 - **Team QA Analysis: failures per form, and a category that opens onto
   its attributes (22 Sep).** `getQaAnalysisInput` now carries each
   audit's `formKey`/`formLabel` (join on `qa_forms`); `summarize` takes an

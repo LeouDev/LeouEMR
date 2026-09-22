@@ -229,6 +229,11 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **MBO per team leader** (22 Sep): the MBO table is a band per team
+  leader (headcount, pass rate, gate averages, gates missed) that opens
+  onto its agents, with an Export CSV of the same period and tab
+  (`src/lib/mbo/teams.ts`, `src/lib/mbo/export.ts`, `mbo/team-table.tsx`,
+  `mbo/export/route.ts`).
 - **Team QA Analysis drill-down** (22 Sep): a Form picker on the Error
   categories card and each category opening onto its failed attributes
   (`summarize(..., formKey)` in `src/lib/quality/analysis.ts`,
