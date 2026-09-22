@@ -1804,6 +1804,52 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **EWS tracker: My Team, Headcount and Permanent Attrition under /ews
+  (22 Sep).** The owner's standalone EWS Tracker (a design handoff: an
+  HTML prototype and a README) rebuilt inside the app on the existing
+  assessment record. Three screens under one band and tab strip
+  (`ews/ews-tabs.tsx`; `?team=<supervisor EID>` travels between them):
+  `/ews` My Team — five stat cards (Critical / At risk / Watch / Stable /
+  Team size), a search over name, ID, position and team, and the roster
+  worst first with Risk (badge + score), Vs last week, Flags (On leave),
+  Updated, Remarks and Edit; `/ews/headcount` — a year of monthly
+  movement per team (opening carries forward unless overridden, closing
+  is arithmetic; `src/lib/ews/headcount.ts`, table `ews_headcount`,
+  migration `0061_ews_tracker` / `APPLY_0061_EWS_TRACKER.sql`), five
+  cards and an Edit per month; `/ews/attrition` — confirmed exits by the
+  month they took effect with Restore, and the Leave & Absence Register
+  (Absconding red, LOA and Maternity amber, "Return overdue" once the
+  expected return has passed) with its own Export CSV. **Three of the
+  ten indicators are now read from the week's figures**
+  (`src/lib/ews/auto-indicators.ts`): Increased absences (attendance
+  under 100%), Low productivity (PAR under the 2.99 MBO gate) and
+  Decline in QA / NPS (either lower than the week before); shown locked
+  with the figure as a caption, in the tracker's form and on the
+  employee page's panel alike, and stored on save from the data — never
+  from the request (`writeAssessment` in `src/lib/ews/save.ts`, the one
+  write path both forms use). Tardiness stays a judgement: the
+  attendance sheet has no minutes late. The roster's score is live —
+  the supervisor's ticks plus what the latest imported week says plus
+  the CAP (`buildRosterRow`) — so an unassessed person is scored from
+  the data alone and the trend column compares the live score with the
+  save before the latest (`getEwsRoster`: a window over the two newest
+  assessments per person, the 201 file's position where one exists).
+  The tracker saves an assessment keyed on the data week (the latest
+  imported), the employee page on the week it shows. New on the record:
+  `action_plan` (For Monitoring / SKIP Level / Admin Hearing / Other)
+  and `expected_return`; `attrition_date` doubles as the effective date
+  of an exit and the start of a leave. Roles, not a toggle: a supervisor
+  gets their own team and records; an administrator gets every team, a
+  Team select and records too (`canRunTeamPrograms`); a manager reads
+  their span. What the prototype had that this does not, on purpose:
+  Add / Delete employee (the roster is the imported one — a new hire
+  appears with their first workbook or the masterlist), the transfer
+  request banner (team membership follows the workbook; there is no
+  transfer flow in this app), and the Lead / Admin switch. The old
+  read-only board and its "Separated and on leave" table are replaced.
+  Headcount is recorded by hand as the prototype had it; deriving hires
+  and exits from the roster is a possible follow-up. Checked with
+  headless-Chromium screenshots of each screen and the edit form.
 - **MBO: one band per team leader that opens onto its agents, and an
   Export CSV (22 Sep).** `groupByLeader` in `src/lib/mbo/teams.ts` folds
   the roster into teams (`supervisorName`, "Unassigned" for nobody of

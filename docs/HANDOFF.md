@@ -138,7 +138,12 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0058_survey_responses` (17 Sep; the post-login survey's
+Latest migration: `0061_ews_tracker` (22 Sep; `expected_return` and
+`action_plan` on `ews_assessments`, and the new `ews_headcount` table with
+RLS, the `emr_app_full_access` policy and the grant — one paste of
+`APPLY_0061_EWS_TRACKER.sql`, rehearsed twice on a scratch Postgres). Before
+it the other session's `0059_my_space_notepad` and
+`0060_action_plan_categories`, and `0058_survey_responses` (17 Sep; the post-login survey's
 answers, one row per account — a new table, so it carries RLS, the
 `emr_app_full_access` policy and the grant; one paste of
 `APPLY_0058_SURVEY_RESPONSES.sql`). Before it `0057_tech_decision_header`
@@ -229,6 +234,13 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **EWS tracker** (22 Sep): `/ews` is three screens — My Team (live
+  risk roster with an edit form), Headcount (monthly movement per team,
+  new table `ews_headcount`) and Permanent Attrition (exits with Restore,
+  leave register with CSV). Three indicators read from the week's data
+  (`src/lib/ews/auto-indicators.ts`); one write path for both forms
+  (`src/lib/ews/save.ts`). Migration `0061_ews_tracker` — the owner
+  pastes `drizzle/APPLY_0061_EWS_TRACKER.sql` before the deploy.
 - **MBO per team leader** (22 Sep): the MBO table is a band per team
   leader (headcount, pass rate, gate averages, gates missed) that opens
   onto its agents, with an Export CSV of the same period and tab

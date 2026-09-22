@@ -16,6 +16,36 @@ export type EwsAttrition = "none" | "black" | "absconding" | "loa" | "maternity"
 /** Absence states that are not attrition but still warrant a red flag. */
 const LEAVE_STATES: EwsAttrition[] = ["absconding", "loa", "maternity"];
 
+/** Away but expected back — or, for absconding, not yet confirmed gone. */
+export function isLeaveState(attrition: EwsAttrition): boolean {
+  return LEAVE_STATES.includes(attrition);
+}
+
+export const EWS_ATTRITION_LABELS: Record<EwsAttrition, string> = {
+  none: "Active — no attrition",
+  black: "Resignation / termination",
+  absconding: "Absconding",
+  loa: "Leave of absence",
+  maternity: "Maternity",
+};
+
+/**
+ * What the team leader has decided to do about someone: the tracker's
+ * escalation ladder, stored as its code on the assessment.
+ */
+export type EwsActionPlan = "MONITORING" | "SKIP_LEVEL" | "ADMIN_HEARING" | "OTHER";
+
+export const EWS_ACTION_PLANS: Array<{ code: EwsActionPlan; label: string }> = [
+  { code: "MONITORING", label: "For Monitoring" },
+  { code: "SKIP_LEVEL", label: "For SKIP Level" },
+  { code: "ADMIN_HEARING", label: "For Admin Hearing" },
+  { code: "OTHER", label: "Other" },
+];
+
+export function actionPlanLabel(code: string | null): string | null {
+  return EWS_ACTION_PLANS.find((p) => p.code === code)?.label ?? null;
+}
+
 export const EWS_THRESHOLDS = {
   /** A score at or below this is GREEN. */
   green: 0,
