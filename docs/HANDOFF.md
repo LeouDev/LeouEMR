@@ -229,6 +229,10 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Quality "Audit completion" tab** (22 Sep): `/quality/completion`,
+  a column per team leader of the week's required audits filed, against
+  a 100% line, with a table under it (`src/lib/quality/completion.ts`,
+  `quality/completion/completion-chart.tsx`). Hidden from supervisors.
 - **Progression search and action-item CSV** (22 Sep): a search box
   over supervisors and agents on the progression tab
   (`src/lib/ramp/progression-search.ts`), and "Export CSV" on the Action

@@ -2,13 +2,14 @@ import { NavLink } from "@/components/nav-link";
 import { PageBand } from "@/components/ui";
 import { AUDITS_PER_AGENT } from "@/lib/quality/week";
 
-export type QualityTab = "dashboard" | "new" | "history" | "analysis";
+export type QualityTab = "dashboard" | "new" | "history" | "analysis" | "completion";
 
 const TABS: Array<{ key: QualityTab; href: string; label: string }> = [
   { key: "dashboard", href: "/quality", label: "Dashboard" },
   { key: "new", href: "/quality/new", label: "New audit" },
   { key: "history", href: "/quality/history", label: "History" },
   { key: "analysis", href: "/quality/analysis", label: "Team QA analysis" },
+  { key: "completion", href: "/quality/completion", label: "Audit completion" },
 ];
 
 export function QualityBand() {
@@ -20,9 +21,22 @@ export function QualityBand() {
   );
 }
 
-/** The screens, as a tab strip under the band — New audit only for a role that files. */
-export function QualityTabs({ active, canFile }: { active: QualityTab; canFile: boolean }) {
-  const tabs = TABS.filter((tab) => tab.key !== "new" || canFile);
+/**
+ * The screens, as a tab strip under the band — New audit only for a role
+ * that files, and Audit completion only for a viewer who sees more than one
+ * team leader: a supervisor's own completion is the dashboard's stat card,
+ * and a chart of one bar says nothing it does not.
+ */
+export function QualityTabs({
+  active,
+  canFile,
+  perLeader = false,
+}: {
+  active: QualityTab;
+  canFile: boolean;
+  perLeader?: boolean;
+}) {
+  const tabs = TABS.filter((tab) => (tab.key !== "new" || canFile) && (tab.key !== "completion" || perLeader));
   return (
     <div className="mb-6 inline-flex flex-wrap border-2 border-ink">
       {tabs.map((tab, i) => (
