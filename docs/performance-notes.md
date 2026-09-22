@@ -1804,27 +1804,39 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
-- **Quality: an "Audit completion" tab, per team leader (22 Sep).**
-  `/quality/completion` — the fifth Quality screen (fourth for a role
-  that does not file), shown only to a viewer who sees more than one
-  team leader (`perLeader` on `QualityTabs`; a supervisor's own figure
-  is the dashboard's stat card, and a one-bar chart says nothing it does
-  not). The week's roster (`getQaRoster`, the same read as the
-  dashboard, so the two agree) rolled up by team leader in
-  `completionByLeader` (`src/lib/quality/completion.ts`, tested: sums
-  required and completed, counts active agents, leaves out a leader
-  whose team owed nothing, files no-leader agents under Unassigned,
-  alphabetical). `CompletionChart` is server-rendered SVG like the
-  app's other charts: one column per leader (24px, rounded at the data
-  end, square at the baseline, one hue — the leaders are unordered
-  categories), the percent on each cap, the name on two lines and
-  `completed/required` under it, a solid accent hairline at 100% as the
-  target, an axis that runs to a clean number above the tallest bar and
-  never below 100, a hover title with the counts, and a table under the
-  chart with the same numbers and a Met / N to go / Not started tag.
-  Same Previous / This week / Next control as the dashboard, three stat
-  cards above (leaders with audits owed, at 100%, overall completion).
-  Checked with a headless-Chromium screenshot of a six-team fixture.
+- **Quality: an "Audit completion" tab, one column per team leader per
+  week of the month (22 Sep).** `/quality/completion` — the fifth Quality
+  screen (fourth for a role that does not file), shown only to a viewer
+  who sees more than one team leader (`perLeader` on `QualityTabs`; a
+  supervisor's own figure is the dashboard's stat card). A month
+  (`?month=YYYY-MM`, Previous / This month / Next) is its four or five
+  audit weeks — every Sunday-to-Saturday week that begins in it,
+  `auditWeeksOfMonth` in `src/lib/quality/completion.ts`, tested against
+  September (4) and November 2026 (5). `getQaRosters(user, weeks)` reads
+  the month's rosters in the dashboard's four queries once (people,
+  leave over the span, separations, audits per agent and date bucketed
+  by `auditWeekOf`); `getQaRoster` is now the one-week case of it, so
+  the dashboard and the chart agree by construction. `completionGrid`
+  rolls each week up by leader (`completionByLeader`: required and
+  completed summed over the leader's agents, a leader listed only if
+  they owed something, no-leader agents under Unassigned) into a leader ×
+  week grid with month totals; a week a team owed nothing in is an empty
+  cell, not a zero. `CompletionChart` is server-rendered SVG like the
+  app's other charts: a group per leader, a 16px bar per week with a 2px
+  surface gap, rounded at the data end and square at the baseline, the
+  weeks in one navy hue stepped light (W1) to dark (newest) — a
+  validated ordinal ramp (navy over white at fixed strengths, monotone
+  lightness, gaps ≥ 0.06, light end 2.5:1 on the surface), a legend of
+  W1..Wn with dates, a rotated percent on each cap, an empty week as a
+  baseline tick, a solid accent hairline at 100%, an axis to a clean
+  number above the tallest bar and never below 100, a hover title with
+  the counts, and the name with `completed/required · pct` for the month
+  under each group; a table under the chart carries the same numbers
+  per week and month with a Met / N to go / Not started tag. Three stat
+  cards above: leaders with audits owed, at 100% for the month, month
+  completion. Checked with a headless-Chromium screenshot of a six-team
+  fixture (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome
+  --headless=new --screenshot`).
 - **Progression search, and the action-item list as a CSV (22 Sep).** The
   progression's search box (`ProgressionBoard`) finds a supervisor by any
   part of the name (whole team) or an agent by name or employee ID (the

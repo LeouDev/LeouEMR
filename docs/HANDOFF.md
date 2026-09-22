@@ -230,8 +230,9 @@ the coding container; there is no database to run the app against here.
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
 - **Quality "Audit completion" tab** (22 Sep): `/quality/completion`,
-  a column per team leader of the week's required audits filed, against
-  a 100% line, with a table under it (`src/lib/quality/completion.ts`,
+  a group of columns per team leader, one per audit week of the month,
+  of the required audits filed against a 100% line, with a table under
+  it (`src/lib/quality/completion.ts`, `getQaRosters`,
   `quality/completion/completion-chart.tsx`). Hidden from supervisors.
 - **Progression search and action-item CSV** (22 Sep): a search box
   over supervisors and agents on the progression tab
