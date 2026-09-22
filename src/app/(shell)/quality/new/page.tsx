@@ -16,7 +16,7 @@ export default async function NewAuditPage({ searchParams }: { searchParams: Pro
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="new" canFile />
+        <QualityTabs active="new" canFile perLeader={user.role !== "supervisor"} />
         {agents.length === 0 ? (
           <Card>
             <EmptyState title="No one to audit" description="Agents appear here once the roster places them under you." />

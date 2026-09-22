@@ -70,7 +70,7 @@ export default async function QualityAnalysisPage({ searchParams }: { searchPara
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="analysis" canFile={canFileAudit(user)} />
+        <QualityTabs active="analysis" canFile={canFileAudit(user)} perLeader={user.role !== "supervisor"} />
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">
