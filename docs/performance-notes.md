@@ -1804,6 +1804,18 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **The supervisor dashboard's NPS is pooled over surveys (22 Sep).** A
+  team lead's "team avg" NPS card averaged members (one agent one vote,
+  a single survey reading +100 or −100) while the manager's overview and
+  the Team page pooled every survey through `supervisor-kpis.ts` — the
+  same team read two numbers, and the notes already record the earlier
+  catch (71 averaged against 67.9 pooled, over a target of 70). The card
+  now comes from `teamKpiFigures` (`src/lib/queries/team-kpis.ts`,
+  tested): every KPI the mean of the scored agents, NPS weighted by each
+  agent's survey count (`sampleSize`, one where a row carries none), with
+  the surveys shown beside it ("team NPS · 28 surveys"). The weekly trend
+  (`getTeamKpiTrend`) carries a `pooled` column the NPS line reads
+  instead of `avg(actual_value)`, and its note says so.
 - **The Users page's Authenticator column falls back to the Auth admin
   API (22 Sep).** In production the column read "Unavailable" for
   everyone, so the Reset beside a paired account was never offered and
