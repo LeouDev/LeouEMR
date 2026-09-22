@@ -1824,10 +1824,13 @@ from every environment this project gets worked on in.
   for `emr_app`; `scripts/sql/app-role.sql` grants it "best effort" in a
   DO block, and on this project the grant did not take (the notice was
   swallowed). `enrolledUserIdsViaAdmin` (`src/lib/auth/mfa-enrolled.ts`)
-  now answers the same question through `auth.admin.listUsers` — every
-  account with its factors, `verifiedTotpUserIds` in mfa.ts picking the
-  verified TOTP ones — when the table read fails; "Unavailable" only if
-  both roads fail. The service-role key is already on Vercel for the
+  now answers the same question through the Auth admin API when the
+  table read fails — `mfa.listFactors` per account listed, eight at a
+  time, `verifiedTotpUserIds` in mfa.ts picking the verified TOTP ones;
+  "Unavailable" only if the client cannot be built or every read fails.
+  The first cut read `auth.admin.listUsers` instead, whose accounts carry
+  no factors in practice, so for a few minutes the column said "Not
+  paired — required" for everyone, the paired administrator included. The service-role key is already on Vercel for the
   reset itself. Re-pairing is: Users → Reset → Confirm reset, then the
   person signs in and the second-step page shows a fresh QR code and the
   secret key; the QR is never shown again after enrolment.
