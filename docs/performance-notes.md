@@ -1804,6 +1804,21 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Ramp page in two tabs (22 Sep): "Progression by stage" and "Board".**
+  The other session had just shipped the progression (`progression-
+  board.tsx`, `stage-panel.tsx`, `src/lib/queries/ramp-progression.ts`,
+  `src/lib/ramp/progression.ts`, the CSV/Excel export under
+  `ramp/export`) as a second folding card above the board; the owner
+  asked for tabs instead. `?view=progression` (default) or `?view=board`,
+  switched by `RampViewTabs` (`view-tabs.tsx`, the PTO view-picker's
+  look). The stat cards sit above both; the board is read on both tabs
+  (its rows are those figures) and the progression only on its own. The
+  ramp page's `CollapsibleCard` went with the folding (it had no other
+  user); `src/lib/ui/collapsed.ts` stays for My Space and the Development
+  Hub. A duplicate per-agent stage grid this session had built the same
+  morning was discarded unmerged when the other session's version landed
+  on main first — check `git fetch origin main` before starting a
+  feature, not only before pushing.
 - **Backups, checked 21 Sep (Manila).** The Monday 06:00 cron on the
   administrator's Mac mini is running (dumps for 14 and 21 Sep in
   `~/EMR-backups`, 21–23 MB, logged in `backup.log`); the working

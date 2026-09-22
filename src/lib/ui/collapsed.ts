@@ -15,8 +15,8 @@
  * folds the saved ones at hydration; seeding useState from storage would
  * hydrate different markup than the server sent.
  *
- * Ids are namespaced by their page ("ramp:board") so two pages cannot fold
- * each other's sections by sharing a name.
+ * Ids are namespaced by their page ("my-space:notes") so two pages cannot
+ * fold each other's sections by sharing a name.
  */
 
 const KEY = "collapsedSections";

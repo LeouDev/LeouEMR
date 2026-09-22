@@ -229,6 +229,11 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Ramp page tabs** (22 Sep): "Progression by stage" (default; the
+  other session's per-team progression with agent drill-down, stage
+  notes and CSV/Excel export) and "Board" (who is ramping today, the
+  date editor, Re-apply all, the start form). `?view=` in the URL,
+  `src/app/(shell)/ramp/view-tabs.tsx`.
 - **Ramp shape** (17 Sep): two nesting weeks, then Week 1 through Week 8,
   ten stages (`src/lib/ramp/engine.ts`). The start week is the first day
   of the first nesting week's reporting week (a Sunday now). Each board
