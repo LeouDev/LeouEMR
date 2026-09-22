@@ -188,7 +188,9 @@ export default async function MboPage({
               description={EMPTY_BY_FILTER[status](period.label)}
             />
           ) : (
-            <MboTeamTable teams={teams} />
+            // Keyed on the tab: the table decides its open bands when it
+            // mounts, and a tab that leaves one team should open it.
+            <MboTeamTable key={status} teams={teams} />
           )}
         </Card>
       </main>

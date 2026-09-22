@@ -7,9 +7,10 @@ import { autoFlags, isAutoIndicator, type AutoIndicator, type AutoIndicatorCode 
 import {
   computeEwsRisk,
   EWS_ACTION_PLANS,
+  EWS_ATTRITION_CODES,
   EWS_ATTRITION_LABELS,
   EWS_RISK_GUIDANCE,
-  isLeaveState,
+  expectsReturn,
   type EwsActionPlan,
   type EwsAttrition,
 } from "@/lib/ews/engine";
@@ -31,8 +32,6 @@ export interface EwsAssessmentValues {
   actionPlan: EwsActionPlan | null;
   notes: string;
 }
-
-const ATTRITION_OPTIONS: EwsAttrition[] = ["none", "black", "absconding", "loa", "maternity"];
 
 const FIELD = "w-full border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none disabled:opacity-60";
 const LABEL = "mb-2 block text-xs font-semibold tracking-[0.08em] text-ink uppercase";
@@ -78,7 +77,7 @@ export function EwsPanel({
       }),
     [values, derived],
   );
-  const leave = isLeaveState(values.attrition);
+  const leave = expectsReturn(values.attrition);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -200,7 +199,7 @@ export function EwsPanel({
             onChange={(e) => setValues({ ...values, attrition: e.target.value as EwsAttrition })}
             className={FIELD}
           >
-            {ATTRITION_OPTIONS.map((option) => (
+            {EWS_ATTRITION_CODES.map((option) => (
               <option key={option} value={option}>
                 {EWS_ATTRITION_LABELS[option]}
               </option>
@@ -208,9 +207,9 @@ export function EwsPanel({
           </select>
         </label>
 
-        {values.attrition === "black" && (
+        {(values.attrition === "black" || values.attrition === "absconding") && (
           <label className="block">
-            <span className={LABEL}>Effective date</span>
+            <span className={LABEL}>{values.attrition === "black" ? "Effective date" : "Last day seen"}</span>
             <input type="date" disabled={readOnly} value={values.attritionDate} onChange={(e) => setValues({ ...values, attritionDate: e.target.value })} className={FIELD} />
           </label>
         )}

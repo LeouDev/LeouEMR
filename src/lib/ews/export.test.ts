@@ -5,9 +5,11 @@ import {
   ewsRosterExportFilename,
   ewsRosterExportHeader,
   ewsRosterExportRows,
+  exitRowsOf,
   LEAVE_REGISTER_EXPORT_HEADER,
   leaveRegisterExportFilename,
   leaveRegisterExportRows,
+  leaveRowsOf,
   returnOverdue,
 } from "./export";
 import { buildRosterRow } from "./roster";
@@ -71,21 +73,48 @@ describe("ewsRosterExportRows", () => {
 
 describe("leave register export", () => {
   const rows = [
-    { supervisorName: "Herbias", name: "Dizon, Ronald", eid: "1", attrition: "loa" as const, started: "2026-08-15", expectedReturn: "2026-10-01", notes: null },
-    { supervisorName: null, name: "Fernandez, Liza", eid: "2", attrition: "maternity" as const, started: "2026-05-01", expectedReturn: "2026-09-15", notes: "Back part-time" },
-    { supervisorName: "Cruz", name: "Salazar, Jerome", eid: "3", attrition: "absconding" as const, started: "2026-09-10", expectedReturn: null, notes: null },
+    { employeeId: "a", supervisorName: "Herbias", name: "Dizon, Ronald", eid: "1", attrition: "loa" as const, started: "2026-08-15", expectedReturn: "2026-10-01", notes: null },
+    { employeeId: "b", supervisorName: null, name: "Fernandez, Liza", eid: "2", attrition: "maternity" as const, started: "2026-05-01", expectedReturn: "2026-09-15", notes: "Back part-time" },
   ];
 
   it("flags a return that has passed", () => {
     const out = leaveRegisterExportRows(rows, "2026-09-22");
-    expect(out.map((r) => r[6])).toEqual(["On leave", "Return overdue", "On leave"]);
+    expect(out.map((r) => r[6])).toEqual(["On leave", "Return overdue"]);
     expect(out[1]).toEqual(["", "Fernandez, Liza", "2", "Maternity", "2026-05-01", "2026-09-15", "Return overdue", "Back part-time"]);
-    expect(out[2][3]).toBe("Absconding");
     for (const line of out) expect(line).toHaveLength(LEAVE_REGISTER_EXPORT_HEADER.length);
     expect(returnOverdue({ expectedReturn: "2026-09-22" }, "2026-09-22")).toBe(false);
   });
 
   it("names the file by the day", () => {
     expect(leaveRegisterExportFilename("2026-09-22")).toBe("ews-leave-register-2026-09-22");
+  });
+});
+
+describe("exitRowsOf and leaveRowsOf", () => {
+  const latest = (attrition: "none" | "black" | "absconding" | "loa" | "maternity", attritionDate: string | null, expectedReturn: string | null = null) => ({
+    ...row.latest!,
+    attrition,
+    attritionDate,
+    expectedReturn,
+  });
+  const people = [
+    buildRosterRow({ ...row, employeeId: "gone", name: "Lim, Patricia", latest: latest("black", "2026-11-01") }),
+    buildRosterRow({ ...row, employeeId: "left", name: "Salazar, Jerome", latest: latest("absconding", null) }),
+    buildRosterRow({ ...row, employeeId: "loa", name: "Dizon, Ronald", latest: latest("loa", "2026-08-15", "2026-10-01") }),
+    buildRosterRow({ ...row, employeeId: "here", name: "Bautista, Carlos", latest: latest("none", null) }),
+    buildRosterRow({ ...row, employeeId: "new", name: "Torres, Miguel", latest: null }),
+  ];
+
+  it("lists resignations and abscondings as exits, newest first, dated by the tag or its week", () => {
+    expect(exitRowsOf(people).map((e) => [e.name, e.attrition, e.date])).toEqual([
+      ["Lim, Patricia", "black", "2026-11-01"],
+      ["Salazar, Jerome", "absconding", "2026-09-13"],
+    ]);
+  });
+
+  it("lists only the leaves someone is expected back from", () => {
+    expect(leaveRowsOf(people).map((l) => [l.name, l.attrition, l.started, l.expectedReturn])).toEqual([
+      ["Dizon, Ronald", "loa", "2026-08-15", "2026-10-01"],
+    ]);
   });
 });

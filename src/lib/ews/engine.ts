@@ -13,12 +13,30 @@ export type EwsRiskLevel = "GREEN" | "YELLOW" | "RED" | "BLACK";
 
 export type EwsAttrition = "none" | "black" | "absconding" | "loa" | "maternity";
 
+export const EWS_ATTRITION_CODES: readonly EwsAttrition[] = ["none", "black", "absconding", "loa", "maternity"];
+
 /** Absence states that are not attrition but still warrant a red flag. */
 const LEAVE_STATES: EwsAttrition[] = ["absconding", "loa", "maternity"];
 
-/** Away but expected back — or, for absconding, not yet confirmed gone. */
+/** The tags that force the RED band whatever the score: away, for whatever reason. */
 export function isLeaveState(attrition: EwsAttrition): boolean {
   return LEAVE_STATES.includes(attrition);
+}
+
+/**
+ * Away and expected back: a leave of absence or maternity. Absconding is
+ * not one of these — someone who stopped turning up without notice is an
+ * exit (`employeeStatusFor` separates them and their open work closes),
+ * so the tracker lists them with the exits, not on the leave register,
+ * and asks for no return date.
+ */
+export function expectsReturn(attrition: EwsAttrition): attrition is "loa" | "maternity" {
+  return attrition === "loa" || attrition === "maternity";
+}
+
+/** The tags that take someone off the roster for good, until restored. */
+export function isExit(attrition: EwsAttrition): attrition is "black" | "absconding" {
+  return attrition === "black" || attrition === "absconding";
 }
 
 export const EWS_ATTRITION_LABELS: Record<EwsAttrition, string> = {

@@ -86,6 +86,7 @@ vi.mock("@/lib/db/client", () => {
         return c;
       },
       orderBy: () => c,
+      groupBy: () => c,
       leftJoin: () => c,
       limit: () => c,
       as: (name: string) => ({ __sub: name }),
@@ -187,9 +188,9 @@ describe("getEwsRoster", () => {
 
     const roster = await getEwsRoster(user("admin"), null, null);
     expect(roster.dataWeek?.start).toBe("2026-09-13");
-    expect(roster.rows.map((r) => r.name)).toEqual(["Gamma", "Alpha", "Beta"]);
+    expect(roster.rows.map((r) => r.name)).toEqual(["Gamma", "Beta", "Alpha"]);
 
-    const [gamma, alpha, beta] = roster.rows;
+    const [gamma, beta, alpha] = roster.rows;
     expect(gamma.riskLevel).toBe("BLACK");
     // Two ticks and the CAP; the stored absence tick is ignored and the data says attendance was full.
     expect(beta.score).toBe(3);
@@ -276,16 +277,18 @@ describe("getEwsRoster for a month", () => {
 });
 
 describe("getEwsTeams", () => {
-  it("lists each team leader once, by name, and skips people with none", async () => {
+  it("lists each team leader once by EID, under the commonest spelling, and skips people with none", async () => {
     tables.employees = [
-      { supervisorEid: "2", supervisorName: "Reyes, Angela" },
-      { supervisorEid: "1", supervisorName: "Cruz, James" },
-      { supervisorEid: null, supervisorName: null },
-      { supervisorEid: "3", supervisorName: null },
+      { supervisorEid: "2", supervisorName: "Reyes, Angela", n: 4 },
+      { supervisorEid: "1", supervisorName: "Cruz, James", n: 3 },
+      { supervisorEid: "1", supervisorName: "Cruz,James", n: 7 },
+      { supervisorEid: "1", supervisorName: null, n: 9 },
+      { supervisorEid: null, supervisorName: null, n: 2 },
+      { supervisorEid: "3", supervisorName: null, n: 1 },
     ];
     expect(await getEwsTeams(user("admin"))).toEqual([
       { supervisorEid: "3", supervisorName: "3" },
-      { supervisorEid: "1", supervisorName: "Cruz, James" },
+      { supervisorEid: "1", supervisorName: "Cruz,James" },
       { supervisorEid: "2", supervisorName: "Reyes, Angela" },
     ]);
     scope.value = null;
@@ -296,8 +299,8 @@ describe("getEwsTeams", () => {
 describe("getEwsHeadcount", () => {
   beforeEach(() => {
     tables.employees = [
-      { supervisorEid: "1", supervisorName: "Cruz, James" },
-      { supervisorEid: "2", supervisorName: "Reyes, Angela" },
+      { supervisorEid: "1", supervisorName: "Cruz, James", n: 5 },
+      { supervisorEid: "2", supervisorName: "Reyes, Angela", n: 5 },
     ];
     tables.ews_headcount = [
       { supervisorEid: "1", month: 1, openingOverride: 40, newHires: 2, transferIn: 0, transferOut: 0, voluntaryAttrition: 1, involuntaryAttrition: 0 },
@@ -313,13 +316,24 @@ describe("getEwsHeadcount", () => {
     expect(view.stats.attritionPct).toBe(2);
   });
 
-  it("shows one team's own chain when picked, and nothing for a team outside scope", async () => {
+  it("shows one team's own chain when picked", async () => {
     const view = await getEwsHeadcount(user("admin"), 2026, "2");
     expect(view.teams.map((t) => t.supervisorEid)).toEqual(["2"]);
     expect(view.chain[0]).toMatchObject({ opening: 10, closing: 11 });
+  });
 
-    const outside = await getEwsHeadcount(user("admin"), 2026, "9");
-    expect(outside.teams).toEqual([]);
-    expect(outside.chain[11].closing).toBe(0);
+  it("still reaches a team nobody reports to today: an administrator by EID, a supervisor as their own", async () => {
+    tables.ews_headcount.push({ supervisorEid: "9", month: 3, openingOverride: null, newHires: 0, transferIn: 0, transferOut: 2, voluntaryAttrition: 0, involuntaryAttrition: 0 });
+    const picked = await getEwsHeadcount(user("admin"), 2026, "9");
+    expect(picked.teams).toEqual([{ supervisorEid: "9", supervisorName: "9" }]);
+
+    const summed = await getEwsHeadcount(user("admin"), 2026, null);
+    expect(summed.teams.map((t) => t.supervisorEid)).toEqual(["1", "2", "9"]);
+
+    const own = await getEwsHeadcount({ ...user("supervisor"), employeeEid: "9" }, 2026, "9");
+    expect(own.teams).toEqual([{ supervisorEid: "9", supervisorName: "Test supervisor" }]);
+
+    const manager = await getEwsHeadcount(user("manager"), 2026, "9");
+    expect(manager.teams).toEqual([]);
   });
 });

@@ -28,18 +28,28 @@ export interface EwsTeam {
  * The team leaders in the caller's scope, by name. A supervisor's list is
  * just themselves; a manager's is their span; an administrator's is
  * everyone with a team. Read from the current roster, the same key every
- * EWS page narrows on.
+ * EWS page narrows on — one entry per EID, whatever spellings of the name
+ * the rows carry, the commonest spelling shown.
  */
 export async function getEwsTeams(user: CurrentUser): Promise<EwsTeam[]> {
   const scope = employeeScope(user);
   if (scope === null) return [];
   const rows = await db
-    .selectDistinct({ supervisorEid: employees.supervisorEid, supervisorName: employees.supervisorName })
+    .select({ supervisorEid: employees.supervisorEid, supervisorName: employees.supervisorName, n: sql<number>`count(*)` })
     .from(employees)
-    .where(scope === "all" ? undefined : scope);
-  return rows
-    .filter((r): r is { supervisorEid: string; supervisorName: string | null } => r.supervisorEid !== null)
-    .map((r) => ({ supervisorEid: r.supervisorEid, supervisorName: r.supervisorName ?? r.supervisorEid }))
+    .where(scope === "all" ? undefined : scope)
+    .groupBy(employees.supervisorEid, employees.supervisorName);
+  const byEid = new Map<string, { name: string; n: number }>();
+  for (const r of rows) {
+    if (r.supervisorEid === null) continue;
+    const n = Number(r.n);
+    const current = byEid.get(r.supervisorEid);
+    if (!current || (r.supervisorName !== null && (current.n < n || current.name === r.supervisorEid))) {
+      byEid.set(r.supervisorEid, { name: r.supervisorName ?? current?.name ?? r.supervisorEid, n });
+    }
+  }
+  return [...byEid.entries()]
+    .map(([supervisorEid, { name }]) => ({ supervisorEid, supervisorName: name }))
     .sort((a, b) => a.supervisorName.localeCompare(b.supervisorName));
 }
 
@@ -289,10 +299,28 @@ export interface EwsHeadcountView {
  * A year of headcount movement: one team's chain, or every team in scope
  * added up month by month when no team is picked. A month nobody has
  * recorded is zero movement.
+ *
+ * A team is a leader with reports today, or — for a supervisor picking
+ * their own, and for an administrator, whose scope is everyone — one with
+ * months recorded and nobody left: the leader whose last agent transferred
+ * out still has that transfer to record, and their year still counts.
  */
 export async function getEwsHeadcount(user: CurrentUser, year: number, team: string | null): Promise<EwsHeadcountView> {
   const allTeams = await getEwsTeams(user);
-  const teams = team ? allTeams.filter((t) => t.supervisorEid === team) : allTeams;
+  let teams = team ? allTeams.filter((t) => t.supervisorEid === team) : allTeams;
+  if (team && teams.length === 0 && (user.role === "admin" || (user.role === "supervisor" && user.employeeEid === team))) {
+    teams = [{ supervisorEid: team, supervisorName: user.role === "supervisor" ? user.name : team }];
+  }
+  if (!team && user.role === "admin") {
+    const known = new Set(teams.map((t) => t.supervisorEid));
+    const recorded = await db
+      .selectDistinct({ supervisorEid: ewsHeadcount.supervisorEid })
+      .from(ewsHeadcount)
+      .where(eq(ewsHeadcount.year, year));
+    for (const r of recorded) {
+      if (!known.has(r.supervisorEid)) teams = [...teams, { supervisorEid: r.supervisorEid, supervisorName: r.supervisorEid }];
+    }
+  }
   const empty = { chain: headcountChain([]), stats: headcountStats(headcountChain([])), teams };
   if (teams.length === 0) return empty;
 

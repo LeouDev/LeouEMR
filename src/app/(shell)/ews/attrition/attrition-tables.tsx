@@ -4,30 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { EWS_ATTRITION_LABELS } from "@/lib/ews/engine";
-import { returnOverdue } from "@/lib/ews/export";
+import { returnOverdue, type ExitRow, type LeaveRegisterRow as LeaveRow } from "@/lib/ews/export";
 import { describeActionError } from "@/lib/ui/action-error";
 import { restoreFromAttrition } from "../actions";
 import { HEAD, Pill } from "../ews-tabs";
-
-export interface ExitRow {
-  employeeId: string;
-  name: string;
-  eid: string;
-  position: string | null;
-  supervisorName: string | null;
-  date: string | null;
-}
-
-export interface LeaveRow {
-  employeeId: string;
-  name: string;
-  eid: string;
-  supervisorName: string | null;
-  attrition: "absconding" | "loa" | "maternity";
-  started: string | null;
-  expectedReturn: string | null;
-  notes: string | null;
-}
 
 const NAME = "px-4 py-2.5 text-left font-semibold text-ink";
 const CELL = "px-2.5 py-2.5 text-left text-muted";
@@ -116,7 +96,7 @@ export function AttritionTables({
                 <td className={CELL}>{row.position ?? "—"}</td>
                 {showTeam && <td className={CELL}>{row.supervisorName ?? "—"}</td>}
                 <td className="px-2.5 py-2.5 text-left">
-                  <Pill tone="ink">{EWS_ATTRITION_LABELS.black}</Pill>
+                  <Pill tone={row.attrition === "black" ? "ink" : "fail"}>{EWS_ATTRITION_LABELS[row.attrition]}</Pill>
                 </td>
                 <td className={`${CELL} font-mono`}>{row.date ?? "—"}</td>
                 {canEdit && (
@@ -141,7 +121,7 @@ export function AttritionTables({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-ink px-4 py-3.5">
           <div>
             <h2 className="text-[15px] font-bold text-ink">Leave &amp; Absence Register</h2>
-            <p className="mt-1 text-xs text-muted">Absconding, LOA and maternity — kept on the active roster, listed here separately</p>
+            <p className="mt-1 text-xs text-muted">LOA and maternity — away and expected back, kept on the roster and listed here separately</p>
           </div>
           <a href={exportHref} className="border-2 border-ink bg-surface px-3.5 py-2 text-xs font-bold text-ink transition hover:border-orange-brand hover:text-orange-brand">
             Export CSV
@@ -173,7 +153,7 @@ export function AttritionTables({
                 </td>
                 {showTeam && <td className={CELL}>{row.supervisorName ?? "—"}</td>}
                 <td className="px-2.5 py-2.5 text-left">
-                  <Pill tone={row.attrition === "absconding" ? "fail" : "warn"}>{EWS_ATTRITION_LABELS[row.attrition]}</Pill>
+                  <Pill tone="warn">{EWS_ATTRITION_LABELS[row.attrition]}</Pill>
                 </td>
                 <td className={`${CELL} font-mono`}>{row.started ?? "—"}</td>
                 <td className={`${CELL} font-mono`}>{row.expectedReturn ?? "—"}</td>

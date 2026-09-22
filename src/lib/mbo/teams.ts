@@ -36,6 +36,8 @@ export function matchesMboFilter(row: Pick<MboRow, "passing">, filter: MboFilter
 export const UNASSIGNED_TEAM = "Unassigned";
 
 export interface MboTeam {
+  /** The leader's EID, or the name where the rows carry none; what the bands are keyed on. */
+  key: string;
   leader: string;
   /** The team's whole roster, in the roster's order (failing first). */
   rows: MboRow[];
@@ -63,15 +65,19 @@ function mean(values: Array<number | null>): number | null {
  * working through come up top — the same reason the roster puts failing
  * agents first. Teams with nobody scored sort after the scored ones, and
  * the unassigned band last; ties fall to the leader's name.
+ *
+ * Keyed on the leader's EID, not their name: two leaders who share a name
+ * are two teams, and a name spelled two ways is still one.
  */
 export function groupByLeader(rows: readonly MboRow[]): MboTeam[] {
   const byLeader = new Map<string, MboRow[]>();
   for (const row of rows) {
-    const key = row.supervisorName ?? UNASSIGNED_TEAM;
+    const key = row.supervisorEid ?? row.supervisorName ?? UNASSIGNED_TEAM;
     byLeader.set(key, [...(byLeader.get(key) ?? []), row]);
   }
 
-  const teams = [...byLeader.entries()].map(([leader, members]): MboTeam => {
+  const teams = [...byLeader.entries()].map(([key, members]): MboTeam => {
+    const leader = members.find((m) => m.supervisorName !== null)?.supervisorName ?? (key === UNASSIGNED_TEAM ? UNASSIGNED_TEAM : key);
     const passing = members.filter((r) => r.passing === true).length;
     const failing = members.filter((r) => r.passing === false).length;
     const unscored = members.filter((r) => r.passing === null).length;
@@ -83,6 +89,7 @@ export function groupByLeader(rows: readonly MboRow[]): MboTeam[] {
     }
 
     return {
+      key,
       leader,
       rows: members,
       agents: members.length,

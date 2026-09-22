@@ -36,16 +36,16 @@ function rate(value: number | null) {
 
 export function MboTeamTable({ teams }: { teams: MboTeamView[] }) {
   const [open, setOpen] = useState<Record<string, boolean>>(() =>
-    teams.length === 1 ? { [teams[0].team.leader]: true } : {},
+    teams.length === 1 ? { [teams[0].team.key]: true } : {},
   );
-  const allOpen = teams.every(({ team }) => open[team.leader]);
+  const allOpen = teams.every(({ team }) => open[team.key]);
 
   function toggle(leader: string) {
     setOpen((current) => ({ ...current, [leader]: !current[leader] }));
   }
 
   function toggleAll() {
-    setOpen(allOpen ? {} : Object.fromEntries(teams.map(({ team }) => [team.leader, true])));
+    setOpen(allOpen ? {} : Object.fromEntries(teams.map(({ team }) => [team.key, true])));
   }
 
   return (
@@ -77,11 +77,11 @@ export function MboTeamTable({ teams }: { teams: MboTeamView[] }) {
           <tbody>
             {teams.map(({ team, rows }) => (
               <TeamRows
-                key={team.leader}
+                key={team.key}
                 team={team}
                 rows={rows}
-                open={!!open[team.leader]}
-                onToggle={() => toggle(team.leader)}
+                open={!!open[team.key]}
+                onToggle={() => toggle(team.key)}
               />
             ))}
           </tbody>

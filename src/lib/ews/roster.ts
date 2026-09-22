@@ -1,5 +1,5 @@
 import { autoFlags, isAutoIndicator, type AutoIndicator, type AutoIndicatorCode } from "./auto-indicators";
-import { computeEwsRisk, isLeaveState, type EwsAttrition, type EwsRiskLevel } from "./engine";
+import { computeEwsRisk, expectsReturn, type EwsAttrition, type EwsRiskLevel } from "./engine";
 
 /**
  * The My Team roster as the page reads it: every person in scope with
@@ -52,6 +52,7 @@ export interface EwsRosterRow extends EwsRosterPerson {
   riskLevel: EwsRiskLevel;
   /** Live score against the previous save; null without one to compare. */
   delta: number | null;
+  /** On a leave they are expected back from; an exit carries no flag, it leaves the roster. */
   flag: "leave" | null;
 }
 
@@ -81,15 +82,17 @@ export function buildRosterRow(person: EwsRosterPerson): EwsRosterRow {
     score,
     riskLevel,
     delta: person.previousScore === null ? null : score - person.previousScore,
-    flag: isLeaveState(attrition) ? "leave" : null,
+    flag: expectsReturn(attrition) ? "leave" : null,
   };
 }
 
 const RISK_RANK: Record<EwsRiskLevel, number> = { BLACK: 0, RED: 1, YELLOW: 2, GREEN: 3 };
 
-/** Worst first — Critical, At risk, Watch, then Stable — and by name inside a band. */
+/** Worst first — Critical, At risk, Watch, then Stable — the higher score first inside a band, then by name. */
 export function sortRoster(rows: readonly EwsRosterRow[]): EwsRosterRow[] {
-  return [...rows].sort((a, b) => RISK_RANK[a.riskLevel] - RISK_RANK[b.riskLevel] || a.name.localeCompare(b.name));
+  return [...rows].sort(
+    (a, b) => RISK_RANK[a.riskLevel] - RISK_RANK[b.riskLevel] || b.score - a.score || a.name.localeCompare(b.name),
+  );
 }
 
 export interface RosterTotals {
