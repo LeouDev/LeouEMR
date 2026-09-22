@@ -106,6 +106,9 @@ export interface AuditSummary {
   auditDate: string;
   scorePct: number;
   isCritical: boolean;
+  /** The form the audit was scored on; the failure drill-down is per form. */
+  formKey: string;
+  formLabel: string;
 }
 
 export interface FailSummary {
@@ -124,13 +127,31 @@ export interface Kpi {
   improved: boolean | null;
 }
 
+/** A failed category with the attributes failed under it, most first. */
+export interface CategoryDrill {
+  label: string;
+  count: number;
+  /** Share of the failures in view, whole percent. */
+  share: number;
+  attributes: Array<{ label: string; count: number }>;
+}
+
 export interface Analysis {
   kpis: Kpi[];
   trend: { buckets: string[]; scores: Array<number | null>; criticals: number[] };
   groups: Array<{ label: string; avg: number; count: number }>;
   outcome: { passed: number; failed: number; critical: number };
+  /**
+   * The forms audited in the window, for the failure drill-down's picker:
+   * how many audits each had, and how many failed attributes.
+   */
+  forms: Array<{ key: string; label: string; audits: number; fails: number }>;
+  /** The form the failure lists below are narrowed to; null for every form. */
+  form: string | null;
   categories: Array<{ label: string; count: number }>;
   findings: Array<{ label: string; count: number }>;
+  /** Every failed category in view, each opening onto its attributes. */
+  drill: CategoryDrill[];
   total: number;
 }
 
@@ -163,6 +184,8 @@ export function summarize(
   fails: readonly FailSummary[],
   window: AnalysisWindow,
   groupBy: GroupBy,
+  /** Narrow the failure lists to one form's audits; anything not audited in the window means every form. */
+  formKey: string | null = null,
 ): Analysis {
   const current = audits.filter((a) => inRange(a.auditDate, window.start, window.end));
   const prior = audits.filter((a) => inRange(a.auditDate, window.priorStart, window.priorEnd));
@@ -222,27 +245,65 @@ export function summarize(
   const passedCount = current.filter(passed).length;
   const outcome = { passed: passedCount, critical, failed: current.length - passedCount - critical };
 
+  // The forms audited in the window, and the failures each carries. The
+  // failure lists below are per form when one is picked: a category on
+  // the Fax form and one on the Phones form are different questions,
+  // and a count across both blames neither.
+  const formOfAudit = new Map(current.map((a) => [a.id, a.formKey]));
+  const currentFails = fails.filter((f) => currentIds.has(f.auditId));
+  const formMap = new Map<string, { key: string; label: string; audits: number; fails: number }>();
+  for (const audit of current) {
+    const entry = formMap.get(audit.formKey) ?? { key: audit.formKey, label: audit.formLabel, audits: 0, fails: 0 };
+    entry.audits += 1;
+    formMap.set(audit.formKey, entry);
+  }
+  for (const fail of currentFails) {
+    const entry = formMap.get(formOfAudit.get(fail.auditId)!);
+    if (entry) entry.fails += 1;
+  }
+  const forms = [...formMap.values()].sort((a, b) => b.audits - a.audits || a.label.localeCompare(b.label));
+  const form = formKey !== null && formMap.has(formKey) ? formKey : null;
+  const inView = form === null ? currentFails : currentFails.filter((f) => formOfAudit.get(f.auditId) === form);
+
   const categoryCounts = new Map<string, number>();
   const findingCounts = new Map<string, number>();
-  for (const fail of fails) {
-    if (!currentIds.has(fail.auditId)) continue;
+  const attributesByCategory = new Map<string, Map<string, number>>();
+  for (const fail of inView) {
     categoryCounts.set(fail.category, (categoryCounts.get(fail.category) ?? 0) + 1);
     const finding = `${fail.category}: ${fail.attribute}`;
     findingCounts.set(finding, (findingCounts.get(finding) ?? 0) + 1);
+    const attributes = attributesByCategory.get(fail.category) ?? new Map<string, number>();
+    attributes.set(fail.attribute, (attributes.get(fail.attribute) ?? 0) + 1);
+    attributesByCategory.set(fail.category, attributes);
   }
+  const byCount = (a: { label: string; count: number }, b: { label: string; count: number }) =>
+    b.count - a.count || a.label.localeCompare(b.label);
   const ranked = (counts: Map<string, number>) =>
     [...counts.entries()]
       .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+      .sort(byCount)
       .slice(0, TOP);
+  const drill: CategoryDrill[] = [...categoryCounts.entries()]
+    .map(([label, count]) => ({
+      label,
+      count,
+      share: inView.length === 0 ? 0 : Math.round((count / inView.length) * 100),
+      attributes: [...(attributesByCategory.get(label) ?? new Map<string, number>()).entries()]
+        .map(([attribute, n]) => ({ label: attribute, count: n }))
+        .sort(byCount),
+    }))
+    .sort(byCount);
 
   return {
     kpis,
     trend: { buckets: window.buckets.map((b) => b.label), scores, criticals },
     groups,
     outcome,
+    forms,
+    form,
     categories: ranked(categoryCounts),
     findings: ranked(findingCounts),
+    drill,
     total: current.length,
   };
 }

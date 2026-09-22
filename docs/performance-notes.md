@@ -1804,6 +1804,23 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Team QA Analysis: failures per form, and a category that opens onto
+  its attributes (22 Sep).** `getQaAnalysisInput` now carries each
+  audit's `formKey`/`formLabel` (join on `qa_forms`); `summarize` takes an
+  optional form key and returns `forms` (each form audited in the window
+  with its audit and failure counts, most audited first), `form` (the
+  pick, or null when it names a form not audited in the window) and
+  `drill` — every failed category with its count, share of the failures
+  in view and the attributes failed under it, most first. The Error
+  categories card gets a Form picker (All forms · each form with its
+  audit count; shown only when more than one form was audited) and
+  renders `CategoryDrilldown` (`analysis-charts.tsx`): plain `<details>`
+  per category, the top one open, a count bar, share and count on the
+  summary row, the attributes with counts inside — no JavaScript, prints
+  closed. Top recurring findings narrows to the same form. The KPIs,
+  trend, groups and outcome stay the whole team's: a form is a lens on
+  the failures, not a filter on the page. Checked with a headless-Chromium
+  screenshot of a two-form fixture.
 - **Quality: an "Audit completion" tab, one column per team leader per
   week of the month (22 Sep).** `/quality/completion` — the fifth Quality
   screen (fourth for a role that does not file), shown only to a viewer

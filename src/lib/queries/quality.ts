@@ -329,9 +329,12 @@ export async function getQaAnalysisInput(
       auditDate: qaAudits.auditDate,
       scorePct: qaAudits.scorePct,
       isCritical: qaAudits.isCritical,
+      formKey: qaAudits.formKey,
+      formLabel: qaForms.label,
     })
     .from(qaAudits)
     .innerJoin(employees, eq(employees.id, qaAudits.agentId))
+    .innerJoin(qaForms, eq(qaForms.key, qaAudits.formKey))
     .where(and(inArray(qaAudits.agentId, ids), gte(qaAudits.auditDate, window.priorStart), lte(qaAudits.auditDate, window.end)));
   if (audits.length === 0) return { audits: [], fails: [] };
 

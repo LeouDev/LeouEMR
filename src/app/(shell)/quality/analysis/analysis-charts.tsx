@@ -1,7 +1,10 @@
+import type { CategoryDrill } from "@/lib/quality/analysis";
+
 /**
- * The two charts the shared chart set does not have: a count bar list (a
- * failure count is not a rate, so BarList's percent axis does not fit)
- * and the outcome donut. Server-rendered SVG and divs, like the rest.
+ * The charts the shared chart set does not have: a count bar list (a
+ * failure count is not a rate, so BarList's percent axis does not fit),
+ * the category drill-down and the outcome donut. Server-rendered SVG and
+ * divs, like the rest.
  */
 
 export function CountBars({
@@ -88,5 +91,56 @@ export function OutcomeDonut({ passed, failed, critical }: { passed: number; fai
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * Failed categories, each a disclosure that opens onto the attributes
+ * failed under it — the "why" behind a category's count without leaving
+ * the page. Plain <details>, so it prints closed and works without
+ * JavaScript; the top category opens by default because it is the one
+ * the reader came for.
+ */
+export function CategoryDrilldown({
+  rows,
+  emptyMessage = "Nothing to show in this range.",
+}: {
+  rows: CategoryDrill[];
+  emptyMessage?: string;
+}) {
+  if (rows.length === 0) return <p className="py-8 text-center text-sm text-muted">{emptyMessage}</p>;
+  const max = Math.max(...rows.map((r) => r.count), 1);
+  return (
+    <ul className="space-y-1.5">
+      {rows.map((row, i) => (
+        <li key={row.label}>
+          <details open={i === 0} className="group">
+            <summary className="grid cursor-pointer list-none grid-cols-[auto_1fr_auto_auto] items-center gap-x-3 gap-y-1 py-1 [&::-webkit-details-marker]:hidden">
+              <span aria-hidden="true" className="inline-block w-[9px] text-xs text-muted transition-transform duration-[120ms] group-open:rotate-90">
+                ▸
+              </span>
+              <span className="truncate text-sm text-ink" title={row.label}>
+                {row.label}
+              </span>
+              <span className="text-xs text-muted tabular-nums">{row.share}%</span>
+              <span className="font-mono text-sm font-semibold text-ink tabular-nums">{row.count}</span>
+              <div className="col-span-3 col-start-2 h-1.5 overflow-hidden bg-line">
+                <div className="h-full bg-fail" style={{ width: `${(row.count / max) * 100}%` }} />
+              </div>
+            </summary>
+            <ol className="mt-1.5 mb-2 ml-5 space-y-1 border-l-2 border-line pl-3">
+              {row.attributes.map((attribute) => (
+                <li key={attribute.label} className="grid grid-cols-[1fr_auto] items-center gap-x-3 text-xs">
+                  <span className="truncate text-ink" title={attribute.label}>
+                    {attribute.label}
+                  </span>
+                  <span className="font-mono font-semibold text-ink tabular-nums">{attribute.count}</span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        </li>
+      ))}
+    </ul>
   );
 }
