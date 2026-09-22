@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { employeeProfiles, employees, ewsAssessments, ewsHeadcount, ewsIndicators, users } from "@/lib/db/schema";
 import { employeeScope, withScope } from "@/lib/auth/scope";
@@ -13,6 +13,8 @@ import {
 import type { EwsAttrition } from "@/lib/ews/engine";
 import { headcountChain, headcountStats, sumChains, type HeadcountEntry, type HeadcountMonth, type HeadcountStats } from "@/lib/ews/headcount";
 import { buildRosterRow, rosterTotals, sortRoster, type EwsRosterRow, type RosterTotals } from "@/lib/ews/roster";
+import { separatedBefore } from "./eligibility";
+import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorEidOfRecord, supervisorOfRecord } from "./org-history";
 import { getFactDateRange, getPeriodMetrics } from "./period-metrics";
 import { periodContaining, previousPeriod, weekContaining, type Period } from "./period";
 
@@ -93,30 +95,80 @@ const EMPTY_ROSTER: EwsRoster = {
   indicators: [],
 };
 
+interface RosterPerson {
+  id: string;
+  eid: string;
+  name: string;
+  supervisorEid: string | null;
+  supervisorName: string | null;
+}
+
 /**
- * Everyone in the caller's scope — or on one team of it — with their live
- * risk, worst first (see src/lib/ews/roster.ts for what "live" means).
+ * The people on a team leader's roster for one month: whoever the org
+ * history says the leader held for the most days of it, not counting
+ * anyone the masterlist closed before it or an EWS tag separated before
+ * it began. Someone who leaves mid-month stays on the month's roster —
+ * they were on it — and drops off with the next one.
+ *
+ * The month's supervisor of record is what the Team column shows and what
+ * a team narrows on, so a realignment moves people between rosters on the
+ * month it took effect, not retroactively.
+ */
+async function monthRoster(user: CurrentUser, team: string | null, month: Period): Promise<RosterPerson[]> {
+  const [ids, gone] = await Promise.all([reportingScopeIds(user, month), separatedBefore(month.start)]);
+  if (ids.length === 0) return [];
+  const owner = periodOwnerSubquery(month);
+  const supervisorEid = supervisorEidOfRecord(owner);
+  const rows = await db
+    .select({
+      id: employees.id,
+      eid: employees.eid,
+      name: employees.name,
+      supervisorEid,
+      supervisorName: supervisorOfRecord(owner),
+    })
+    .from(employees)
+    .leftJoin(owner, joinPeriodOwner(owner))
+    .where(and(inArray(employees.id, ids), team ? eq(supervisorEid, team) : isNotNull(supervisorEid)))
+    .orderBy(employees.name);
+  return rows.filter((r) => !gone.has(r.id));
+}
+
+/**
+ * Everyone the caller's operational scope reaches — or on one team of it
+ * by their current row — whether or not they are still on a roster. What
+ * the attrition screen lists: an exit belongs to the leader who last held
+ * the person, whichever month they left.
+ */
+async function everyoneInScope(user: CurrentUser, team: string | null): Promise<RosterPerson[]> {
+  const where = withScope(user, team ? eq(employees.supervisorEid, team) : undefined);
+  if (where === null) return [];
+  return db
+    .select({
+      id: employees.id,
+      eid: employees.eid,
+      name: employees.name,
+      supervisorEid: employees.supervisorEid,
+      supervisorName: employees.supervisorName,
+    })
+    .from(employees)
+    .where(where)
+    .orderBy(employees.name);
+}
+
+/**
+ * The roster with everyone's live risk, worst first (see
+ * src/lib/ews/roster.ts for what "live" means): the team leader's people
+ * for `month` when one is given, or everyone the caller's scope reaches
+ * when not (the attrition screen's read).
  *
  * Someone who has never been assessed is listed anyway, scored on the
  * data alone: an unassessed employee is a coverage gap a supervisor should
  * see and close, not something to quietly omit until it becomes a score.
  */
-export async function getEwsRoster(user: CurrentUser, team: string | null): Promise<EwsRoster> {
-  const where = withScope(user, team ? eq(employees.supervisorEid, team) : undefined);
-  if (where === null) return EMPTY_ROSTER;
-
+export async function getEwsRoster(user: CurrentUser, team: string | null, month: Period | null): Promise<EwsRoster> {
   const [roster, indicators, dataWeek] = await Promise.all([
-    db
-      .select({
-        id: employees.id,
-        eid: employees.eid,
-        name: employees.name,
-        supervisorEid: employees.supervisorEid,
-        supervisorName: employees.supervisorName,
-      })
-      .from(employees)
-      .where(where)
-      .orderBy(employees.name),
+    month ? monthRoster(user, team, month) : everyoneInScope(user, team),
     db
       .select({ code: ewsIndicators.code, label: ewsIndicators.label })
       .from(ewsIndicators)

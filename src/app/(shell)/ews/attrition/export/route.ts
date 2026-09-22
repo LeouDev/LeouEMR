@@ -16,7 +16,7 @@ export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const teams = await getEwsTeams(user);
   const team = resolveTeam(user, teams, params.get("team") ?? undefined);
-  const roster = await getEwsRoster(user, team);
+  const roster = await getEwsRoster(user, team, null);
   const today = new Date().toISOString().slice(0, 10);
 
   const rows: LeaveRegisterRow[] = roster.rows

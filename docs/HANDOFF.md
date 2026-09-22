@@ -239,8 +239,11 @@ the coding container; there is no database to run the app against here.
   new table `ews_headcount`) and Permanent Attrition (exits with Restore,
   leave register with CSV). Three indicators read from the week's data
   (`src/lib/ews/auto-indicators.ts`); one write path for both forms
-  (`src/lib/ews/save.ts`). Migration `0061_ews_tracker` — the owner
-  pastes `drizzle/APPLY_0061_EWS_TRACKER.sql` before the deploy.
+  (`src/lib/ews/save.ts`). My Team is the current month's roster by the
+  org history (supervisor of record, leavers before the month dropped);
+  the attrition screen reads everyone in scope. Migration
+  `0061_ews_tracker` — applied by the owner on 22 Sep
+  (`drizzle/APPLY_0061_EWS_TRACKER.sql`).
 - **MBO per team leader** (22 Sep): the MBO table is a band per team
   leader (headcount, pass rate, gate averages, gates missed) that opens
   onto its agents, with an Export CSV of the same period and tab
