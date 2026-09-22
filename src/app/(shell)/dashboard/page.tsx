@@ -12,7 +12,7 @@ import {
 import { AdminAnalytics } from "./admin-analytics";
 import { ManagerOverview } from "./manager-overview";
 import { AgentPerformance, type AgentKpi } from "./agent-performance";
-import { SupervisorOverview, type TeamKpi } from "./supervisor-overview";
+import { SupervisorOverview } from "./supervisor-overview";
 import { TeamAgentTable } from "./team-agent-table";
 import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -30,6 +30,7 @@ import { getFactDateRange, getPeriodMetrics, withoutSkills } from "@/lib/queries
 import { getTeamPeriodComparison } from "@/lib/queries/my-stats";
 import { focusAgents } from "@/lib/dashboard/focus";
 import { getEmployeeKpiTrend } from "@/lib/queries/trend";
+import { teamKpiFigures, type TeamKpi } from "@/lib/queries/team-kpis";
 import { getTeamKpiTrend } from "@/lib/queries/team-trend";
 import { parseGranularity, periodContaining, periodsBetween, previousPeriod } from "@/lib/queries/period";
 import { PeriodPicker } from "@/components/period-picker";
@@ -312,44 +313,10 @@ export default async function DashboardPage({
   const isSupervisor = user.role === "supervisor" || isSupportRole(user);
 
   // The team's own figures, one row per KPI: the mean of the agents scored on
-  // it, and how many of them were below target. The mean alone hides the
-  // shape of a team, so the count travels with it everywhere it is shown.
-  const teamKpis: TeamKpi[] = isSupervisor
-    ? [...
-        periodMetrics
-          .reduce((acc, m) => {
-            const entry = acc.get(m.kpiCode) ?? {
-              code: m.kpiCode,
-              name: m.kpiName,
-              sum: 0,
-              targetSum: 0,
-              targets: 0,
-              below: 0,
-              scored: 0,
-            };
-            entry.sum += m.actualValue;
-            entry.scored += 1;
-            if (m.status === "FAIL") entry.below += 1;
-            if (m.targetValue !== null) {
-              entry.targetSum += m.targetValue;
-              entry.targets += 1;
-            }
-            acc.set(m.kpiCode, entry);
-            return acc;
-          }, new Map<string, { code: string; name: string; sum: number; targetSum: number; targets: number; below: number; scored: number }>())
-          .values(),
-      ]
-        .map((e) => ({
-          code: e.code,
-          name: e.name,
-          avg: e.sum / e.scored,
-          // Targets differ per agent — a ramping agent's are lower — so the
-          // cell shows the team's mean target rather than one person's.
-          target: e.targets > 0 ? e.targetSum / e.targets : null,
-          below: e.below,
-          scored: e.scored,
-        }))
-    : [];
+  // it (NPS pooled over surveys, as the manager's overview and the Team page
+  // read it), and how many of them were below target. The mean alone hides
+  // the shape of a team, so the count travels with it everywhere it is shown.
+  const teamKpis: TeamKpi[] = isSupervisor ? teamKpiFigures(periodMetrics) : [];
 
   const [teamSeries, openByEmployee] = await Promise.all([
     isSupervisor && teamIds.length > 0 && weeks.length > 0

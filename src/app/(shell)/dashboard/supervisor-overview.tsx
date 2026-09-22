@@ -13,15 +13,9 @@ import {
 } from "./dashboard-shell";
 import { KPI_GROUPS, orderIndex } from "./kpi-groups";
 
-export interface TeamKpi {
-  code: string;
-  name: string;
-  /** Mean across the agents scored on it this period. */
-  avg: number;
-  target: number | null;
-  below: number;
-  scored: number;
-}
+import type { TeamKpi } from "@/lib/queries/team-kpis";
+
+export type { TeamKpi };
 
 export interface TeamSummaryStats {
   failing: number;
@@ -126,7 +120,9 @@ export function SupervisorOverview({
           key: s.kpiCode,
           label: s.kpiName,
           note: [
-            "line = team average · bars = agents meeting target",
+            s.kpiCode === "NPS"
+              ? "line = team NPS, every survey pooled · bars = agents meeting target"
+              : "line = team average · bars = agents meeting target",
             s.target === null ? null : `target ${formatMetric(s.target, s.kpiCode)}`,
           ]
             .filter(Boolean)
@@ -255,7 +251,9 @@ export function SupervisorOverview({
                         >
                           {formatMetric(kpi.avg, kpi.code)}
                         </span>
-                        <span className="text-[11px] text-muted">team avg</span>
+                        <span className="text-[11px] text-muted">
+                          {kpi.surveys === null ? "team avg" : `team NPS · ${kpi.surveys} survey${kpi.surveys === 1 ? "" : "s"}`}
+                        </span>
                       </span>
                       <span className="text-xs text-muted">
                         {kpi.target === null

@@ -5,7 +5,7 @@ import { OPENS_ACTION_ITEMS } from "./performance";
 
 export interface TeamTrendPoint {
   weekStart: string;
-  /** Mean of the scored agents' values — the line. */
+  /** Mean of the scored agents' values — the line. NPS is every survey pooled, not a mean of agents. */
   avg: number;
   /** How many of them were below target that week — the bars. */
   below: number;
@@ -48,6 +48,10 @@ export async function getTeamKpiTrend(
       kpiName: kpiDefinitions.name,
       direction: kpiDefinitions.direction,
       avg: sql<number>`avg(${weeklyMetricResults.actualValue})::double precision`,
+      // NPS is defined over responses: each agent's week weighted by their
+      // surveys (a row without a sample size counts for one), the same
+      // figure the manager's overview and the Team page show.
+      pooled: sql<number>`(sum(${weeklyMetricResults.actualValue} * greatest(coalesce(${weeklyMetricResults.sampleSize}, 0), 1)) / sum(greatest(coalesce(${weeklyMetricResults.sampleSize}, 0), 1)))::double precision`,
       below: sql<number>`count(*) filter (where ${weeklyMetricResults.status} = 'fail')::int`,
       scored: sql<number>`count(*)::int`,
       target: sql<number | null>`avg(${weeklyMetricResults.targetValue})::double precision`,
@@ -80,7 +84,7 @@ export async function getTeamKpiTrend(
     };
     series.points.push({
       weekStart: row.weekStart,
-      avg: row.avg,
+      avg: row.kpiCode === "NPS" ? row.pooled : row.avg,
       below: row.below,
       scored: row.scored,
     });
