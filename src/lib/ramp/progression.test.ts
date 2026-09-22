@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LAST_STAGE } from "./engine";
-import { STAGES, cellsFor, meetsTarget, movement } from "./progression";
+import { STAGES, cellsFor, kpiBar, meetsTarget, movement } from "./progression";
 
 const at = (stage: number, value: number, target: number | null = null) => ({ stage, value, target });
 
@@ -75,11 +75,33 @@ describe("meetsTarget", () => {
   });
 
   it("judges nothing where there is no value or no target", () => {
-    // Every KPI row has no per-stage target: nobody sets a different Quality
-    // bar for Nesting 2, and pretending otherwise would fail people against
-    // a number that does not exist.
+    // A KPI whose direction has no single bar (a range, a yes/no) carries no
+    // target, and pretending otherwise would fail people against a number
+    // that does not exist.
     expect(meetsTarget({ value: null, target: 10, sample: 0 }, false)).toBeNull();
     expect(meetsTarget({ value: 10, target: null, sample: 1 }, false)).toBeNull();
+  });
+});
+
+describe("kpiBar", () => {
+  it("is the failure threshold the weekly engine uses, or the target where only that is set", () => {
+    expect(kpiBar({ direction: "higher_is_better", target: 95, failureThreshold: 90 })).toBe(90);
+    expect(kpiBar({ direction: "lower_is_better", target: 0, failureThreshold: null })).toBe(0);
+    expect(kpiBar({ direction: "higher_is_better", target: null, failureThreshold: null })).toBeNull();
+  });
+
+  it("names no bar for a direction with no single number to compare against", () => {
+    expect(kpiBar({ direction: "range", target: 50, failureThreshold: 40 })).toBeNull();
+    expect(kpiBar({ direction: "boolean_match", target: 1, failureThreshold: 1 })).toBeNull();
+  });
+
+  it("colours a KPI cell the way a skill cell is coloured, against that bar", () => {
+    const bar = kpiBar({ direction: "higher_is_better", target: 80, failureThreshold: 80 });
+    expect(meetsTarget({ value: 69.12, target: bar, sample: 3 }, false)).toBe(false);
+    expect(meetsTarget({ value: 100, target: bar, sample: 3 }, false)).toBe(true);
+    const errors = kpiBar({ direction: "lower_is_better", target: 0, failureThreshold: 0 });
+    expect(meetsTarget({ value: 1.25, target: errors, sample: 3 }, true)).toBe(false);
+    expect(meetsTarget({ value: 0, target: errors, sample: 1 }, true)).toBe(true);
   });
 });
 

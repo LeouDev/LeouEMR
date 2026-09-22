@@ -1804,6 +1804,20 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Progression: KPI rows now pass or fail against the KPI's own bar (22
+  Sep).** The other session's progression left every scorecard-KPI cell
+  uncoloured (`target: null`, "nobody sets a different Quality bar for
+  Nesting 2"); the owner asked for red where a cohort is not passing.
+  `kpiBar` (`src/lib/ramp/progression.ts`, tested) is the failure
+  threshold the weekly engine uses, or the target where only that is
+  set, for the higher/lower directions and null for a range or yes/no;
+  `placeEveryRampedWeek` carries it as the KPI row's target at every
+  stage, so `meetsTarget` colours the cell exactly as it colours a skill
+  week, the cell's tooltip shows "Target N", and the CSV/Excel target
+  columns carry it. The bar lives in `kpi_definitions` (set on the KPI
+  settings page), not in code. The tab switch is two standalone buttons
+  with a gap rather than one bordered strip — the strip stretched the
+  page's width.
 - **Ramp page in two tabs (22 Sep): "Progression by stage" and "Board".**
   The other session had just shipped the progression (`progression-
   board.tsx`, `stage-panel.tsx`, `src/lib/queries/ramp-progression.ts`,

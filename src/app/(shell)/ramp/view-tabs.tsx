@@ -19,15 +19,15 @@ export function rampViewFor(value: string | undefined): RampView {
  */
 export function RampViewTabs({ view }: { view: RampView }) {
   return (
-    <div className="flex border-2 border-ink" aria-label="Ramp view">
-      {RAMP_TABS.map((tab, i) => (
+    <div className="flex flex-wrap gap-2" aria-label="Ramp view">
+      {RAMP_TABS.map((tab) => (
         <NavLink
           key={tab.key}
           href={`/ramp?${new URLSearchParams({ view: tab.key })}`}
           prefetch={false}
-          className={`px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase ${
-            i > 0 ? "border-l-2 border-ink" : ""
-          } ${view === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"}`}
+          className={`border-2 border-ink px-3 py-1.5 text-xs font-semibold tracking-[0.08em] uppercase transition ${
+            view === tab.key ? "bg-ink text-white" : "bg-surface text-ink hover:bg-orange-brand-100"
+          }`}
         >
           {tab.label}
         </NavLink>
