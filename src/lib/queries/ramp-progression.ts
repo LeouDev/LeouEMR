@@ -17,7 +17,7 @@ import {
 import { loadSkillReferences, normalize } from "@/lib/import-pipeline/par-scoring";
 import { measureSkill } from "@/lib/kpi-engine/skill-result";
 import { LAST_STAGE, rampStageForWeek } from "@/lib/ramp/engine";
-import { cellsFor, type ProgressionRow, type StagedValue } from "@/lib/ramp/progression";
+import { cellsFor, kpiBar, type ProgressionRow, type StagedValue } from "@/lib/ramp/progression";
 import { PLAN_KPI_CODES } from "./performance";
 import { periodContaining } from "./period";
 import { getRampSchedulesBySkill } from "./ramp-schedule";
@@ -210,6 +210,8 @@ async function placeEveryRampedWeek(): Promise<Placed[]> {
         code: kpiDefinitions.code,
         name: kpiDefinitions.name,
         direction: kpiDefinitions.direction,
+        target: kpiDefinitions.target,
+        failureThreshold: kpiDefinitions.failureThreshold,
         actualValue: weeklyMetricResults.actualValue,
       })
       .from(weeklyMetricResults)
@@ -297,8 +299,9 @@ async function placeEveryRampedWeek(): Promise<Placed[]> {
     placed.push({
       stage,
       value: row.actualValue,
-      // No per-stage bar: nobody sets a different Quality target for Nesting 2.
-      target: null,
+      // The KPI's own bar, the same at every stage: nobody sets a different
+      // Quality target for Nesting 2, but a cohort under the bar is not passing.
+      target: kpiBar(row),
       supervisor: owner.supervisor ?? UNASSIGNED,
       employeeId: owner.employeeId,
       employeeName: owner.employeeName,

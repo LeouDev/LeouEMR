@@ -92,12 +92,29 @@ export function cellsFor(values: readonly StagedValue[]): StageCell[] {
 }
 
 /**
- * Whether a cell met the stage's target.
+ * The bar a scorecard KPI is passed or failed against, the same at every
+ * stage: the failure threshold the weekly engine uses (evaluate.ts), or the
+ * target where a definition names only that. Nobody sets a different Quality
+ * bar for Nesting 2, so unlike a skill's ladder it does not move — but a
+ * cohort averaging 69 NPS against a bar of 80 is not passing, and reads red
+ * like a skill week would. Null for the directions that have no single
+ * number to compare against (a range, a yes/no).
+ */
+export function kpiBar(definition: {
+  direction: string;
+  target: number | null;
+  failureThreshold: number | null;
+}): number | null {
+  if (definition.direction !== "higher_is_better" && definition.direction !== "lower_is_better") return null;
+  return definition.failureThreshold ?? definition.target ?? null;
+}
+
+/**
+ * Whether a cell met its target: the stage's, for a skill on a ramp
+ * schedule; the KPI's own bar, for a scorecard measure.
  *
- * Null where there is nothing to judge — no value, or no target, which is
- * every KPI row. A KPI at ramp has no per-stage bar to clear; it is shown so
- * a reader can see quality holding while a rate climbs, not to be passed or
- * failed against a number nobody set.
+ * Null where there is nothing to judge — no value, or no target (a KPI
+ * whose direction has no single bar).
  */
 export function meetsTarget(cell: StageCell, lowerIsBetter: boolean): boolean | null {
   if (cell.value === null || cell.target === null) return null;
