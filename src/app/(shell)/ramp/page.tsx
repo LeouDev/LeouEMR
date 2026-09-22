@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { EmptyState, PageBand, StatCard } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
 import { isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -12,8 +12,8 @@ import { LAST_STAGE, isNesting } from "@/lib/ramp/engine";
 import { ClearRampButton, RampForm } from "./ramp-form";
 import { RampDateEditor } from "./ramp-date-editor";
 import { ReapplyAllButton } from "./reapply-all-button";
-import { CollapsibleCard } from "./collapsible-card";
 import { ProgressionBoard } from "./progression-board";
+import { RampViewTabs, rampViewFor } from "./view-tabs";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
 
@@ -32,7 +32,11 @@ function todayIso(): string {
  * loadRampTargets), replacing a per-row target someone would otherwise
  * have to keep editing in the source file by hand every week.
  */
-export default async function RampPage() {
+export default async function RampPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.status !== "active") redirect("/pending");
@@ -40,20 +44,23 @@ export default async function RampPage() {
   // nothing in it for an agent to see about themselves or anyone else.
   if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
 
+  const view = rampViewFor((await searchParams).view);
   const canEdit = canManageActionItems(user);
-  // Organisation-wide and cached, then narrowed here: the progression is one
-  // answer for everybody and computing it per viewer is what the cache
-  // exists to prevent (see lib/queries/ramp-progression.ts).
+  // The board is read on both tabs: its rows are the figures above them.
+  // The progression only on its own tab. Organisation-wide and cached,
+  // then narrowed here: it is one answer for everybody and computing it
+  // per viewer is what the cache exists to prevent (see
+  // lib/queries/ramp-progression.ts).
   const scope = employeeScope(user);
   const [board, everyTeam, mine] = await Promise.all([
     getRampBoard(user, todayIso()),
-    getRampProgression(),
-    scope === null
-      ? Promise.resolve([])
-      : db
+    view === "progression" ? getRampProgression() : Promise.resolve([]),
+    view === "progression" && scope !== null
+      ? db
           .select({ supervisor: employees.supervisorName })
           .from(employees)
-          .where(scope === "all" ? undefined : scope),
+          .where(scope === "all" ? undefined : scope)
+      : Promise.resolve([]),
   ]);
   const visible = new Set(mine.map((r) => r.supervisor ?? "Unassigned"));
   const teams = everyTeam.filter((team) => visible.has(team.supervisor));
@@ -77,8 +84,11 @@ export default async function RampPage() {
           />
         </div>
 
-        <CollapsibleCard
-          id="ramp:progression"
+        <RampViewTabs view={view} />
+
+        {view === "progression" ? (
+        <Card>
+          <CardHeader
           title="Progression by stage"
           subtitle="Every ramp on record, averaged per team — open a team for its agents, then a figure for what the supervisor wrote"
           action={
@@ -102,12 +112,12 @@ export default async function RampPage() {
               </span>
             ) : undefined
           }
-        >
+          />
           <ProgressionBoard teams={teams} />
-        </CollapsibleCard>
-
-        <CollapsibleCard
-          id="ramp:board"
+        </Card>
+        ) : (
+        <Card>
+          <CardHeader
           title="Board"
           subtitle={
             board.rows.length === 0
@@ -115,7 +125,7 @@ export default async function RampPage() {
               : "Ordered by stage — Nesting first, closest to standard last"
           }
           action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
-        >
+          />
           {board.rows.length === 0 ? (
             <EmptyState
               title="Nobody currently ramping"
@@ -188,7 +198,8 @@ export default async function RampPage() {
             ) : (
               <RampForm employees={board.eligibleEmployees} skills={board.skills} />
             ))}
-        </CollapsibleCard>
+        </Card>
+        )}
       </main>
     </>
   );
