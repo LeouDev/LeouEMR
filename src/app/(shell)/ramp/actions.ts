@@ -16,6 +16,7 @@ import {
   type AgentProgression,
   type StageDetail,
 } from "@/lib/queries/ramp-progression";
+import { visibleTeamNames } from "./access";
 import { LAST_STAGE } from "@/lib/ramp/engine";
 import { reapplyRampToStoredWeeks, revertRampOnStoredWeeks } from "@/lib/ramp/reapply";
 
@@ -107,6 +108,7 @@ export async function setRampAssignment(input: unknown): Promise<RampResult> {
   });
 
   revalidatePath("/ramp");
+  revalidatePath("/ramp/progression");
   revalidatePath(`/employees/${parsed.data.employeeId}`);
   return { ok: true, weeksCorrected };
 }
@@ -155,6 +157,7 @@ export async function clearRampAssignment(input: unknown): Promise<RampResult> {
   });
 
   revalidatePath("/ramp");
+  revalidatePath("/ramp/progression");
   revalidatePath(`/employees/${parsed.data.employeeId}`);
   return { ok: true, weeksCorrected };
 }
@@ -207,6 +210,7 @@ export async function reapplyAllRamps(): Promise<ReapplyAllResult> {
   });
 
   revalidatePath("/ramp");
+  revalidatePath("/ramp/progression");
   return { ok: true, assignments: assignments.length, weeksCorrected };
 }
 
@@ -255,17 +259,12 @@ export async function loadRampStageDetail(input: unknown): Promise<StageDetailRe
   return { ok: true, detail: await getStageDetail(parsed.data.employeeId, parsed.data.stage) };
 }
 
-/** The team names this caller may open, from the progression they can already see. */
+/**
+ * The team names this caller may open — the progression's own teams,
+ * narrowed by the same scope rule the page renders with, so a team name in
+ * the argument is a request rather than a grant.
+ */
 async function visibleTeams(user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>): Promise<Set<string>> {
-  const teams = await getRampProgression();
-  const scope = employeeScope(user);
-  if (scope === null) return new Set();
-
-  const mine = await db
-    .select({ supervisor: employees.supervisorName })
-    .from(employees)
-    .where(scope === "all" ? undefined : scope);
-
-  const allowed = new Set(mine.map((r) => r.supervisor ?? "Unassigned"));
+  const [teams, allowed] = await Promise.all([getRampProgression(), visibleTeamNames(user)]);
   return new Set(teams.map((t) => t.supervisor).filter((name) => allowed.has(name)));
 }

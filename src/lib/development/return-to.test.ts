@@ -13,7 +13,7 @@ describe("returnTo", () => {
 
   it("sends the ramp panel's reader back to the ramp page", () => {
     expect(returnTo(FROM_RAMP, LIST)).toEqual({
-      href: "/ramp",
+      href: "/ramp/progression",
       label: "← Back to the ramp progression",
     });
   });
