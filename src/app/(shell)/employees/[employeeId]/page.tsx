@@ -169,6 +169,10 @@ export default async function EmployeePage({
                       // page, and the default jump to the top meant scrolling
                       // back down after every week you looked at.
                       scroll={false}
+                      // Replace rather than push: looking at three weeks is
+                      // one visit, and "← Back" should return to the list,
+                      // not to each week in turn.
+                      replace
                       className={`border px-2 py-0.5 text-xs font-medium transition ${
                         week === assessmentWeek
                           ? "border-ink bg-ink text-white"
@@ -182,6 +186,10 @@ export default async function EmployeePage({
               }
             />
             <EwsPanel
+              // Keyed on the week: the panel seeds its form once, so a
+              // week switch must mount a fresh one or the previous week's
+              // values would be saved into the new week.
+              key={assessmentWeek}
               employeeId={employeeId}
               week={assessmentWeek}
               indicators={indicators}

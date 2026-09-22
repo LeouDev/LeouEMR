@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeEwsRisk, computeEwsScore,
+import { computeEwsRisk, computeEwsScore, expectsReturn, isExit,
   employeeStatusFor,
 } from "./engine";
 import type { EwsAssessmentInput } from "./engine";
@@ -90,5 +90,18 @@ describe("employeeStatusFor", () => {
 
   it("returns someone to active when the tag is cleared", () => {
     expect(employeeStatusFor("none")).toBe("active");
+  });
+});
+
+describe("the attrition tags", () => {
+  it("expect a return from a leave, count absconding as an exit, and leave the rest alone", () => {
+    expect(expectsReturn("loa")).toBe(true);
+    expect(expectsReturn("maternity")).toBe(true);
+    expect(expectsReturn("absconding")).toBe(false);
+    expect(expectsReturn("black")).toBe(false);
+    expect(isExit("black")).toBe(true);
+    expect(isExit("absconding")).toBe(true);
+    expect(isExit("loa")).toBe(false);
+    expect(isExit("none")).toBe(false);
   });
 });

@@ -1804,6 +1804,33 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Audit of the EWS tracker, MBO bands and back link (22 Sep).** A
+  review of the day's merges found and fixed: absconding was listed on
+  the leave register as "On leave" while the write path separates the
+  person and closes their work — it is an exit now (`isExit`), on the
+  attrition table with Restore, and only LOA and maternity
+  (`expectsReturn`) take an expected return or show the On-leave flag;
+  `getEwsTeams` returned one leader twice when their rows spelled the
+  name two ways (now one entry per EID, the commonest spelling; the
+  summed headcount was counting such a team twice); a leader with
+  months recorded but no current reports vanished from Headcount (an
+  administrator reaches any EID, a supervisor their own, and the summed
+  view includes recorded EIDs); `restoreFromAttrition` and the tracker's
+  save were keyed on the data week, a silent no-op when the tagged record
+  sat on a later week (the newer week wins), and the restore read before
+  it checked scope; the employee page's `EwsPanel` kept the previous
+  week's form values across a week switch (keyed on the week now) and
+  its week links pushed history entries "← Back" then walked through
+  (they replace now); MBO bands were keyed on the leader's name, merging
+  two leaders who share one (`MboRow.supervisorEid`, band key = EID,
+  name for display) and the lone-team auto-open only ran at mount (table
+  keyed on the tab); the EWS roster lost the old board's score order
+  inside a band (back); the headcount year picker could omit the year
+  shown. The exit and leave rows are built once (`exitRowsOf`,
+  `leaveRowsOf` in `src/lib/ews/export.ts`) for the page and the CSV.
+  Not checked live: this container's proxy refuses the Vercel host, so
+  the route sweep of production could not run; the Vercel deployment
+  statuses GitHub records, CI and the nightly integrity job are green.
 - **An employee page's back link goes back (22 Sep).** "← Back to
   employees" sent everyone to the roster whichever list they came from
   (MBO, EWS, stack rank, a scorecard, an action item). `BackLink`

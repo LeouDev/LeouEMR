@@ -1,15 +1,17 @@
+import { exitRowsOf, leaveRowsOf } from "@/lib/ews/export";
 import { getEwsRoster, getEwsTeams } from "@/lib/queries/ews";
 import { canRecord, requireEwsUser, resolveTeam, todayIso } from "../access";
 import { EwsBand, EwsTabs } from "../ews-tabs";
 import { EwsFilters } from "../team-select";
-import { AttritionTables, type ExitRow, type LeaveRow } from "./attrition-tables";
+import { AttritionTables } from "./attrition-tables";
 
 /**
  * Permanent Attrition: the confirmed exits, by the month they took effect,
- * and — separately — the leave and absence register. Both come off the
- * same roster read as My Team: an exit is a person whose latest record
- * carries the resignation/termination tag, a leave one whose record
- * carries absconding, LOA or maternity.
+ * and — separately — the leave register. Both come off the same roster
+ * read as My Team, over everyone the scope reaches: an exit is a person
+ * whose latest record carries the resignation/termination or absconding
+ * tag (the system has separated them either way), a leave one whose
+ * record carries LOA or maternity — away, and expected back.
  */
 export default async function AttritionPage({ searchParams }: { searchParams: Promise<{ team?: string; month?: string }> }) {
   const user = await requireEwsUser();
@@ -19,31 +21,8 @@ export default async function AttritionPage({ searchParams }: { searchParams: Pr
   const team = resolveTeam(user, teams, params.team);
   const roster = await getEwsRoster(user, team, null);
 
-  const exits: ExitRow[] = roster.rows
-    .filter((r) => r.attrition === "black")
-    .map((r) => ({
-      employeeId: r.employeeId,
-      name: r.name,
-      eid: r.eid,
-      position: r.position,
-      supervisorName: r.supervisorName,
-      date: r.latest?.attritionDate ?? r.latest?.week ?? null,
-    }))
-    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || a.name.localeCompare(b.name));
-
-  const leaves: LeaveRow[] = roster.rows
-    .filter((r): r is typeof r & { attrition: "absconding" | "loa" | "maternity" } => r.flag === "leave")
-    .map((r) => ({
-      employeeId: r.employeeId,
-      name: r.name,
-      eid: r.eid,
-      supervisorName: r.supervisorName,
-      attrition: r.attrition,
-      started: r.latest?.attritionDate ?? null,
-      expectedReturn: r.latest?.expectedReturn ?? null,
-      notes: r.latest?.notes ?? null,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const exits = exitRowsOf(roster.rows);
+  const leaves = leaveRowsOf(roster.rows);
 
   // The months that saw an exit, newest first, for the picker.
   const monthOf = (date: string | null) => (date ? date.slice(0, 7) : null);

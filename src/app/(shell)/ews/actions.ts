@@ -1,13 +1,13 @@
 "use server";
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { canRunTeamPrograms } from "@/lib/auth/scope";
+import { canRunTeamPrograms, employeeScope } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
-import { auditLog, ewsAssessments, ewsHeadcount } from "@/lib/db/schema";
-import type { EwsActionPlan } from "@/lib/ews/engine";
+import { auditLog, employees, ewsAssessments, ewsHeadcount } from "@/lib/db/schema";
+import { isExit, type EwsActionPlan, type EwsAttrition } from "@/lib/ews/engine";
 import { writeAssessment, type EwsResult } from "@/lib/ews/save";
 import { ewsAssessmentWeek, getEwsTeams } from "@/lib/queries/ews";
 
@@ -30,11 +30,13 @@ export type HeadcountResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Whether this user records for this team: a supervisor for their own, an
- * administrator for any team in scope. A manager reads.
+ * administrator for any team — including one whose last agent has moved
+ * on, whose transfer-outs still need recording. A manager reads.
  */
 async function canRecordFor(user: Awaited<ReturnType<typeof getCurrentUser>>, supervisorEid: string): Promise<boolean> {
   if (!user || user.status !== "active" || !canRunTeamPrograms(user)) return false;
   if (user.role === "supervisor") return user.employeeEid === supervisorEid;
+  if (user.role === "admin") return true;
   const teams = await getEwsTeams(user);
   return teams.some((t) => t.supervisorEid === supervisorEid);
 }
@@ -84,19 +86,34 @@ export async function saveHeadcountMonth(input: unknown): Promise<HeadcountResul
 
 /**
  * Takes someone off the permanent attrition list: their latest record is
- * re-saved for the current data week with the tag cleared and everything
- * else as it was, so the employee returns to active through the same path
- * a supervisor's own edit would take.
+ * re-saved with the tag cleared and everything else as it was, so the
+ * employee returns to active through the same path a supervisor's own
+ * edit would take. Saved on the data week, or on the tagged record's own
+ * week when that is later — status follows the newest record, so a
+ * cleared row keyed earlier than the tagged one would change nothing.
  */
 export async function restoreFromAttrition(input: unknown): Promise<EwsResult> {
   const user = await getCurrentUser();
   if (!user || user.status !== "active") return { ok: false, error: "Not signed in" };
+  if (!canRunTeamPrograms(user)) return { ok: false, error: "Only supervisors and administrators can restore someone" };
 
   const parsed = z.object({ employeeId: z.string().uuid() }).safeParse(input);
   if (!parsed.success) return { ok: false, error: "Invalid employee" };
 
+  // Scope before anything is read, so the answer never says whether a
+  // person outside it carries a tag.
+  const scope = employeeScope(user);
+  if (scope === null) return { ok: false, error: "No employees in scope" };
+  const [employee] = await db
+    .select({ id: employees.id })
+    .from(employees)
+    .where(and(eq(employees.id, parsed.data.employeeId), scope === "all" ? undefined : scope))
+    .limit(1);
+  if (!employee) return { ok: false, error: "Employee not found" };
+
   const [latest] = await db
     .select({
+      week: ewsAssessments.week,
       indicators: ewsAssessments.indicators,
       capActive: ewsAssessments.capActive,
       attrition: ewsAssessments.attrition,
@@ -107,11 +124,12 @@ export async function restoreFromAttrition(input: unknown): Promise<EwsResult> {
     .where(eq(ewsAssessments.employeeId, parsed.data.employeeId))
     .orderBy(desc(ewsAssessments.week))
     .limit(1);
-  if (!latest || latest.attrition !== "black") return { ok: false, error: "Not on the attrition list" };
+  if (!latest || !isExit(latest.attrition as EwsAttrition)) return { ok: false, error: "Not on the attrition list" };
 
+  const dataWeek = await ewsAssessmentWeek(new Date().toISOString().slice(0, 10));
   const result = await writeAssessment(user, {
     employeeId: parsed.data.employeeId,
-    week: await ewsAssessmentWeek(new Date().toISOString().slice(0, 10)),
+    week: latest.week > dataWeek ? latest.week : dataWeek,
     indicators: (latest.indicators as Record<string, boolean>) ?? {},
     capActive: latest.capActive,
     attrition: "none",

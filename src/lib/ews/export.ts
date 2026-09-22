@@ -1,4 +1,4 @@
-import { actionPlanLabel, EWS_ATTRITION_LABELS, EWS_RISK_LABELS } from "./engine";
+import { actionPlanLabel, EWS_ATTRITION_LABELS, EWS_RISK_LABELS, expectsReturn, isExit } from "./engine";
 import type { EwsRosterRow } from "./roster";
 
 /**
@@ -78,14 +78,60 @@ export const LEAVE_REGISTER_EXPORT_HEADER: readonly string[] = [
   "Remarks",
 ];
 
+/** A confirmed exit — resignation, termination or absconding — as the attrition table lists it. */
+export interface ExitRow {
+  employeeId: string;
+  name: string;
+  eid: string;
+  position: string | null;
+  supervisorName: string | null;
+  attrition: "black" | "absconding";
+  /** The effective date, or the week of the record that carries the tag. */
+  date: string | null;
+}
+
+/** Whoever's latest record carries an exit tag, newest exit first. */
+export function exitRowsOf(rows: readonly EwsRosterRow[]): ExitRow[] {
+  return rows
+    .filter((r): r is EwsRosterRow & { attrition: "black" | "absconding" } => isExit(r.attrition))
+    .map((r) => ({
+      employeeId: r.employeeId,
+      name: r.name,
+      eid: r.eid,
+      position: r.position,
+      supervisorName: r.supervisorName,
+      attrition: r.attrition,
+      date: r.latest?.attritionDate ?? r.latest?.week ?? null,
+    }))
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || a.name.localeCompare(b.name));
+}
+
 export interface LeaveRegisterRow {
+  employeeId: string;
   supervisorName: string | null;
   name: string;
   eid: string;
-  attrition: "absconding" | "loa" | "maternity";
+  attrition: "loa" | "maternity";
   started: string | null;
   expectedReturn: string | null;
   notes: string | null;
+}
+
+/** Whoever's latest record carries a leave they are expected back from, by name. */
+export function leaveRowsOf(rows: readonly EwsRosterRow[]): LeaveRegisterRow[] {
+  return rows
+    .filter((r): r is EwsRosterRow & { attrition: "loa" | "maternity" } => expectsReturn(r.attrition))
+    .map((r) => ({
+      employeeId: r.employeeId,
+      supervisorName: r.supervisorName,
+      name: r.name,
+      eid: r.eid,
+      attrition: r.attrition,
+      started: r.latest?.attritionDate ?? null,
+      expectedReturn: r.latest?.expectedReturn ?? null,
+      notes: r.latest?.notes ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Whether the person should be back by now. */

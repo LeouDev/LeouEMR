@@ -27,7 +27,7 @@ export default async function HeadcountPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <EwsBand action={<EwsFilters basePath="/ews/headcount" teams={teams} team={team} year={year} years={[thisYear - 1, thisYear, thisYear + 1]} />} />
+      <EwsBand action={<EwsFilters basePath="/ews/headcount" teams={teams} team={team} year={year} years={[...new Set([thisYear - 1, thisYear, thisYear + 1, year])].sort()} />} />
       <main className="mx-auto max-w-7xl px-6 py-8">
         <EwsTabs active="headcount" team={team} />
 

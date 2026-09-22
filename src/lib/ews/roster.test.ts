@@ -78,6 +78,10 @@ describe("buildRosterRow", () => {
     const away = buildRosterRow(person({ name: "Dizon, Ronald", latest: latest({ attrition: "loa" }) }));
     expect(away.riskLevel).toBe("RED");
     expect(away.flag).toBe("leave");
+    // Absconding is forced RED like a leave but is an exit, not a leave: no flag, no return expected.
+    const absconded = buildRosterRow(person({ name: "Salazar, Jerome", latest: latest({ attrition: "absconding" }) }));
+    expect(absconded.riskLevel).toBe("RED");
+    expect(absconded.flag).toBeNull();
   });
 });
 
@@ -91,6 +95,12 @@ describe("sortRoster and rosterTotals", () => {
 
   it("puts the worst first and names in order inside a band", () => {
     expect(sortRoster(rows).map((r) => r.name)).toEqual(["Mid", "Beta", "Zeta", "Alpha"]);
+  });
+
+  it("orders the higher score first inside a band", () => {
+    const four = buildRosterRow(person({ name: "Aquino", latest: latest({ indicators: { jobhunt: true, conflict: true, diseng: true, noinit: true } }) }));
+    const six = buildRosterRow(person({ name: "Zamora", auto: flagged, latest: latest({ indicators: { jobhunt: true, conflict: true, diseng: true, noinit: true } }) }));
+    expect(sortRoster([four, six]).map((r) => r.name)).toEqual(["Zamora", "Aquino"]);
   });
 
   it("counts each band and the team", () => {

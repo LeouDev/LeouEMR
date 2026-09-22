@@ -8,7 +8,7 @@ import { closeIssuesOnSeparation } from "@/lib/action-item-engine/persistence";
 import { periodContaining } from "@/lib/queries/period";
 import { autoIndicatorsFor } from "@/lib/queries/ews";
 import { autoFlags } from "./auto-indicators";
-import { computeEwsRisk, employeeStatusFor, type EwsActionPlan, type EwsAttrition } from "./engine";
+import { computeEwsRisk, employeeStatusFor, expectsReturn, type EwsActionPlan, type EwsAttrition } from "./engine";
 import { manualFlags } from "./roster";
 
 /**
@@ -57,9 +57,8 @@ export async function writeAssessment(user: CurrentUser, input: AssessmentWrite)
   // flags are read from the week's figures here, never from the request.
   const auto = await autoIndicatorsFor([input.employeeId], periodContaining("week", input.week));
   const indicators = { ...manualFlags(input.indicators), ...autoFlags(auto.get(input.employeeId)!) };
-  const leave = input.attrition === "loa" || input.attrition === "maternity" || input.attrition === "absconding";
   const attritionDate = input.attrition === "none" ? null : input.attritionDate || null;
-  const expectedReturn = leave ? input.expectedReturn || null : null;
+  const expectedReturn = expectsReturn(input.attrition) ? input.expectedReturn || null : null;
 
   const { score, riskLevel } = computeEwsRisk({ indicators, capActive: input.capActive, attrition: input.attrition });
 

@@ -7,8 +7,9 @@ import { autoFlags, isAutoIndicator } from "@/lib/ews/auto-indicators";
 import {
   computeEwsRisk,
   EWS_ACTION_PLANS,
+  EWS_ATTRITION_CODES,
   EWS_ATTRITION_LABELS,
-  isLeaveState,
+  expectsReturn,
   type EwsActionPlan,
   type EwsAttrition,
 } from "@/lib/ews/engine";
@@ -28,14 +29,12 @@ import { FIELD, LABEL } from "./ews-tabs";
  * one, and a person's details change with the next workbook, not here.
  */
 
-const ATTRITION_OPTIONS: EwsAttrition[] = ["none", "black", "absconding", "loa", "maternity"];
-
 const PILL = "min-w-14 border-2 px-4 py-1.5 text-[11px] font-bold tracking-[0.04em]";
 
 export function AssessmentDialog({
   row,
   indicators,
-  week,
+  week: dataWeek,
   onClose,
 }: {
   row: EwsRosterRow;
@@ -44,6 +43,10 @@ export function AssessmentDialog({
   week: string;
   onClose: () => void;
 }) {
+  // Status follows a person's newest record, so a save keyed earlier than
+  // one already there would change nothing they can see: the newest week
+  // wins.
+  const week = row.latest && row.latest.week > dataWeek ? row.latest.week : dataWeek;
   const router = useRouter();
   const [manual, setManual] = useState<Record<string, boolean>>(row.manual);
   const [capActive, setCapActive] = useState(row.capActive);
@@ -67,7 +70,7 @@ export function AssessmentDialog({
     () => computeEwsRisk({ indicators: { ...manual, ...autoFlags(row.auto) }, capActive, attrition }),
     [manual, capActive, attrition, row.auto],
   );
-  const leave = isLeaveState(attrition);
+  const leave = expectsReturn(attrition);
 
   async function save() {
     setSaving(true);
@@ -195,16 +198,16 @@ export function AssessmentDialog({
           <label className="block">
             <span className={LABEL}>Attrition / leave status</span>
             <select value={attrition} onChange={(e) => setAttrition(e.target.value as EwsAttrition)} className={FIELD}>
-              {ATTRITION_OPTIONS.map((option) => (
+              {EWS_ATTRITION_CODES.map((option) => (
                 <option key={option} value={option}>
                   {EWS_ATTRITION_LABELS[option]}
                 </option>
               ))}
             </select>
           </label>
-          {attrition === "black" && (
+          {(attrition === "black" || attrition === "absconding") && (
             <label className="block">
-              <span className={LABEL}>Effective date</span>
+              <span className={LABEL}>{attrition === "black" ? "Effective date" : "Last day seen"}</span>
               <input type="date" value={attritionDate} onChange={(e) => setAttritionDate(e.target.value)} className={FIELD} />
             </label>
           )}

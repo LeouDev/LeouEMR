@@ -3,10 +3,12 @@ import type { MboRow } from "@/lib/queries/mbo";
 import { groupByLeader, matchesMboFilter, parseMboFilter, UNASSIGNED_TEAM } from "./teams";
 
 function row(overrides: Partial<MboRow> & { name: string }): MboRow {
+  const supervisorName = overrides.supervisorName === undefined ? "Dacanay,Beulah" : overrides.supervisorName;
   return {
     employeeId: `id-${overrides.name}`,
     eid: "900000000",
-    supervisorName: "Dacanay,Beulah",
+    supervisorEid: supervisorName === null ? null : `eid-${supervisorName}`,
+    supervisorName,
     mbo: 100,
     productionRate: 1.2,
     dpu: 99,
@@ -69,6 +71,18 @@ describe("groupByLeader", () => {
 
   it("returns nothing for an empty roster", () => {
     expect(groupByLeader([])).toEqual([]);
+  });
+
+  it("keys a team on the leader's EID: two leaders sharing a name are two bands, two spellings of one leader are one", () => {
+    const teams = groupByLeader([
+      row({ name: "A", supervisorName: "Cruz,James", supervisorEid: "1" }),
+      row({ name: "B", supervisorName: "Cruz,James", supervisorEid: "2" }),
+      row({ name: "C", supervisorName: "Cruz, James", supervisorEid: "1" }),
+    ]);
+    expect(teams.map((t) => [t.key, t.leader, t.agents])).toEqual([
+      ["1", "Cruz,James", 2],
+      ["2", "Cruz,James", 1],
+    ]);
   });
 });
 
