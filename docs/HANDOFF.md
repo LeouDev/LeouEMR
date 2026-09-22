@@ -229,6 +229,10 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Team QA Analysis drill-down** (22 Sep): a Form picker on the Error
+  categories card and each category opening onto its failed attributes
+  (`summarize(..., formKey)` in `src/lib/quality/analysis.ts`,
+  `CategoryDrilldown` in `quality/analysis/analysis-charts.tsx`).
 - **Quality "Audit completion" tab** (22 Sep): `/quality/completion`,
   a group of columns per team leader, one per audit week of the month,
   of the required audits filed against a 100% line, with a table under
