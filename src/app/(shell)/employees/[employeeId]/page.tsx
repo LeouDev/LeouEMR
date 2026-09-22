@@ -7,8 +7,11 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
 import { ewsAssessments, ewsIndicators, users } from "@/lib/db/schema";
+import { autoIndicatorsFor } from "@/lib/queries/ews";
+import { periodContaining } from "@/lib/queries/period";
 import { getEmployeeMatrix } from "@/lib/queries/performance";
 import { getEmployeeSkillBreakdown } from "@/lib/queries/skill-breakdown";
+import type { EwsActionPlan } from "@/lib/ews/engine";
 import { EwsPanel } from "./ews-panel";
 import { ProgressMatrix } from "./progress-matrix";
 import { SkillBreakdownTable } from "./skill-breakdown-table";
@@ -50,7 +53,7 @@ export default async function EmployeePage({
   // selected one; the matrix above shows every week's risk at a glance.
   const assessmentWeek = query.week && weeks.includes(query.week) ? query.week : latestWeek;
 
-  const [assessmentRows, skillBreakdown] = await Promise.all([
+  const [assessmentRows, skillBreakdown, autoByEmployee] = await Promise.all([
     assessmentWeek
       ? db
           .select({ assessment: ewsAssessments, assessorName: users.name })
@@ -62,8 +65,12 @@ export default async function EmployeePage({
           .limit(1)
       : Promise.resolve([]),
     getEmployeeSkillBreakdown(employeeId, employee.eid, weeks),
+    // The three data-derived indicators for the week being assessed, shown
+    // locked on the panel the way the EWS tracker shows them.
+    assessmentWeek ? autoIndicatorsFor([employeeId], periodContaining("week", assessmentWeek)) : Promise.resolve(new Map()),
   ]);
   const [assessment] = assessmentRows;
+  const auto = autoByEmployee.get(employeeId) ?? null;
 
   const canAssess = canRunTeamPrograms(user);
   // Early warning signs are the supervisor's own read on flight risk and
@@ -184,11 +191,14 @@ export default async function EmployeePage({
               indicators={indicators}
               readOnly={!canAssess}
               assessedByName={assessment?.assessorName ?? null}
+              auto={auto}
               initial={{
                 indicators: (assessment?.assessment.indicators as Record<string, boolean>) ?? {},
                 capActive: assessment?.assessment.capActive ?? false,
                 attrition: assessment?.assessment.attrition ?? "none",
                 attritionDate: assessment?.assessment.attritionDate ?? "",
+                expectedReturn: assessment?.assessment.expectedReturn ?? "",
+                actionPlan: (assessment?.assessment.actionPlan as EwsActionPlan | null) ?? null,
                 notes: assessment?.assessment.notes ?? "",
               }}
             />
