@@ -90,7 +90,7 @@ export default async function UsersPage({
   // nobody could be reset. The admin API knows the same thing.
   const enrolled =
     mfaRows === null
-      ? await enrolledUserIdsViaAdmin()
+      ? await enrolledUserIdsViaAdmin(accountRows.map((row) => row.id))
       : new Set(mfaRows.filter((r) => r.verified).map((r) => r.user_id));
   const rows = accountRows.map((row) => ({ ...row, mfaEnrolled: enrolled === null ? null : enrolled.has(row.id) }));
   const managerNames = managerRows
