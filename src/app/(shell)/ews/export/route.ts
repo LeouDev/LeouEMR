@@ -4,6 +4,7 @@ import { CSV_BOM } from "@/lib/csv-bom";
 import { csvOf } from "@/lib/csv";
 import { ewsRosterExportFilename, ewsRosterExportHeader, ewsRosterExportRows } from "@/lib/ews/export";
 import { getEwsRoster, getEwsTeams } from "@/lib/queries/ews";
+import { periodContaining } from "@/lib/queries/period";
 import { resolveTeam } from "../access";
 
 /**
@@ -21,8 +22,8 @@ export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
   const teams = await getEwsTeams(user);
   const team = resolveTeam(user, teams, params.get("team") ?? undefined);
-  const roster = await getEwsRoster(user, team);
   const today = new Date().toISOString().slice(0, 10);
+  const roster = await getEwsRoster(user, team, periodContaining("month", today));
   const name = ewsRosterExportFilename(today, team);
 
   return new Response(

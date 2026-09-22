@@ -17,7 +17,7 @@ export default async function AttritionPage({ searchParams }: { searchParams: Pr
   const today = todayIso();
   const teams = await getEwsTeams(user);
   const team = resolveTeam(user, teams, params.team);
-  const roster = await getEwsRoster(user, team);
+  const roster = await getEwsRoster(user, team, null);
 
   const exits: ExitRow[] = roster.rows
     .filter((r) => r.attrition === "black")

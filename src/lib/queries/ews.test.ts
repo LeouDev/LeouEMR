@@ -11,11 +11,13 @@ import type { CurrentUser, UserRole } from "@/lib/auth/session";
  * employee is listed rather than dropped, the latest record supplies the
  * ticks and the one before it the trend, the 201 file supplies a position,
  * narrowing to a team goes through the scope, and scope failing closed is
- * not silently lost.
+ * not silently lost. With a month given, the roster is the org history's —
+ * who the leader held that month — less anyone separated before it.
  */
 
 const scope = vi.hoisted(() => ({ value: null as unknown }));
-const captured = vi.hoisted(() => ({ condition: undefined as unknown }));
+const captured = vi.hoisted(() => ({ condition: undefined as unknown, where: {} as Record<string, unknown> }));
+const history = vi.hoisted(() => ({ ids: [] as string[], gone: [] as string[] }));
 const tables = vi.hoisted(() => ({
   employees: [] as Array<Record<string, unknown>>,
   ews_indicators: [] as Array<Record<string, unknown>>,
@@ -37,6 +39,18 @@ vi.mock("@/lib/auth/scope", () => ({
   },
 }));
 
+// The month's org history, as the roster reads it: who the leader held
+// (`reportingScopeIds`), the supervisor-of-record columns, and who an EWS
+// tag separated before the month.
+vi.mock("./org-history", () => ({
+  reportingScopeIds: async () => history.ids,
+  periodOwnerSubquery: () => ({ __sub: "period_owner" }),
+  joinPeriodOwner: () => ({ join: "period_owner" }),
+  supervisorEidOfRecord: () => ({ name: "supervisor_eid_of_record" }),
+  supervisorOfRecord: () => ({ name: "supervisor_of_record" }),
+}));
+vi.mock("./eligibility", () => ({ separatedBefore: async () => new Set(history.gone) }));
+
 // Real `eq`/`lte`/... build SQL AST nodes; plain data stands in for them so
 // the test can read what the query asked for. `sql` stays real: the ranked
 // subquery is built with it.
@@ -48,6 +62,7 @@ vi.mock("drizzle-orm", async (importOriginal) => {
     eq: (c: { name?: string }, value: unknown) => ({ eq: col(c), value }),
     lte: (c: { name?: string }, value: unknown) => ({ lte: col(c), value }),
     inArray: (c: { name?: string }, values: unknown[]) => ({ inArray: col(c), values }),
+    isNotNull: (c: { name?: string }) => ({ isNotNull: col(c) }),
     and: (...parts: unknown[]) => ({ and: parts }),
     asc: (c: { name?: string }) => ({ asc: col(c) }),
     desc: (c: { name?: string }) => ({ desc: col(c) }),
@@ -64,9 +79,12 @@ const tableName = (t: unknown) =>
   (t as { __sub?: string })?.__sub ?? ((t as Record<symbol, string>)[Symbol.for("drizzle:Name")] as keyof typeof tables);
 
 vi.mock("@/lib/db/client", () => {
-  function chain(rows: unknown[]) {
+  function chain(rows: unknown[], name: string) {
     const c = {
-      where: () => c,
+      where: (condition: unknown) => {
+        captured.where[name] = condition;
+        return c;
+      },
       orderBy: () => c,
       leftJoin: () => c,
       limit: () => c,
@@ -75,7 +93,10 @@ vi.mock("@/lib/db/client", () => {
     };
     return c;
   }
-  const from = (t: unknown) => chain(tables[tableName(t) as keyof typeof tables] ?? []);
+  const from = (t: unknown) => {
+    const name = String(tableName(t));
+    return chain(tables[name as keyof typeof tables] ?? [], name);
+  };
   return {
     db: {
       select: () => ({ from }),
@@ -126,6 +147,9 @@ const record = (employeeId: string, rank: number, overrides: Record<string, unkn
 beforeEach(() => {
   scope.value = "all";
   captured.condition = undefined;
+  captured.where = {};
+  history.ids = [];
+  history.gone = [];
   tables.employees = [];
   tables.ews_indicators = [
     { code: "tardy", label: "Frequent tardiness" },
@@ -143,7 +167,7 @@ describe("getEwsRoster", () => {
   it("fails closed: no scope means an empty roster, not everyone", async () => {
     scope.value = null;
     tables.employees = [person("a", "Alpha")];
-    const roster = await getEwsRoster(user("supervisor"), null);
+    const roster = await getEwsRoster(user("supervisor"), null, null);
     expect(roster.rows).toEqual([]);
     expect(roster.totals.size).toBe(0);
   });
@@ -161,7 +185,7 @@ describe("getEwsRoster", () => {
       { employeeId: "b", kpiCode: "ATTENDANCE", actualValue: 100 },
     ];
 
-    const roster = await getEwsRoster(user("admin"), null);
+    const roster = await getEwsRoster(user("admin"), null, null);
     expect(roster.dataWeek?.start).toBe("2026-09-13");
     expect(roster.rows.map((r) => r.name)).toEqual(["Gamma", "Alpha", "Beta"]);
 
@@ -186,25 +210,68 @@ describe("getEwsRoster", () => {
   it("takes a position from the 201 file where there is one", async () => {
     tables.employees = [person("a", "Alpha")];
     tables.employee_profiles = [{ eid: "9a", position: "Pharmacy Technician" }];
-    const roster = await getEwsRoster(user("admin"), null);
+    const roster = await getEwsRoster(user("admin"), null, null);
     expect(roster.rows[0].position).toBe("Pharmacy Technician");
   });
 
   it("narrows to a team through the scope, so a manager cannot read past their span", async () => {
     tables.employees = [person("a", "Alpha")];
-    await getEwsRoster(user("manager"), "001772004");
+    await getEwsRoster(user("manager"), "001772004", null);
     expect(captured.condition).toEqual({ eq: "supervisor_eid", value: "001772004" });
-    await getEwsRoster(user("manager"), null);
+    await getEwsRoster(user("manager"), null, null);
     expect(captured.condition).toBeUndefined();
   });
 
   it("flags nobody from the data before the first import", async () => {
     facts.range = null;
     tables.employees = [person("a", "Alpha")];
-    const roster = await getEwsRoster(user("admin"), null);
+    const roster = await getEwsRoster(user("admin"), null, null);
     expect(roster.dataWeek).toBeNull();
     expect(roster.rows[0].score).toBe(0);
     expect(roster.rows[0].auto.lowprod.caption).toBe("No PAR this week");
+  });
+});
+
+describe("getEwsRoster for a month", () => {
+  const september = { granularity: "month" as const, start: "2026-09-01", end: "2026-09-30", label: "September 2026" };
+
+  it("lists who the org history says the leader held that month, by the supervisor of record", async () => {
+    history.ids = ["a", "b"];
+    tables.employees = [person("a", "Alpha"), person("b", "Beta", "001772004", "Santos, Maria")];
+    const roster = await getEwsRoster(user("supervisor"), "001772004", september);
+    expect(roster.rows.map((r) => r.name)).toEqual(["Alpha", "Beta"]);
+    expect(captured.where.employees).toEqual({
+      and: [{ inArray: "id", values: ["a", "b"] }, { eq: "supervisor_eid_of_record", value: "001772004" }],
+    });
+  });
+
+  it("keeps everyone with a team when no team is picked, and nobody when the history reaches no one", async () => {
+    history.ids = ["a"];
+    tables.employees = [person("a", "Alpha")];
+    await getEwsRoster(user("admin"), null, september);
+    expect(captured.where.employees).toEqual({
+      and: [{ inArray: "id", values: ["a"] }, { isNotNull: "supervisor_eid_of_record" }],
+    });
+
+    history.ids = [];
+    const none = await getEwsRoster(user("admin"), null, september);
+    expect(none.rows).toEqual([]);
+  });
+
+  it("leaves off anyone separated before the month began", async () => {
+    history.ids = ["a", "b"];
+    history.gone = ["b"];
+    tables.employees = [person("a", "Alpha"), person("b", "Beta")];
+    const roster = await getEwsRoster(user("admin"), null, september);
+    expect(roster.rows.map((r) => r.name)).toEqual(["Alpha"]);
+    expect(roster.totals.size).toBe(1);
+  });
+
+  it("does not consult the org history for the attrition read", async () => {
+    history.ids = [];
+    tables.employees = [person("a", "Alpha")];
+    const roster = await getEwsRoster(user("admin"), null, null);
+    expect(roster.rows).toHaveLength(1);
   });
 });
 

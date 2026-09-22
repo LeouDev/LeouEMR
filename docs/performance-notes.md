@@ -1804,6 +1804,20 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **EWS My Team is the month's roster (22 Sep).** The first cut listed
+  everyone whose current row named the leader — every person they had
+  ever held, leavers included. `getEwsRoster(user, team, month)` now takes
+  the month: with one, the roster is the org history's (`monthRoster`:
+  `reportingScopeIds` for the month, the period owner's supervisor of
+  record for the Team column and the team narrowing, closed owner rows
+  dropped by `isNotNull`, and `separatedBefore(month.start)` removing
+  anyone an EWS tag separated before the month began). Someone who
+  leaves mid-month stays on that month's roster. The My Team page and
+  its CSV pass `periodContaining("month", today)`; the Team size card
+  says which month. The attrition screen and the register CSV pass
+  null and keep reading everyone the operational scope reaches by their
+  current row — an exit belongs to the leader who last held the person,
+  whichever month they left.
 - **EWS tracker: My Team, Headcount and Permanent Attrition under /ews
   (22 Sep).** The owner's standalone EWS Tracker (a design handoff: an
   HTML prototype and a README) rebuilt inside the app on the existing

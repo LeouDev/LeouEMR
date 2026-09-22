@@ -2,16 +2,17 @@ import { StatCard } from "@/components/ui";
 import { EWS_RISK_GUIDANCE } from "@/lib/ews/engine";
 import { getEwsRoster, getEwsTeams } from "@/lib/queries/ews";
 import { formatWeek } from "@/components/ui";
-import { weekContaining } from "@/lib/queries/period";
+import { periodContaining, weekContaining } from "@/lib/queries/period";
 import { canRecord, requireEwsUser, resolveTeam, todayIso } from "./access";
 import { EwsBand, EwsTabs } from "./ews-tabs";
 import { RosterTable } from "./roster-table";
 import { EwsFilters } from "./team-select";
 
 /**
- * My Team: everyone in the caller's span with their live retention risk,
- * worst first, and the form to record it. A supervisor sees their own
- * team; a manager or administrator picks a team or reads them all.
+ * My Team: the leader's roster for the current month with everyone's live
+ * retention risk, worst first, and the form to record it. A supervisor
+ * sees their own team; a manager or administrator picks a team or reads
+ * them all.
  *
  * The scoring is the established one (src/lib/ews/engine.ts); what is new
  * against the old board is that three of the ten indicators are read from
@@ -24,9 +25,12 @@ export default async function EwsPage({ searchParams }: { searchParams: Promise<
   const params = await searchParams;
   const teams = await getEwsTeams(user);
   const team = resolveTeam(user, teams, params.team);
-  const roster = await getEwsRoster(user, team);
-  const { totals } = roster;
   const today = todayIso();
+  // This month's roster: who the leader holds now, by the org history, not
+  // everyone their current row has ever named.
+  const month = periodContaining("month", today);
+  const roster = await getEwsRoster(user, team, month);
+  const { totals } = roster;
   const week = roster.dataWeek?.start ?? weekContaining(today).start;
   const exportHref = `/ews/export${team ? `?team=${encodeURIComponent(team)}` : ""}`;
 
@@ -44,7 +48,7 @@ export default async function EwsPage({ searchParams }: { searchParams: Promise<
           <StatCard
             label="Team size"
             value={totals.size}
-            hint={roster.dataWeek ? `Figures from the week of ${formatWeek(roster.dataWeek.start)}` : "No weekly data imported yet"}
+            hint={`${month.label} roster${roster.dataWeek ? ` · figures from the week of ${formatWeek(roster.dataWeek.start)}` : ""}`}
           />
         </div>
 
