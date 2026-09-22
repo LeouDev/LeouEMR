@@ -57,6 +57,8 @@ export interface TeamProgression {
   supervisor: string;
   /** Distinct agents with a ramp on record, however long ago. */
   agents: number;
+  /** Who they are, names only, so the search box can find an agent in a team not yet opened. */
+  roster: Array<{ employeeId: string; employeeName: string; eid: string }>;
   rows: ProgressionRow[];
 }
 
@@ -99,11 +101,20 @@ async function computeTeams(): Promise<TeamProgression[]> {
   }
 
   return [...byTeam.entries()]
-    .map(([supervisor, rows]) => ({
-      supervisor,
-      agents: new Set(rows.map((r) => r.employeeId)).size,
-      rows: foldRows(rows),
-    }))
+    .map(([supervisor, rows]) => {
+      const roster = new Map<string, { employeeId: string; employeeName: string; eid: string }>();
+      for (const r of rows) {
+        if (!roster.has(r.employeeId)) {
+          roster.set(r.employeeId, { employeeId: r.employeeId, employeeName: r.employeeName, eid: r.eid });
+        }
+      }
+      return {
+        supervisor,
+        agents: roster.size,
+        roster: [...roster.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
+        rows: foldRows(rows),
+      };
+    })
     .sort((a, b) => a.supervisor.localeCompare(b.supervisor));
 }
 

@@ -1804,6 +1804,24 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Progression search, and the action-item list as a CSV (22 Sep).** The
+  progression's search box (`ProgressionBoard`) finds a supervisor by any
+  part of the name (whole team) or an agent by name or employee ID (the
+  team, opened, with only the matching agents); `filterTeams` in
+  `src/lib/ramp/progression-search.ts` (tested; case, accents and the
+  punctuation names carry folded, every term required). To search an
+  agent in a team not yet opened, `TeamProgression` now carries a
+  `roster` of names — cheap beside the rows — and a team matched through
+  an agent has its agents loaded from the keystroke, one team after
+  another, never from an effect. The Action items page has "Export CSV"
+  beside the active/resolved toggle: `action-items/export/route.ts`
+  renders the same `getActionItems` query with the page's own `all` and
+  `employee` filters, so the file holds what the table shows and nothing
+  outside the caller's scope; rows built by `actionItemsExportRows`
+  (`src/lib/action-items/export.ts`, tested): item, employee, team
+  leader, manager, site, KPI, status, passing weeks, opened week, RCA,
+  plan, coaching and training flags. Plain `<a>` links for both
+  downloads, the way the ramp export is.
 - **Progression: KPI rows now pass or fail against the KPI's own bar (22
   Sep).** The other session's progression left every scorecard-KPI cell
   uncoloured (`target: null`, "nobody sets a different Quality bar for
