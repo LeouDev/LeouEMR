@@ -1804,6 +1804,21 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **The Users page's Authenticator column falls back to the Auth admin
+  API (22 Sep).** In production the column read "Unavailable" for
+  everyone, so the Reset beside a paired account was never offered and
+  a person with a new phone could not be re-paired. The column reads
+  `auth.mfa_factors` in one query, which needs `select` on that table
+  for `emr_app`; `scripts/sql/app-role.sql` grants it "best effort" in a
+  DO block, and on this project the grant did not take (the notice was
+  swallowed). `enrolledUserIdsViaAdmin` (`src/lib/auth/mfa-enrolled.ts`)
+  now answers the same question through `auth.admin.listUsers` — every
+  account with its factors, `verifiedTotpUserIds` in mfa.ts picking the
+  verified TOTP ones — when the table read fails; "Unavailable" only if
+  both roads fail. The service-role key is already on Vercel for the
+  reset itself. Re-pairing is: Users → Reset → Confirm reset, then the
+  person signs in and the second-step page shows a fresh QR code and the
+  secret key; the QR is never shown again after enrolment.
 - **Audit of the EWS tracker, MBO bands and back link (22 Sep).** A
   review of the day's merges found and fixed: absconding was listed on
   the leave register as "On leave" while the write path separates the

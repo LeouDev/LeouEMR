@@ -1,6 +1,7 @@
 import { asc, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Card, CardHeader, EmptyState, PageBand } from "@/components/ui";
+import { enrolledUserIdsViaAdmin } from "@/lib/auth/mfa-enrolled";
 import { getCurrentUser } from "@/lib/auth/session";
 import { db } from "@/lib/db/client";
 import { employeeProfiles, employees, positionEnum, users } from "@/lib/db/schema";
@@ -84,7 +85,13 @@ export default async function UsersPage({
       .where(isNotNull(employees.managerName)),
     mfaQuery,
   ]);
-  const enrolled = mfaRows === null ? null : new Set(mfaRows.filter((r) => r.verified).map((r) => r.user_id));
+  // The table read needs a grant on the auth schema that Supabase does not
+  // always let postgres give; without it the column said "Unavailable" and
+  // nobody could be reset. The admin API knows the same thing.
+  const enrolled =
+    mfaRows === null
+      ? await enrolledUserIdsViaAdmin()
+      : new Set(mfaRows.filter((r) => r.verified).map((r) => r.user_id));
   const rows = accountRows.map((row) => ({ ...row, mfaEnrolled: enrolled === null ? null : enrolled.has(row.id) }));
   const managerNames = managerRows
     .map((r) => r.name)
