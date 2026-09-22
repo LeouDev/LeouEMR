@@ -234,6 +234,9 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **View as a manager** (22 Sep): an administrator switches the whole
+  app to a manager's view from the profile panel (`src/lib/auth/view-as.ts`,
+  cookie applied in `getCurrentUser`; narrowing only).
 - **EWS tracker** (22 Sep): `/ews` is three screens — My Team (live
   risk roster with an edit form), Headcount (monthly movement per team,
   new table `ews_headcount`) and Permanent Attrition (exits with Restore,

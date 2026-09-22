@@ -8,6 +8,7 @@ import { AVATAR_SIZE, AVATAR_TYPES, avatarUrl } from "@/lib/profile/avatar";
 import { NO_PROFILE, initialsOf, validateProfileForm, type ProfileForm } from "@/lib/profile/panel";
 import { describeActionError } from "@/lib/ui/action-error";
 import { useSidebarOpen } from "./sidebar-context";
+import { ViewAsToggle } from "./view-as-toggle";
 
 export interface ProfilePanelProps {
   account: { name: string; email: string; roleLabel: string; employeeEid: string | null };
@@ -19,6 +20,8 @@ export interface ProfilePanelProps {
   quickLinks: Array<{ href: string; label: string }>;
   /** The profile picture's version (its row's timestamp), or null when there is none. */
   avatarVersion: number | null;
+  /** An administrator's switch to a manager's view (src/lib/auth/view-as.ts); absent for everyone else. */
+  viewAs?: { current: string | null; managerNames: string[] };
 }
 
 const heading = "mb-3.5 text-xs font-bold tracking-[0.1em] text-ink-muted uppercase";
@@ -76,7 +79,7 @@ function Avatar({ name, version, className }: { name: string; version: number | 
  * manager) are shown, never edited. The form is seeded from the row the
  * layout read on the server, so opening the panel costs no round trip.
  */
-export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion }: ProfilePanelProps) {
+export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion, viewAs }: ProfilePanelProps) {
   const sidebarOpen = useSidebarOpen();
   const [open, setOpen] = useState(false);
   const [avatar, setAvatar] = useState<number | null>(avatarVersion);
@@ -342,6 +345,13 @@ export function ProfilePanel({ account, profile, org, quickLinks, avatarVersion 
                       </div>
                     </section>
                   </>
+                )}
+
+                {viewAs && (
+                  <section className="border-b-2 border-line px-5 py-4.5">
+                    <h2 className={heading}>View as</h2>
+                    <ViewAsToggle current={viewAs.current} managerNames={viewAs.managerNames} onNavigate={close} />
+                  </section>
                 )}
 
                 <section className="border-b-2 border-line px-5 py-4.5">
