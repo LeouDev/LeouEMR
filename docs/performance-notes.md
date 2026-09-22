@@ -1804,6 +1804,22 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **An administrator can view the app as a manager (22 Sep).** The
+  owner is both the administrator and a manager in the data. "View as"
+  in the profile panel (`ViewAsToggle`, `src/components/view-as-toggle.tsx`)
+  offers Admin / Manager and the manager name to stand as, from the
+  names the roster carries; `setViewAs` (`app/(shell)/view-as/actions.ts`)
+  sets an httpOnly `viewAs=manager:<name>` cookie (30 days) only for a
+  real administrator and only to a name in the data. `getCurrentUser`
+  applies it through `applyViewAs` (`src/lib/auth/view-as.ts`, tested):
+  for an administrator the returned user is `role: "manager"` with that
+  `managerName` and `actualRole: "admin"`; anyone else's cookie is
+  ignored — a narrowing, never a widening. Every page, scope and action
+  then sees a manager (Users and Import refuse, as for any manager); the
+  MFA decision is made on the real role; the rail's role label reads
+  "Manager view · <name>" and the toggle lands on the dashboard after a
+  switch. `CurrentUser.actualRole` is optional so the many test fixtures
+  building a user by hand stay as they are.
 - **The supervisor dashboard's NPS is pooled over surveys (22 Sep).** A
   team lead's "team avg" NPS card averaged members (one agent one vote,
   a single survey reading +100 or −100) while the manager's overview and

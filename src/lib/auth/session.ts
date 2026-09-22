@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { cache } from "react";
 import { db } from "@/lib/db/client";
 import { users } from "@/lib/db/schema";
 import { graceUntilSetting, mfaDecision, todayUtc, type AssuranceLevel } from "./mfa";
+import { applyViewAs, VIEW_AS_COOKIE } from "./view-as";
 
 export type UserRole = "admin" | "manager" | "supervisor" | "agent" | "trainer" | "sme";
 export type UserStatus = "active" | "pending" | "disabled";
@@ -18,6 +19,12 @@ export interface CurrentUser {
   employeeEid: string | null;
   /** For managers: the manager name used in the source data. Null until linked. */
   managerName: string | null;
+  /**
+   * Set only while an administrator is looking at the app as a manager
+   * (src/lib/auth/view-as.ts): the role they really hold, so the toggle
+   * back can be offered. Absent otherwise.
+   */
+  actualRole?: UserRole;
 }
 
 /**
@@ -94,5 +101,8 @@ export const getCurrentUser = cache(async function getCurrentUser(): Promise<Cur
   ) {
     return null;
   }
-  return record;
+  // An administrator may be looking at the app as one of its managers; the
+  // second step above was judged on their real role, which needs it too.
+  const cookieStore = await cookies();
+  return applyViewAs(record, cookieStore.get(VIEW_AS_COOKIE)?.value);
 });
