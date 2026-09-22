@@ -229,6 +229,11 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Progression search and action-item CSV** (22 Sep): a search box
+  over supervisors and agents on the progression tab
+  (`src/lib/ramp/progression-search.ts`), and "Export CSV" on the Action
+  items page (`action-items/export/route.ts`, same filters and scope as
+  the page).
 - **Ramp page tabs** (22 Sep): "Progression by stage" (default; the
   other session's per-team progression with agent drill-down, stage
   notes and CSV/Excel export) and "Board" (who is ramping today, the
