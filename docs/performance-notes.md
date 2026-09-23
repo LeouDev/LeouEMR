@@ -1804,6 +1804,324 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **The weekly timeline folds (23 Sep).** On the action item page and
+  the record page the timeline — a dozen weeks of FAIL between the header
+  and the plan — is a `FoldableCard` (`src/components/foldable-card.tsx`)
+  folded by default with "12 weeks · 0 passing" on the header and a
+  Show/Hide toggle; the fold is remembered per browser through the
+  shared `collapsedStore` (`src/lib/ui/collapsed.ts`), where for this
+  card the stored id means "toggled away from the card's default", so a
+  card that starts folded stays open for whoever opened it. The body
+  stays in the page hidden and shows in print.
+- **Utilization bands follow the month's roster (23 Sep).** The first
+  cut read each account's team leader and manager off their current
+  employee row. `getUtilization` now joins the org history's period
+  owner for the month the range ends in (`supervisorOfRecord`,
+  `managerOfRecord`, a leader's manager off the people they led that
+  month by `supervisorEidOfRecord`), the rule EWS My Team follows, and
+  leaves off an account whose person the roster has separated. The page
+  says "teams and managers as of the September 2026 roster".
+- **Survey responses filter by NPS band (23 Sep).** A third control
+  beside the search and the date window: All NPS / Promoters (9–10) /
+  Passives (7–8) / Detractors (0–6), so the feedback worth acting on is
+  one pick away. `SurveyFilter.nps` (optional, `npsCategory` on
+  `q4Nps`) in `src/lib/survey/summary.ts`, tested; the cards, the count
+  and the CSV follow the filtered rows as they already did.
+- **Utilization report under Survey Results (23 Sep).** For the owner's
+  pitch: who uses the app day to day and how many end-of-day reports go
+  out, by team and by manager. `/survey-results/utilization` (admin
+  only; `SurveyTabs` puts Responses and Utilization side by side) over
+  the last 7, 14, 30 or 90 Manila days: four cards (active accounts of
+  all, active today, daily active average, EOD reports), two bar charts
+  (accounts active per day, EOD reports per day — per reporting week
+  when the range is longer than a month), per-team and per-manager
+  active-rate bar lists, and a banded table (`utilization-table.tsx`,
+  client, the MBO bands pattern; By team / By manager) that opens onto
+  each account's active days, EOD count and last visit. Two sources say
+  an account was active on a day: the new `user_activity_days` table
+  (migration `0062_user_activity_days` / `APPLY_0062_USER_ACTIVITY_DAYS.sql`,
+  rehearsed twice; one row per account per Manila day, written by
+  `ActivityPing` in the shell layout through `recordActivity` — once a
+  day per browser, local-storage marker as the throttle, the server owns
+  the day and the upsert, fails soft before the migration) and anything
+  the audit log recorded them writing (`eod.sent` counted as the EOD
+  figure), which reaches back before the ping existed but only counts
+  writers. Team and manager come from the roster (`getUtilization` in
+  `src/lib/queries/utilization.ts`): an agent's leader and manager, a
+  leader's own team and their manager (off their reports when they
+  have no roster row), a manager as the manager they are linked to;
+  administrators and unlinked support accounts fall in "Leadership &
+  support" / "No manager of record". The folding is pure and tested
+  (`src/lib/utilization/report.ts`: `dailySeries`, `weeklySeries`,
+  `groupByTeam`, `groupByManager`, `totals`, `rangeEnding`, `manilaDay`).
+- **Which account has the View as switch.** The owner has two accounts:
+  galileouuu@gmail.com (administrator, "LeouDev") and
+  leou.comendador@optum.com (manager, the roster's "Comendador"). The
+  switch shows only on an administrator; to have it on the optum account
+  its role is changed to Administrator on the Users page, after which
+  Manager view restores the span.
+- **An administrator can view the app as a manager (22 Sep).** The
+  owner is both the administrator and a manager in the data. "View as"
+  in the profile panel (`ViewAsToggle`, `src/components/view-as-toggle.tsx`)
+  offers Admin / Manager and the manager name to stand as, from the
+  names the roster carries; `setViewAs` (`app/(shell)/view-as/actions.ts`)
+  sets an httpOnly `viewAs=manager:<name>` cookie (30 days) only for a
+  real administrator and only to a name in the data. `getCurrentUser`
+  applies it through `applyViewAs` (`src/lib/auth/view-as.ts`, tested):
+  for an administrator the returned user is `role: "manager"` with that
+  `managerName` and `actualRole: "admin"`; anyone else's cookie is
+  ignored — a narrowing, never a widening. Every page, scope and action
+  then sees a manager (Users and Import refuse, as for any manager); the
+  MFA decision is made on the real role; the rail's role label reads
+  "Manager view · <name>" and the toggle lands on the dashboard after a
+  switch. `CurrentUser.actualRole` is optional so the many test fixtures
+  building a user by hand stay as they are.
+- **The supervisor dashboard's NPS is pooled over surveys (22 Sep).** A
+  team lead's "team avg" NPS card averaged members (one agent one vote,
+  a single survey reading +100 or −100) while the manager's overview and
+  the Team page pooled every survey through `supervisor-kpis.ts` — the
+  same team read two numbers, and the notes already record the earlier
+  catch (71 averaged against 67.9 pooled, over a target of 70). The card
+  now comes from `teamKpiFigures` (`src/lib/queries/team-kpis.ts`,
+  tested): every KPI the mean of the scored agents, NPS weighted by each
+  agent's survey count (`sampleSize`, one where a row carries none), with
+  the surveys shown beside it ("team NPS · 28 surveys"). The weekly trend
+  (`getTeamKpiTrend`) carries a `pooled` column the NPS line reads
+  instead of `avg(actual_value)`, and its note says so.
+- **The Users page's Authenticator column falls back to the Auth admin
+  API (22 Sep).** In production the column read "Unavailable" for
+  everyone, so the Reset beside a paired account was never offered and
+  a person with a new phone could not be re-paired. The column reads
+  `auth.mfa_factors` in one query, which needs `select` on that table
+  for `emr_app`; `scripts/sql/app-role.sql` grants it "best effort" in a
+  DO block, and on this project the grant did not take (the notice was
+  swallowed). `enrolledUserIdsViaAdmin` (`src/lib/auth/mfa-enrolled.ts`)
+  now answers the same question through the Auth admin API when the
+  table read fails — `mfa.listFactors` per account listed, eight at a
+  time, `verifiedTotpUserIds` in mfa.ts picking the verified TOTP ones;
+  "Unavailable" only if the client cannot be built or every read fails.
+  The first cut read `auth.admin.listUsers` instead, whose accounts carry
+  no factors in practice, so for a few minutes the column said "Not
+  paired — required" for everyone, the paired administrator included. The service-role key is already on Vercel for the
+  reset itself. Re-pairing is: Users → Reset → Confirm reset, then the
+  person signs in and the second-step page shows a fresh QR code and the
+  secret key; the QR is never shown again after enrolment.
+- **Audit of the EWS tracker, MBO bands and back link (22 Sep).** A
+  review of the day's merges found and fixed: absconding was listed on
+  the leave register as "On leave" while the write path separates the
+  person and closes their work — it is an exit now (`isExit`), on the
+  attrition table with Restore, and only LOA and maternity
+  (`expectsReturn`) take an expected return or show the On-leave flag;
+  `getEwsTeams` returned one leader twice when their rows spelled the
+  name two ways (now one entry per EID, the commonest spelling; the
+  summed headcount was counting such a team twice); a leader with
+  months recorded but no current reports vanished from Headcount (an
+  administrator reaches any EID, a supervisor their own, and the summed
+  view includes recorded EIDs); `restoreFromAttrition` and the tracker's
+  save were keyed on the data week, a silent no-op when the tagged record
+  sat on a later week (the newer week wins), and the restore read before
+  it checked scope; the employee page's `EwsPanel` kept the previous
+  week's form values across a week switch (keyed on the week now) and
+  its week links pushed history entries "← Back" then walked through
+  (they replace now); MBO bands were keyed on the leader's name, merging
+  two leaders who share one (`MboRow.supervisorEid`, band key = EID,
+  name for display) and the lone-team auto-open only ran at mount (table
+  keyed on the tab); the EWS roster lost the old board's score order
+  inside a band (back); the headcount year picker could omit the year
+  shown. The exit and leave rows are built once (`exitRowsOf`,
+  `leaveRowsOf` in `src/lib/ews/export.ts`) for the page and the CSV.
+  Not checked live: this container's proxy refuses the Vercel host, so
+  the route sweep of production could not run; the Vercel deployment
+  statuses GitHub records, CI and the nightly integrity job are green.
+- **An employee page's back link goes back (22 Sep).** "← Back to
+  employees" sent everyone to the roster whichever list they came from
+  (MBO, EWS, stack rank, a scorecard, an action item). `BackLink`
+  (`src/components/back-link.tsx`, client) presses the browser's back
+  when there is a history entry — `useSyncExternalStore` over
+  `history.length`, so the server render and the first paint agree — and
+  falls back to the fixed link for a shared link opened in a fresh tab.
+- **EWS My Team is the month's roster (22 Sep).** The first cut listed
+  everyone whose current row named the leader — every person they had
+  ever held, leavers included. `getEwsRoster(user, team, month)` now takes
+  the month: with one, the roster is the org history's (`monthRoster`:
+  `reportingScopeIds` for the month, the period owner's supervisor of
+  record for the Team column and the team narrowing, closed owner rows
+  dropped by `isNotNull`, and `separatedBefore(month.start)` removing
+  anyone an EWS tag separated before the month began). Someone who
+  leaves mid-month stays on that month's roster. The My Team page and
+  its CSV pass `periodContaining("month", today)`; the Team size card
+  says which month. The attrition screen and the register CSV pass
+  null and keep reading everyone the operational scope reaches by their
+  current row — an exit belongs to the leader who last held the person,
+  whichever month they left.
+- **EWS tracker: My Team, Headcount and Permanent Attrition under /ews
+  (22 Sep).** The owner's standalone EWS Tracker (a design handoff: an
+  HTML prototype and a README) rebuilt inside the app on the existing
+  assessment record. Three screens under one band and tab strip
+  (`ews/ews-tabs.tsx`; `?team=<supervisor EID>` travels between them):
+  `/ews` My Team — five stat cards (Critical / At risk / Watch / Stable /
+  Team size), a search over name, ID, position and team, and the roster
+  worst first with Risk (badge + score), Vs last week, Flags (On leave),
+  Updated, Remarks and Edit; `/ews/headcount` — a year of monthly
+  movement per team (opening carries forward unless overridden, closing
+  is arithmetic; `src/lib/ews/headcount.ts`, table `ews_headcount`,
+  migration `0061_ews_tracker` / `APPLY_0061_EWS_TRACKER.sql`), five
+  cards and an Edit per month; `/ews/attrition` — confirmed exits by the
+  month they took effect with Restore, and the Leave & Absence Register
+  (Absconding red, LOA and Maternity amber, "Return overdue" once the
+  expected return has passed) with its own Export CSV. **Three of the
+  ten indicators are now read from the week's figures**
+  (`src/lib/ews/auto-indicators.ts`): Increased absences (attendance
+  under 100%), Low productivity (PAR under the 2.99 MBO gate) and
+  Decline in QA / NPS (either lower than the week before); shown locked
+  with the figure as a caption, in the tracker's form and on the
+  employee page's panel alike, and stored on save from the data — never
+  from the request (`writeAssessment` in `src/lib/ews/save.ts`, the one
+  write path both forms use). Tardiness stays a judgement: the
+  attendance sheet has no minutes late. The roster's score is live —
+  the supervisor's ticks plus what the latest imported week says plus
+  the CAP (`buildRosterRow`) — so an unassessed person is scored from
+  the data alone and the trend column compares the live score with the
+  save before the latest (`getEwsRoster`: a window over the two newest
+  assessments per person, the 201 file's position where one exists).
+  The tracker saves an assessment keyed on the data week (the latest
+  imported), the employee page on the week it shows. New on the record:
+  `action_plan` (For Monitoring / SKIP Level / Admin Hearing / Other)
+  and `expected_return`; `attrition_date` doubles as the effective date
+  of an exit and the start of a leave. Roles, not a toggle: a supervisor
+  gets their own team and records; an administrator gets every team, a
+  Team select and records too (`canRunTeamPrograms`); a manager reads
+  their span. What the prototype had that this does not, on purpose:
+  Add / Delete employee (the roster is the imported one — a new hire
+  appears with their first workbook or the masterlist), the transfer
+  request banner (team membership follows the workbook; there is no
+  transfer flow in this app), and the Lead / Admin switch. The old
+  read-only board and its "Separated and on leave" table are replaced.
+  Headcount is recorded by hand as the prototype had it; deriving hires
+  and exits from the roster is a possible follow-up. Checked with
+  headless-Chromium screenshots of each screen and the edit form.
+- **MBO: one band per team leader that opens onto its agents, and an
+  Export CSV (22 Sep).** `groupByLeader` in `src/lib/mbo/teams.ts` folds
+  the roster into teams (`supervisorName`, "Unassigned" for nobody of
+  record) with headcount, passing/failing/unscored, pass rate of the
+  scored, the mean of each gate over the agents who have it and how many
+  agents missed which gate; worst pass rate first, teams with nobody
+  scored after, Unassigned last. The page (`mbo/page.tsx`) renders
+  `MboTeamTable` (`mbo/team-table.tsx`, client, a `useState` open map as
+  on the ramp progression board): a band row per team with a full-width
+  `aria-expanded` button and the team figures in the gate columns, the
+  agent rows under it when open, a single team open by itself and an
+  Expand all / Collapse all link when there are several. The status tabs
+  stay: the band's figures always cover the whole team, the tab only
+  decides which agents show under it, and a team with none in the tab is
+  left off. The Supervisor column is gone (the band is the supervisor)
+  and so is the "first fifty · Show all" cut, since a closed band costs
+  the reader nothing and an admin's whole roster is 43 kB at most.
+  `/mbo/export` (`mbo/export/route.ts`) writes the same period and tab
+  as a CSV — one line per agent under their team leader, MBO %, result,
+  the three gates as figures, gates missed, the team's pass rate —
+  through `mboExportRows` in `src/lib/mbo/export.ts` (pure, tested),
+  with the page's `getMboRoster` scope; the file is named
+  `mbo-<period start>-<tab>`. The filter (`MboFilter`, `MBO_FILTERS`,
+  `parseMboFilter`, `matchesMboFilter`) moved out of the page so the
+  route and the page agree by construction.
+- **Team QA Analysis: failures per form, and a category that opens onto
+  its attributes (22 Sep).** `getQaAnalysisInput` now carries each
+  audit's `formKey`/`formLabel` (join on `qa_forms`); `summarize` takes an
+  optional form key and returns `forms` (each form audited in the window
+  with its audit and failure counts, most audited first), `form` (the
+  pick, or null when it names a form not audited in the window) and
+  `drill` — every failed category with its count, share of the failures
+  in view and the attributes failed under it, most first. The Error
+  categories card gets a Form picker (All forms · each form with its
+  audit count; shown only when more than one form was audited) and
+  renders `CategoryDrilldown` (`analysis-charts.tsx`): plain `<details>`
+  per category, the top one open, a count bar, share and count on the
+  summary row, the attributes with counts inside — no JavaScript, prints
+  closed. Top recurring findings narrows to the same form. The KPIs,
+  trend, groups and outcome stay the whole team's: a form is a lens on
+  the failures, not a filter on the page. Checked with a headless-Chromium
+  screenshot of a two-form fixture.
+- **Quality: an "Audit completion" tab, one column per team leader per
+  week of the month (22 Sep).** `/quality/completion` — the fifth Quality
+  screen (fourth for a role that does not file), shown only to a viewer
+  who sees more than one team leader (`perLeader` on `QualityTabs`; a
+  supervisor's own figure is the dashboard's stat card). A month
+  (`?month=YYYY-MM`, Previous / This month / Next) is its four or five
+  audit weeks — every Sunday-to-Saturday week that begins in it,
+  `auditWeeksOfMonth` in `src/lib/quality/completion.ts`, tested against
+  September (4) and November 2026 (5). `getQaRosters(user, weeks)` reads
+  the month's rosters in the dashboard's four queries once (people,
+  leave over the span, separations, audits per agent and date bucketed
+  by `auditWeekOf`); `getQaRoster` is now the one-week case of it, so
+  the dashboard and the chart agree by construction. `completionGrid`
+  rolls each week up by leader (`completionByLeader`: required and
+  completed summed over the leader's agents, a leader listed only if
+  they owed something, no-leader agents under Unassigned) into a leader ×
+  week grid with month totals; a week a team owed nothing in is an empty
+  cell, not a zero. `CompletionChart` is server-rendered SVG like the
+  app's other charts: a group per leader, a 16px bar per week with a 2px
+  surface gap, rounded at the data end and square at the baseline, the
+  weeks in one navy hue stepped light (W1) to dark (newest) — a
+  validated ordinal ramp (navy over white at fixed strengths, monotone
+  lightness, gaps ≥ 0.06, light end 2.5:1 on the surface), a legend of
+  W1..Wn with dates, a rotated percent on each cap, an empty week as a
+  baseline tick, a solid accent hairline at 100%, an axis to a clean
+  number above the tallest bar and never below 100, a hover title with
+  the counts, and the name with `completed/required · pct` for the month
+  under each group; a table under the chart carries the same numbers
+  per week and month with a Met / N to go / Not started tag. Three stat
+  cards above: leaders with audits owed, at 100% for the month, month
+  completion. Checked with a headless-Chromium screenshot of a six-team
+  fixture (`/opt/pw-browsers/chromium-1194/chrome-linux/chrome
+  --headless=new --screenshot`).
+- **Progression search, and the action-item list as a CSV (22 Sep).** The
+  progression's search box (`ProgressionBoard`) finds a supervisor by any
+  part of the name (whole team) or an agent by name or employee ID (the
+  team, opened, with only the matching agents); `filterTeams` in
+  `src/lib/ramp/progression-search.ts` (tested; case, accents and the
+  punctuation names carry folded, every term required). To search an
+  agent in a team not yet opened, `TeamProgression` now carries a
+  `roster` of names — cheap beside the rows — and a team matched through
+  an agent has its agents loaded from the keystroke, one team after
+  another, never from an effect. The Action items page has "Export CSV"
+  beside the active/resolved toggle: `action-items/export/route.ts`
+  renders the same `getActionItems` query with the page's own `all` and
+  `employee` filters, so the file holds what the table shows and nothing
+  outside the caller's scope; rows built by `actionItemsExportRows`
+  (`src/lib/action-items/export.ts`, tested): item, employee, team
+  leader, manager, site, KPI, status, passing weeks, opened week, RCA,
+  plan, coaching and training flags. Plain `<a>` links for both
+  downloads, the way the ramp export is.
+- **Progression: KPI rows now pass or fail against the KPI's own bar (22
+  Sep).** The other session's progression left every scorecard-KPI cell
+  uncoloured (`target: null`, "nobody sets a different Quality bar for
+  Nesting 2"); the owner asked for red where a cohort is not passing.
+  `kpiBar` (`src/lib/ramp/progression.ts`, tested) is the failure
+  threshold the weekly engine uses, or the target where only that is
+  set, for the higher/lower directions and null for a range or yes/no;
+  `placeEveryRampedWeek` carries it as the KPI row's target at every
+  stage, so `meetsTarget` colours the cell exactly as it colours a skill
+  week, the cell's tooltip shows "Target N", and the CSV/Excel target
+  columns carry it. The bar lives in `kpi_definitions` (set on the KPI
+  settings page), not in code. The tab switch is two standalone buttons
+  with a gap rather than one bordered strip — the strip stretched the
+  page's width.
+- **Ramp page in two tabs (22 Sep): "Progression by stage" and "Board".**
+  The other session had just shipped the progression (`progression-
+  board.tsx`, `stage-panel.tsx`, `src/lib/queries/ramp-progression.ts`,
+  `src/lib/ramp/progression.ts`, the CSV/Excel export under
+  `ramp/export`) as a second folding card above the board; the owner
+  asked for tabs instead. `?view=progression` (default) or `?view=board`,
+  switched by `RampViewTabs` (`view-tabs.tsx`, the PTO view-picker's
+  look). The stat cards sit above both; the board is read on both tabs
+  (its rows are those figures) and the progression only on its own. The
+  ramp page's `CollapsibleCard` went with the folding (it had no other
+  user); `src/lib/ui/collapsed.ts` stays for My Space and the Development
+  Hub. A duplicate per-agent stage grid this session had built the same
+  morning was discarded unmerged when the other session's version landed
+  on main first — check `git fetch origin main` before starting a
+  feature, not only before pushing.
 - **Backups, checked 21 Sep (Manila).** The Monday 06:00 cron on the
   administrator's Mac mini is running (dumps for 14 and 21 Sep in
   `~/EMR-backups`, 21–23 MB, logged in `backup.log`); the working

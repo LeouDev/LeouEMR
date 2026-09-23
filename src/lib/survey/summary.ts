@@ -73,6 +73,8 @@ export interface SurveyFilter {
   search: string;
   /** Submitted within this many days; null for every date. */
   withinDays: number | null;
+  /** Only responses in this NPS band — the passives and detractors are where the feedback to act on is. Absent for every band. */
+  nps?: NpsCategory | null;
 }
 
 /**
@@ -96,6 +98,7 @@ export function filterResponses(
   return rows
     .filter((row) => {
       if (cutoff && new Date(row.submittedAt) < cutoff) return false;
+      if (filter.nps && npsCategory(row.q4Nps) !== filter.nps) return false;
       if (!needle) return true;
       return (
         row.respondentName.toLowerCase().includes(needle) ||

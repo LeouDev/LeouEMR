@@ -32,7 +32,7 @@ export const FROM_RAMP = "ramp";
  */
 const RETURNS = new Map<string, ReturnTo>([
   [FROM_DEVELOPMENT, { href: "/development", label: "← Back to the development hub" }],
-  [FROM_RAMP, { href: "/ramp/progression", label: "← Back to the ramp progression" }],
+  [FROM_RAMP, { href: "/ramp?view=progression", label: "← Back to the ramp progression" }],
 ]);
 
 export function returnTo(from: string | undefined, fallback: ReturnTo): ReturnTo {

@@ -2,56 +2,111 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CurrentUser, UserRole } from "@/lib/auth/session";
 
 /**
- * The EWS board: everyone in scope, worst risk first, including the people
- * nobody has assessed yet.
+ * The EWS roster: everyone in scope, worst risk first, including the people
+ * nobody has assessed yet — scored live from the week's figures.
  *
- * The scoring itself (`computeEwsRisk`) is exercised by src/lib/ews/engine.ts
- * and is not retested here. What is specific to the board and worth pinning
- * down: an unassessed employee is listed rather than dropped, the ordering
- * puts a coverage gap ahead of a clean record but behind an active risk, and
- * scope failing closed is not silently lost when the roster query is added.
+ * The scoring itself (`computeEwsRisk`, `deriveAutoIndicators`,
+ * `buildRosterRow`) is exercised in src/lib/ews and is not retested here.
+ * What is specific to the query and worth pinning down: an unassessed
+ * employee is listed rather than dropped, the latest record supplies the
+ * ticks and the one before it the trend, the 201 file supplies a position,
+ * narrowing to a team goes through the scope, and scope failing closed is
+ * not silently lost. With a month given, the roster is the org history's —
+ * who the leader held that month — less anyone separated before it.
  */
 
 const scope = vi.hoisted(() => ({ value: null as unknown }));
-const roster = vi.hoisted(() => ({
-  rows: [] as Array<{ id: string; eid: string; name: string; supervisorName: string | null }>,
+const captured = vi.hoisted(() => ({ condition: undefined as unknown, where: {} as Record<string, unknown> }));
+const history = vi.hoisted(() => ({ ids: [] as string[], gone: [] as string[] }));
+const tables = vi.hoisted(() => ({
+  employees: [] as Array<Record<string, unknown>>,
+  ews_indicators: [] as Array<Record<string, unknown>>,
+  employee_profiles: [] as Array<Record<string, unknown>>,
+  ews_headcount: [] as Array<Record<string, unknown>>,
+  ranked: [] as Array<Record<string, unknown>>,
 }));
-const assessments = vi.hoisted(() => ({
-  rows: [] as Array<{
-    employeeId: string;
-    week: string;
-    riskLevel: string;
-    score: number;
-    capActive: boolean;
-    attrition: string;
-    notes: string | null;
-    assessedByName: string | null;
-  }>,
+const facts = vi.hoisted(() => ({
+  range: null as { first: string; last: string } | null,
+  byWeek: {} as Record<string, Array<{ employeeId: string; kpiCode: string; actualValue: number }>>,
 }));
-const captured = vi.hoisted(() => ({ rosterWhere: undefined as unknown }));
 
-vi.mock("@/lib/auth/scope", () => ({ employeeScope: () => scope.value }));
-vi.mock("@/lib/db/client", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: (condition: unknown) => {
-          captured.rosterWhere = condition;
-          return { orderBy: async () => roster.rows };
-        },
-      }),
-    }),
-    selectDistinctOn: () => ({
-      from: () => ({
-        leftJoin: () => ({
-          where: () => ({ orderBy: async () => assessments.rows }),
-        }),
-      }),
-    }),
+vi.mock("@/lib/auth/scope", () => ({
+  employeeScope: () => scope.value,
+  withScope: (_user: unknown, condition: unknown) => {
+    captured.condition = condition;
+    if (scope.value === null) return null;
+    return scope.value === "all" ? condition : { scope: scope.value, condition };
   },
 }));
 
-const { getEwsBoard } = await import("./ews");
+// The month's org history, as the roster reads it: who the leader held
+// (`reportingScopeIds`), the supervisor-of-record columns, and who an EWS
+// tag separated before the month.
+vi.mock("./org-history", () => ({
+  reportingScopeIds: async () => history.ids,
+  periodOwnerSubquery: () => ({ __sub: "period_owner" }),
+  joinPeriodOwner: () => ({ join: "period_owner" }),
+  supervisorEidOfRecord: () => ({ name: "supervisor_eid_of_record" }),
+  supervisorOfRecord: () => ({ name: "supervisor_of_record" }),
+}));
+vi.mock("./eligibility", () => ({ separatedBefore: async () => new Set(history.gone) }));
+
+// Real `eq`/`lte`/... build SQL AST nodes; plain data stands in for them so
+// the test can read what the query asked for. `sql` stays real: the ranked
+// subquery is built with it.
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  const col = (c: { name?: string } | undefined) => c?.name ?? "?";
+  return {
+    ...actual,
+    eq: (c: { name?: string }, value: unknown) => ({ eq: col(c), value }),
+    lte: (c: { name?: string }, value: unknown) => ({ lte: col(c), value }),
+    inArray: (c: { name?: string }, values: unknown[]) => ({ inArray: col(c), values }),
+    isNotNull: (c: { name?: string }) => ({ isNotNull: col(c) }),
+    and: (...parts: unknown[]) => ({ and: parts }),
+    asc: (c: { name?: string }) => ({ asc: col(c) }),
+    desc: (c: { name?: string }) => ({ desc: col(c) }),
+  };
+});
+
+vi.mock("./period-metrics", () => ({
+  getFactDateRange: async () => facts.range,
+  getPeriodMetrics: async (ids: string[], period: { start: string }) =>
+    (facts.byWeek[period.start] ?? []).filter((f) => ids.includes(f.employeeId)),
+}));
+
+const tableName = (t: unknown) =>
+  (t as { __sub?: string })?.__sub ?? ((t as Record<symbol, string>)[Symbol.for("drizzle:Name")] as keyof typeof tables);
+
+vi.mock("@/lib/db/client", () => {
+  function chain(rows: unknown[], name: string) {
+    const c = {
+      where: (condition: unknown) => {
+        captured.where[name] = condition;
+        return c;
+      },
+      orderBy: () => c,
+      groupBy: () => c,
+      leftJoin: () => c,
+      limit: () => c,
+      as: (name: string) => ({ __sub: name }),
+      then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) => Promise.resolve(rows).then(resolve, reject),
+    };
+    return c;
+  }
+  const from = (t: unknown) => {
+    const name = String(tableName(t));
+    return chain(tables[name as keyof typeof tables] ?? [], name);
+  };
+  return {
+    db: {
+      select: () => ({ from }),
+      selectDistinct: () => ({ from }),
+    },
+  };
+});
+
+const { getEwsHeadcount, getEwsRoster, getEwsTeams } = await import("./ews");
 
 function user(role: UserRole): CurrentUser {
   return {
@@ -60,122 +115,225 @@ function user(role: UserRole): CurrentUser {
     name: `Test ${role}`,
     role,
     status: "active",
-    employeeEid: "001895123",
+    employeeEid: "001772004",
     managerName: null,
   };
 }
 
+const person = (id: string, name: string, supervisorEid = "001772004", supervisorName = "Santos, Maria") => ({
+  id,
+  eid: `9${id}`,
+  name,
+  supervisorEid,
+  supervisorName,
+});
+
+const record = (employeeId: string, rank: number, overrides: Record<string, unknown> = {}) => ({
+  employeeId,
+  week: rank === 1 ? "2026-09-13" : "2026-09-06",
+  indicators: {},
+  capActive: false,
+  attrition: "none",
+  attritionDate: null,
+  expectedReturn: null,
+  actionPlan: null,
+  notes: null,
+  score: 0,
+  updatedAt: new Date("2026-09-19T08:00:00Z"),
+  rank,
+  assessedByName: "Santos, Maria",
+  ...overrides,
+});
+
 beforeEach(() => {
   scope.value = "all";
-  roster.rows = [];
-  assessments.rows = [];
-  captured.rosterWhere = undefined;
+  captured.condition = undefined;
+  captured.where = {};
+  history.ids = [];
+  history.gone = [];
+  tables.employees = [];
+  tables.ews_indicators = [
+    { code: "tardy", label: "Frequent tardiness" },
+    { code: "absent", label: "Increased absences" },
+    { code: "jobhunt", label: "Job hunting signals" },
+  ];
+  tables.employee_profiles = [];
+  tables.ews_headcount = [];
+  tables.ranked = [];
+  facts.range = { first: "2026-06-01", last: "2026-09-19" };
+  facts.byWeek = {};
 });
 
-describe("getEwsBoard", () => {
-  it("fails closed for an unlinked account rather than querying", async () => {
+describe("getEwsRoster", () => {
+  it("fails closed: no scope means an empty roster, not everyone", async () => {
     scope.value = null;
-    roster.rows = [{ id: "e1", eid: "1", name: "Should not appear", supervisorName: null }];
-    const board = await getEwsBoard(user("supervisor"));
-    expect(board.rows).toEqual([]);
-    expect(board.totals).toEqual({ black: 0, red: 0, yellow: 0, green: 0, unassessed: 0 });
+    tables.employees = [person("a", "Alpha")];
+    const roster = await getEwsRoster(user("supervisor"), null, null);
+    expect(roster.rows).toEqual([]);
+    expect(roster.totals.size).toBe(0);
   });
 
-  it("does not filter the roster query for an admin's 'all' scope", async () => {
-    roster.rows = [{ id: "e1", eid: "1", name: "Someone", supervisorName: "Sup" }];
-    await getEwsBoard(user("admin"));
-    expect(captured.rosterWhere).toBeUndefined();
+  it("lists everyone in scope, scores the unassessed from the data, and orders worst first", async () => {
+    tables.employees = [person("a", "Alpha"), person("b", "Beta"), person("c", "Gamma")];
+    tables.ranked = [
+      record("b", 1, { indicators: { jobhunt: true, tardy: true, absent: true }, capActive: true, score: 4 }),
+      record("b", 2, { score: 1 }),
+      record("c", 1, { attrition: "black", attritionDate: "2026-09-01" }),
+    ];
+    facts.byWeek["2026-09-13"] = [
+      { employeeId: "a", kpiCode: "ATTENDANCE", actualValue: 80 },
+      { employeeId: "a", kpiCode: "PRODUCTION_RATE", actualValue: 3.1 },
+      { employeeId: "b", kpiCode: "ATTENDANCE", actualValue: 100 },
+    ];
+
+    const roster = await getEwsRoster(user("admin"), null, null);
+    expect(roster.dataWeek?.start).toBe("2026-09-13");
+    expect(roster.rows.map((r) => r.name)).toEqual(["Gamma", "Beta", "Alpha"]);
+
+    const [gamma, beta, alpha] = roster.rows;
+    expect(gamma.riskLevel).toBe("BLACK");
+    // Two ticks and the CAP; the stored absence tick is ignored and the data says attendance was full.
+    expect(beta.score).toBe(3);
+    expect(beta.riskLevel).toBe("YELLOW");
+    expect(beta.delta).toBe(2);
+    expect(beta.latest?.assessedByName).toBe("Santos, Maria");
+    // Never assessed, one absence in the data.
+    expect(alpha.latest).toBeNull();
+    expect(alpha.score).toBe(1);
+    expect(alpha.riskLevel).toBe("YELLOW");
+    expect(alpha.delta).toBeNull();
+    expect(alpha.auto.absent.caption).toBe("Attendance 80% (flags below 100%)");
+
+    expect(roster.totals).toEqual({ black: 1, red: 0, yellow: 2, green: 0, size: 3 });
+    expect(roster.indicators.map((i) => i.code)).toEqual(["tardy", "absent", "jobhunt"]);
   });
 
-  it("lists someone who has never been assessed, with a null risk", async () => {
-    roster.rows = [{ id: "e1", eid: "1", name: "Never Assessed", supervisorName: "Sup" }];
-    assessments.rows = [];
-    const board = await getEwsBoard(user("admin"));
-    expect(board.rows).toEqual([
-      expect.objectContaining({ employeeId: "e1", riskLevel: null, score: null, week: null }),
-    ]);
-    expect(board.totals.unassessed).toBe(1);
+  it("takes a position from the 201 file where there is one", async () => {
+    tables.employees = [person("a", "Alpha")];
+    tables.employee_profiles = [{ eid: "9a", position: "Pharmacy Technician" }];
+    const roster = await getEwsRoster(user("admin"), null, null);
+    expect(roster.rows[0].position).toBe("Pharmacy Technician");
   });
 
-  it("orders critical, then at-risk, then watch, then unassessed, then stable", async () => {
-    roster.rows = [
-      { id: "green", eid: "1", name: "Green", supervisorName: null },
-      { id: "unassessed", eid: "2", name: "Unassessed", supervisorName: null },
-      { id: "yellow", eid: "3", name: "Yellow", supervisorName: null },
-      { id: "black", eid: "4", name: "Black", supervisorName: null },
-      { id: "red", eid: "5", name: "Red", supervisorName: null },
-    ];
-    const base = { week: "2026-08-22", capActive: false, attrition: "none", notes: null, assessedByName: null };
-    assessments.rows = [
-      { ...base, employeeId: "green", riskLevel: "GREEN", score: 0 },
-      { ...base, employeeId: "yellow", riskLevel: "YELLOW", score: 2 },
-      { ...base, employeeId: "black", riskLevel: "BLACK", score: 0 },
-      { ...base, employeeId: "red", riskLevel: "RED", score: 4 },
-    ];
-    const board = await getEwsBoard(user("admin"));
-    expect(board.rows.map((r) => r.employeeId)).toEqual([
-      "black",
-      "red",
-      "yellow",
-      "unassessed",
-      "green",
-    ]);
+  it("narrows to a team through the scope, so a manager cannot read past their span", async () => {
+    tables.employees = [person("a", "Alpha")];
+    await getEwsRoster(user("manager"), "001772004", null);
+    expect(captured.condition).toEqual({ eq: "supervisor_eid", value: "001772004" });
+    await getEwsRoster(user("manager"), null, null);
+    expect(captured.condition).toBeUndefined();
   });
 
-  it("breaks a tie within the same risk level by score, then by name", async () => {
-    roster.rows = [
-      { id: "b", eid: "1", name: "Beta", supervisorName: null },
-      { id: "a", eid: "2", name: "Alpha", supervisorName: null },
-      { id: "c", eid: "3", name: "Charlie", supervisorName: null },
-    ];
-    const base = { week: "2026-08-22", capActive: false, attrition: "none", notes: null, assessedByName: null };
-    assessments.rows = [
-      { ...base, employeeId: "a", riskLevel: "RED", score: 2 },
-      { ...base, employeeId: "b", riskLevel: "RED", score: 4 },
-      { ...base, employeeId: "c", riskLevel: "RED", score: 2 },
-    ];
-    const board = await getEwsBoard(user("admin"));
-    // Beta has the higher score and sorts first; Alpha and Charlie tie on
-    // score and fall back to name.
-    expect(board.rows.map((r) => r.employeeId)).toEqual(["b", "a", "c"]);
+  it("flags nobody from the data before the first import", async () => {
+    facts.range = null;
+    tables.employees = [person("a", "Alpha")];
+    const roster = await getEwsRoster(user("admin"), null, null);
+    expect(roster.dataWeek).toBeNull();
+    expect(roster.rows[0].score).toBe(0);
+    expect(roster.rows[0].auto.lowprod.caption).toBe("No PAR this week");
   });
+});
 
-  it("tallies totals from the same rows the board renders, not a separate count", async () => {
-    roster.rows = [
-      { id: "1", eid: "1", name: "A", supervisorName: null },
-      { id: "2", eid: "2", name: "B", supervisorName: null },
-      { id: "3", eid: "3", name: "C", supervisorName: null },
-    ];
-    const base = { week: "2026-08-22", capActive: false, attrition: "none", notes: null, assessedByName: null };
-    assessments.rows = [
-      { ...base, employeeId: "1", riskLevel: "BLACK", score: 5 },
-      { ...base, employeeId: "2", riskLevel: "GREEN", score: 0 },
-    ];
-    const board = await getEwsBoard(user("manager"));
-    expect(board.totals).toEqual({ black: 1, red: 0, yellow: 0, green: 1, unassessed: 1 });
-  });
+describe("getEwsRoster for a month", () => {
+  const september = { granularity: "month" as const, start: "2026-09-01", end: "2026-09-30", label: "September 2026" };
 
-  it("returns an empty board without touching assessments when nobody is in scope", async () => {
-    roster.rows = [];
-    const board = await getEwsBoard(user("supervisor"));
-    expect(board).toEqual({
-      rows: [],
-      away: [],
-      totals: { black: 0, red: 0, yellow: 0, green: 0, unassessed: 0 },
+  it("lists who the org history says the leader held that month, by the supervisor of record", async () => {
+    history.ids = ["a", "b"];
+    tables.employees = [person("a", "Alpha"), person("b", "Beta", "001772004", "Santos, Maria")];
+    const roster = await getEwsRoster(user("supervisor"), "001772004", september);
+    expect(roster.rows.map((r) => r.name)).toEqual(["Alpha", "Beta"]);
+    expect(captured.where.employees).toEqual({
+      and: [{ inArray: "id", values: ["a", "b"] }, { eq: "supervisor_eid_of_record", value: "001772004" }],
     });
   });
+
+  it("keeps everyone with a team when no team is picked, and nobody when the history reaches no one", async () => {
+    history.ids = ["a"];
+    tables.employees = [person("a", "Alpha")];
+    await getEwsRoster(user("admin"), null, september);
+    expect(captured.where.employees).toEqual({
+      and: [{ inArray: "id", values: ["a"] }, { isNotNull: "supervisor_eid_of_record" }],
+    });
+
+    history.ids = [];
+    const none = await getEwsRoster(user("admin"), null, september);
+    expect(none.rows).toEqual([]);
+  });
+
+  it("leaves off anyone separated before the month began", async () => {
+    history.ids = ["a", "b"];
+    history.gone = ["b"];
+    tables.employees = [person("a", "Alpha"), person("b", "Beta")];
+    const roster = await getEwsRoster(user("admin"), null, september);
+    expect(roster.rows.map((r) => r.name)).toEqual(["Alpha"]);
+    expect(roster.totals.size).toBe(1);
+  });
+
+  it("does not consult the org history for the attrition read", async () => {
+    history.ids = [];
+    tables.employees = [person("a", "Alpha")];
+    const roster = await getEwsRoster(user("admin"), null, null);
+    expect(roster.rows).toHaveLength(1);
+  });
 });
 
-describe("getEwsBoard away list", () => {
-  it("lists everyone carrying an attrition tag, and nobody who is not", async () => {
-    const board = await getEwsBoard(user("supervisor"));
-    for (const row of board.away) {
-      expect(row.attrition).toBeTruthy();
-      expect(row.attrition).not.toBe("none");
-    }
-    // Whoever is away must also still appear on the risk board itself.
-    for (const row of board.away) {
-      expect(board.rows.some((r) => r.employeeId === row.employeeId)).toBe(true);
-    }
+describe("getEwsTeams", () => {
+  it("lists each team leader once by EID, under the commonest spelling, and skips people with none", async () => {
+    tables.employees = [
+      { supervisorEid: "2", supervisorName: "Reyes, Angela", n: 4 },
+      { supervisorEid: "1", supervisorName: "Cruz, James", n: 3 },
+      { supervisorEid: "1", supervisorName: "Cruz,James", n: 7 },
+      { supervisorEid: "1", supervisorName: null, n: 9 },
+      { supervisorEid: null, supervisorName: null, n: 2 },
+      { supervisorEid: "3", supervisorName: null, n: 1 },
+    ];
+    expect(await getEwsTeams(user("admin"))).toEqual([
+      { supervisorEid: "3", supervisorName: "3" },
+      { supervisorEid: "1", supervisorName: "Cruz,James" },
+      { supervisorEid: "2", supervisorName: "Reyes, Angela" },
+    ]);
+    scope.value = null;
+    expect(await getEwsTeams(user("agent"))).toEqual([]);
+  });
+});
+
+describe("getEwsHeadcount", () => {
+  beforeEach(() => {
+    tables.employees = [
+      { supervisorEid: "1", supervisorName: "Cruz, James", n: 5 },
+      { supervisorEid: "2", supervisorName: "Reyes, Angela", n: 5 },
+    ];
+    tables.ews_headcount = [
+      { supervisorEid: "1", month: 1, openingOverride: 40, newHires: 2, transferIn: 0, transferOut: 0, voluntaryAttrition: 1, involuntaryAttrition: 0 },
+      { supervisorEid: "2", month: 1, openingOverride: 10, newHires: 1, transferIn: 0, transferOut: 0, voluntaryAttrition: 0, involuntaryAttrition: 0 },
+    ];
+  });
+
+  it("adds every team in scope up when no team is picked", async () => {
+    const view = await getEwsHeadcount(user("admin"), 2026, null);
+    expect(view.teams).toHaveLength(2);
+    expect(view.chain[0]).toMatchObject({ opening: 50, newHires: 3, closing: 52 });
+    expect(view.stats.projectedEoy).toBe(52);
+    expect(view.stats.attritionPct).toBe(2);
+  });
+
+  it("shows one team's own chain when picked", async () => {
+    const view = await getEwsHeadcount(user("admin"), 2026, "2");
+    expect(view.teams.map((t) => t.supervisorEid)).toEqual(["2"]);
+    expect(view.chain[0]).toMatchObject({ opening: 10, closing: 11 });
+  });
+
+  it("still reaches a team nobody reports to today: an administrator by EID, a supervisor as their own", async () => {
+    tables.ews_headcount.push({ supervisorEid: "9", month: 3, openingOverride: null, newHires: 0, transferIn: 0, transferOut: 2, voluntaryAttrition: 0, involuntaryAttrition: 0 });
+    const picked = await getEwsHeadcount(user("admin"), 2026, "9");
+    expect(picked.teams).toEqual([{ supervisorEid: "9", supervisorName: "9" }]);
+
+    const summed = await getEwsHeadcount(user("admin"), 2026, null);
+    expect(summed.teams.map((t) => t.supervisorEid)).toEqual(["1", "2", "9"]);
+
+    const own = await getEwsHeadcount({ ...user("supervisor"), employeeEid: "9" }, 2026, "9");
+    expect(own.teams).toEqual([{ supervisorEid: "9", supervisorName: "Test supervisor" }]);
+
+    const manager = await getEwsHeadcount(user("manager"), 2026, "9");
+    expect(manager.teams).toEqual([]);
   });
 });

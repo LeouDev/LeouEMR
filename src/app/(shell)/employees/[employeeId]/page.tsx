@@ -1,14 +1,18 @@
 import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { BackLink } from "@/components/back-link";
 import { Card, CardHeader, PageBand, formatWeek } from "@/components/ui";
 import { canRunTeamPrograms, isSupportRole } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isUuid } from "@/lib/ids";
 import { db } from "@/lib/db/client";
 import { ewsAssessments, ewsIndicators, users } from "@/lib/db/schema";
+import { autoIndicatorsFor } from "@/lib/queries/ews";
+import { periodContaining } from "@/lib/queries/period";
 import { getEmployeeMatrix } from "@/lib/queries/performance";
 import { getEmployeeSkillBreakdown } from "@/lib/queries/skill-breakdown";
+import type { EwsActionPlan } from "@/lib/ews/engine";
 import { EwsPanel } from "./ews-panel";
 import { ProgressMatrix } from "./progress-matrix";
 import { SkillBreakdownTable } from "./skill-breakdown-table";
@@ -50,7 +54,7 @@ export default async function EmployeePage({
   // selected one; the matrix above shows every week's risk at a glance.
   const assessmentWeek = query.week && weeks.includes(query.week) ? query.week : latestWeek;
 
-  const [assessmentRows, skillBreakdown] = await Promise.all([
+  const [assessmentRows, skillBreakdown, autoByEmployee] = await Promise.all([
     assessmentWeek
       ? db
           .select({ assessment: ewsAssessments, assessorName: users.name })
@@ -62,8 +66,12 @@ export default async function EmployeePage({
           .limit(1)
       : Promise.resolve([]),
     getEmployeeSkillBreakdown(employeeId, employee.eid, weeks),
+    // The three data-derived indicators for the week being assessed, shown
+    // locked on the panel the way the EWS tracker shows them.
+    assessmentWeek ? autoIndicatorsFor([employeeId], periodContaining("week", assessmentWeek)) : Promise.resolve(new Map()),
   ]);
   const [assessment] = assessmentRows;
+  const auto = autoByEmployee.get(employeeId) ?? null;
 
   const canAssess = canRunTeamPrograms(user);
   // Early warning signs are the supervisor's own read on flight risk and
@@ -92,12 +100,7 @@ export default async function EmployeePage({
       <PageBand title={employee.name} subtitle={employee.eid} />
 
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <Link
-          href="/employees"
-          className="text-sm font-medium text-muted underline-offset-4 hover:text-ink hover:underline"
-        >
-          ← Back to employees
-        </Link>
+        <BackLink fallbackHref="/employees" fallbackLabel="← Back to employees" />
 
         <div className="mt-4 mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -166,6 +169,10 @@ export default async function EmployeePage({
                       // page, and the default jump to the top meant scrolling
                       // back down after every week you looked at.
                       scroll={false}
+                      // Replace rather than push: looking at three weeks is
+                      // one visit, and "← Back" should return to the list,
+                      // not to each week in turn.
+                      replace
                       className={`border px-2 py-0.5 text-xs font-medium transition ${
                         week === assessmentWeek
                           ? "border-ink bg-ink text-white"
@@ -179,16 +186,23 @@ export default async function EmployeePage({
               }
             />
             <EwsPanel
+              // Keyed on the week: the panel seeds its form once, so a
+              // week switch must mount a fresh one or the previous week's
+              // values would be saved into the new week.
+              key={assessmentWeek}
               employeeId={employeeId}
               week={assessmentWeek}
               indicators={indicators}
               readOnly={!canAssess}
               assessedByName={assessment?.assessorName ?? null}
+              auto={auto}
               initial={{
                 indicators: (assessment?.assessment.indicators as Record<string, boolean>) ?? {},
                 capActive: assessment?.assessment.capActive ?? false,
                 attrition: assessment?.assessment.attrition ?? "none",
                 attritionDate: assessment?.assessment.attritionDate ?? "",
+                expectedReturn: assessment?.assessment.expectedReturn ?? "",
+                actionPlan: (assessment?.assessment.actionPlan as EwsActionPlan | null) ?? null,
                 notes: assessment?.assessment.notes ?? "",
               }}
             />

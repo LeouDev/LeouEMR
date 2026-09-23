@@ -19,7 +19,7 @@ import {
 import { loadSkillReferences, normalize } from "@/lib/import-pipeline/par-scoring";
 import { measureSkill } from "@/lib/kpi-engine/skill-result";
 import { LAST_STAGE, rampStageForWeek } from "@/lib/ramp/engine";
-import { cellsFor, type ProgressionRow, type StagedValue } from "@/lib/ramp/progression";
+import { cellsFor, kpiBar, type ProgressionRow, type StagedValue } from "@/lib/ramp/progression";
 import { PLAN_KPI_CODES } from "./performance";
 import { periodContaining } from "./period";
 import { getRampSchedulesBySkill } from "./ramp-schedule";
@@ -59,6 +59,8 @@ export interface TeamProgression {
   supervisor: string;
   /** Distinct agents with a ramp on record, however long ago. */
   agents: number;
+  /** Who they are, names only, so the search box can find an agent in a team not yet opened. */
+  roster: Array<{ employeeId: string; employeeName: string; eid: string }>;
   rows: ProgressionRow[];
 }
 
@@ -101,11 +103,20 @@ async function computeTeams(): Promise<TeamProgression[]> {
   }
 
   return [...byTeam.entries()]
-    .map(([supervisor, rows]) => ({
-      supervisor,
-      agents: new Set(rows.map((r) => r.employeeId)).size,
-      rows: foldRows(rows),
-    }))
+    .map(([supervisor, rows]) => {
+      const roster = new Map<string, { employeeId: string; employeeName: string; eid: string }>();
+      for (const r of rows) {
+        if (!roster.has(r.employeeId)) {
+          roster.set(r.employeeId, { employeeId: r.employeeId, employeeName: r.employeeName, eid: r.eid });
+        }
+      }
+      return {
+        supervisor,
+        agents: roster.size,
+        roster: [...roster.values()].sort((a, b) => a.employeeName.localeCompare(b.employeeName)),
+        rows: foldRows(rows),
+      };
+    })
     .sort((a, b) => a.supervisor.localeCompare(b.supervisor));
 }
 
@@ -212,6 +223,8 @@ async function placeEveryRampedWeek(): Promise<Placed[]> {
         code: kpiDefinitions.code,
         name: kpiDefinitions.name,
         direction: kpiDefinitions.direction,
+        target: kpiDefinitions.target,
+        failureThreshold: kpiDefinitions.failureThreshold,
         actualValue: weeklyMetricResults.actualValue,
       })
       .from(weeklyMetricResults)
@@ -299,8 +312,9 @@ async function placeEveryRampedWeek(): Promise<Placed[]> {
     placed.push({
       stage,
       value: row.actualValue,
-      // No per-stage bar: nobody sets a different Quality target for Nesting 2.
-      target: null,
+      // The KPI's own bar, the same at every stage: nobody sets a different
+      // Quality target for Nesting 2, but a cohort under the bar is not passing.
+      target: kpiBar(row),
       supervisor: owner.supervisor ?? UNASSIGNED,
       employeeId: owner.employeeId,
       employeeName: owner.employeeName,

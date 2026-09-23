@@ -421,6 +421,20 @@
       "when": 1790016906084,
       "tag": "0060_action_plan_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790069253232,
+      "tag": "0061_ews_tracker",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790137069511,
+      "tag": "0062_user_activity_days",
+      "breakpoints": true
     }
   ]
 }

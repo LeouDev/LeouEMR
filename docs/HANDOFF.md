@@ -138,7 +138,16 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0058_survey_responses` (17 Sep; the post-login survey's
+Latest migration: `0062_user_activity_days` (23 Sep; one row per account
+per Manila day it opened the app, for the utilization report — RLS, the
+`emr_app_full_access` policy and the grant; one paste of
+`APPLY_0062_USER_ACTIVITY_DAYS.sql`, rehearsed twice). Before it
+`0061_ews_tracker` (22 Sep; `expected_return` and
+`action_plan` on `ews_assessments`, and the new `ews_headcount` table with
+RLS, the `emr_app_full_access` policy and the grant — one paste of
+`APPLY_0061_EWS_TRACKER.sql`, rehearsed twice on a scratch Postgres). Before
+it the other session's `0059_my_space_notepad` and
+`0060_action_plan_categories`, and `0058_survey_responses` (17 Sep; the post-login survey's
 answers, one row per account — a new table, so it carries RLS, the
 `emr_app_full_access` policy and the grant; one paste of
 `APPLY_0058_SURVEY_RESPONSES.sql`). Before it `0057_tech_decision_header`
@@ -229,6 +238,49 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Utilization report** (23 Sep): `/survey-results/utilization`, who
+  uses the app day to day and EOD reports sent, by team and by manager,
+  with a banded table; daily ping into `user_activity_days` (migration
+  `0062_user_activity_days`, the owner pastes
+  `drizzle/APPLY_0062_USER_ACTIVITY_DAYS.sql` before the deploy; the ping
+  fails soft until then).
+- **View as a manager** (22 Sep): an administrator switches the whole
+  app to a manager's view from the profile panel (`src/lib/auth/view-as.ts`,
+  cookie applied in `getCurrentUser`; narrowing only).
+- **EWS tracker** (22 Sep): `/ews` is three screens — My Team (live
+  risk roster with an edit form), Headcount (monthly movement per team,
+  new table `ews_headcount`) and Permanent Attrition (exits with Restore,
+  leave register with CSV). Three indicators read from the week's data
+  (`src/lib/ews/auto-indicators.ts`); one write path for both forms
+  (`src/lib/ews/save.ts`). My Team is the current month's roster by the
+  org history (supervisor of record, leavers before the month dropped);
+  the attrition screen reads everyone in scope. Migration
+  `0061_ews_tracker` — applied by the owner on 22 Sep
+  (`drizzle/APPLY_0061_EWS_TRACKER.sql`).
+- **MBO per team leader** (22 Sep): the MBO table is a band per team
+  leader (headcount, pass rate, gate averages, gates missed) that opens
+  onto its agents, with an Export CSV of the same period and tab
+  (`src/lib/mbo/teams.ts`, `src/lib/mbo/export.ts`, `mbo/team-table.tsx`,
+  `mbo/export/route.ts`).
+- **Team QA Analysis drill-down** (22 Sep): a Form picker on the Error
+  categories card and each category opening onto its failed attributes
+  (`summarize(..., formKey)` in `src/lib/quality/analysis.ts`,
+  `CategoryDrilldown` in `quality/analysis/analysis-charts.tsx`).
+- **Quality "Audit completion" tab** (22 Sep): `/quality/completion`,
+  a group of columns per team leader, one per audit week of the month,
+  of the required audits filed against a 100% line, with a table under
+  it (`src/lib/quality/completion.ts`, `getQaRosters`,
+  `quality/completion/completion-chart.tsx`). Hidden from supervisors.
+- **Progression search and action-item CSV** (22 Sep): a search box
+  over supervisors and agents on the progression tab
+  (`src/lib/ramp/progression-search.ts`), and "Export CSV" on the Action
+  items page (`action-items/export/route.ts`, same filters and scope as
+  the page).
+- **Ramp page tabs** (22 Sep): "Progression by stage" (default; the
+  other session's per-team progression with agent drill-down, stage
+  notes and CSV/Excel export) and "Board" (who is ramping today, the
+  date editor, Re-apply all, the start form). `?view=` in the URL,
+  `src/app/(shell)/ramp/view-tabs.tsx`.
 - **Ramp shape** (17 Sep): two nesting weeks, then Week 1 through Week 8,
   ten stages (`src/lib/ramp/engine.ts`). The start week is the first day
   of the first nesting week's reporting week (a Sunday now). Each board

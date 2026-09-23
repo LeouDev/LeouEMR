@@ -990,7 +990,20 @@ export const ewsAssessments = pgTable(
     /** Active corrective action plan; counts one point toward the score. */
     capActive: boolean("cap_active").notNull().default(false),
     attrition: ewsAttritionEnum("attrition").notNull().default("none"),
+    /**
+     * When the tag took effect: the last day for a resignation or
+     * termination, the first day away for a leave state.
+     */
     attritionDate: date("attrition_date"),
+    /** For a leave state: the day the person is expected back. */
+    expectedReturn: date("expected_return"),
+    /**
+     * What the team leader has decided to do: MONITORING, SKIP_LEVEL,
+     * ADMIN_HEARING or OTHER (see src/lib/ews/engine.ts); null when nothing
+     * is planned. Free text rather than an enum so a new step can be added
+     * without a type migration.
+     */
+    actionPlan: text("action_plan"),
     notes: text("notes"),
     /** Derived from the fields above and stored so it can be filtered on. */
     score: integer("score").notNull().default(0),
@@ -1000,6 +1013,38 @@ export const ewsAssessments = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex("ews_assessments_employee_week_idx").on(table.employeeId, table.week)],
+);
+
+/**
+ * A team leader's monthly headcount movement, one row per team per month
+ * as the leader records it: hires, transfers either way and the two kinds
+ * of attrition. The month's opening figure carries forward from the month
+ * before unless overridden here (January's, or a correction), and the
+ * closing figure is arithmetic, never stored (src/lib/ews/headcount.ts).
+ *
+ * Keyed on the supervisor EID, the same key the roster scope uses, so a
+ * team's history stays with the leader whatever their account is called.
+ * A month with no row is zero movement.
+ */
+export const ewsHeadcount = pgTable(
+  "ews_headcount",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    supervisorEid: text("supervisor_eid").notNull(),
+    year: integer("year").notNull(),
+    /** 1 to 12. */
+    month: integer("month").notNull(),
+    /** Null carries the previous month's closing forward. */
+    openingOverride: integer("opening_override"),
+    newHires: integer("new_hires").notNull().default(0),
+    transferIn: integer("transfer_in").notNull().default(0),
+    transferOut: integer("transfer_out").notNull().default(0),
+    voluntaryAttrition: integer("voluntary_attrition").notNull().default(0),
+    involuntaryAttrition: integer("involuntary_attrition").notNull().default(0),
+    updatedBy: uuid("updated_by").references(() => users.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("ews_headcount_team_month_idx").on(table.supervisorEid, table.year, table.month)],
 );
 
 // ---------------------------------------------------------------------------
@@ -1016,6 +1061,32 @@ export const auditLog = pgTable("audit_log", {
   after: jsonb("after"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * One row per account per day it opened the app, for the utilization
+ * report: who is using the tool day to day, by team and by manager. The
+ * browser pings once a day (a marker in its own storage keeps it to
+ * once), the row is upserted with the time, and nothing else about the
+ * visit is kept — this is a headcount of use, not a log of what anyone
+ * looked at. The day is the Manila calendar day the team works in.
+ */
+export const userActivityDays = pgTable(
+  "user_activity_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_activity_days_user_day_idx").on(table.userId, table.day),
+    // The report reads a range of days across every account.
+    index("user_activity_days_day_idx").on(table.day),
+  ],
+);
 
 /**
  * A person's own profile picture, uploaded from the profile panel. Kept in

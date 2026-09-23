@@ -13,8 +13,56 @@ export type EwsRiskLevel = "GREEN" | "YELLOW" | "RED" | "BLACK";
 
 export type EwsAttrition = "none" | "black" | "absconding" | "loa" | "maternity";
 
+export const EWS_ATTRITION_CODES: readonly EwsAttrition[] = ["none", "black", "absconding", "loa", "maternity"];
+
 /** Absence states that are not attrition but still warrant a red flag. */
 const LEAVE_STATES: EwsAttrition[] = ["absconding", "loa", "maternity"];
+
+/** The tags that force the RED band whatever the score: away, for whatever reason. */
+export function isLeaveState(attrition: EwsAttrition): boolean {
+  return LEAVE_STATES.includes(attrition);
+}
+
+/**
+ * Away and expected back: a leave of absence or maternity. Absconding is
+ * not one of these — someone who stopped turning up without notice is an
+ * exit (`employeeStatusFor` separates them and their open work closes),
+ * so the tracker lists them with the exits, not on the leave register,
+ * and asks for no return date.
+ */
+export function expectsReturn(attrition: EwsAttrition): attrition is "loa" | "maternity" {
+  return attrition === "loa" || attrition === "maternity";
+}
+
+/** The tags that take someone off the roster for good, until restored. */
+export function isExit(attrition: EwsAttrition): attrition is "black" | "absconding" {
+  return attrition === "black" || attrition === "absconding";
+}
+
+export const EWS_ATTRITION_LABELS: Record<EwsAttrition, string> = {
+  none: "Active — no attrition",
+  black: "Resignation / termination",
+  absconding: "Absconding",
+  loa: "Leave of absence",
+  maternity: "Maternity",
+};
+
+/**
+ * What the team leader has decided to do about someone: the tracker's
+ * escalation ladder, stored as its code on the assessment.
+ */
+export type EwsActionPlan = "MONITORING" | "SKIP_LEVEL" | "ADMIN_HEARING" | "OTHER";
+
+export const EWS_ACTION_PLANS: Array<{ code: EwsActionPlan; label: string }> = [
+  { code: "MONITORING", label: "For Monitoring" },
+  { code: "SKIP_LEVEL", label: "For SKIP Level" },
+  { code: "ADMIN_HEARING", label: "For Admin Hearing" },
+  { code: "OTHER", label: "Other" },
+];
+
+export function actionPlanLabel(code: string | null): string | null {
+  return EWS_ACTION_PLANS.find((p) => p.code === code)?.label ?? null;
+}
 
 export const EWS_THRESHOLDS = {
   /** A score at or below this is GREEN. */

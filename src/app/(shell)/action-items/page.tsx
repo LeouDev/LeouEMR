@@ -57,12 +57,29 @@ export default async function ActionItemsPage({
             title={openOnly ? "Active items" : "All items"}
             subtitle={`${items.length} item${items.length === 1 ? "" : "s"}`}
             action={
-              <Link
-                href={`${openOnly ? "/action-items?all=1" : "/action-items"}${employeeFilter ? `${openOnly ? "&" : "?"}employee=${employeeFilter}` : ""}`}
-                className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
-              >
-                {openOnly ? "Show resolved too" : "Show active only"}
-              </Link>
+              <span className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={`${openOnly ? "/action-items?all=1" : "/action-items"}${employeeFilter ? `${openOnly ? "&" : "?"}employee=${employeeFilter}` : ""}`}
+                  className="border border-line px-3 py-1.5 text-sm font-medium text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  {openOnly ? "Show resolved too" : "Show active only"}
+                </Link>
+                {/* A plain link, not a button: a download is a navigation, and
+                    this way it works with a middle click and a right click
+                    like every other file in the app. Carries the page's own
+                    filters so the file holds what the table shows. */}
+                {items.length > 0 && (
+                  <a
+                    href={`/action-items/export?${new URLSearchParams({
+                      ...(openOnly ? {} : { all: "1" }),
+                      ...(employeeFilter ? { employee: employeeFilter } : {}),
+                    })}`}
+                    className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                  >
+                    Export CSV
+                  </a>
+                )}
+              </span>
             }
           />
 

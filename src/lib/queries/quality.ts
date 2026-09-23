@@ -55,17 +55,33 @@ const EMPTY_ROSTER: QaRoster = { rows: [], activeAgents: 0, required: 0, complet
 
 /** Everyone in scope and what they owe this week, with what has been done. */
 export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<QaRoster> {
-  const ids = await scopeIds(user);
-  if (ids.length === 0) return EMPTY_ROSTER;
+  const [roster] = await getQaRosters(user, [week]);
+  return roster ?? EMPTY_ROSTER;
+}
 
-  const [people, leave, separated, counts] = await Promise.all([
+/**
+ * The roster for several weeks at once — the month's four or five, for the
+ * completion chart — read once: the people, their leave across the whole
+ * span and their separations are the same for every week; only the audit
+ * counts differ, and those come back per audit and are bucketed by week
+ * here. Four weeks cost the same four reads as one.
+ */
+export async function getQaRosters(user: CurrentUser, weeks: readonly AuditWeek[]): Promise<QaRoster[]> {
+  if (weeks.length === 0) return [];
+  const ids = await scopeIds(user);
+  if (ids.length === 0) return weeks.map(() => EMPTY_ROSTER);
+
+  const spanStart = weeks.map((w) => w.start).sort()[0];
+  const spanEnd = weeks.map((w) => w.end).sort().at(-1)!;
+
+  const [people, leave, separated, audits] = await Promise.all([
     db
       .select({ id: employees.id, name: employees.name, status: employees.status, supervisorName: employees.supervisorName })
       .from(employees)
       .where(inArray(employees.id, ids))
       .orderBy(asc(employees.name)),
-    // Approved leave touching the week; whether it covers all seven days
-    // is decided per person in standingFor.
+    // Approved leave touching the span; whether it covers all seven days
+    // of a week is decided per person and week in standingFor.
     db
       .select({ employeeId: ptoRequests.employeeId, start: ptoRequests.startDate, end: ptoRequests.endDate })
       .from(ptoRequests)
@@ -73,25 +89,25 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
         and(
           inArray(ptoRequests.employeeId, ids),
           eq(ptoRequests.status, "approved"),
-          lte(ptoRequests.startDate, week.end),
-          gte(ptoRequests.endDate, week.start),
+          lte(ptoRequests.startDate, spanEnd),
+          gte(ptoRequests.endDate, spanStart),
         ),
       ),
     separationDates(ids),
     // Only the team leader's own audits complete the requirement; a
     // support role's audit is on the record but does not count here.
     db
-      .select({ agentId: qaAudits.agentId, n: count() })
+      .select({ agentId: qaAudits.agentId, auditDate: qaAudits.auditDate, n: count() })
       .from(qaAudits)
       .where(
         and(
           inArray(qaAudits.agentId, ids),
           eq(qaAudits.countsForRequirement, true),
-          gte(qaAudits.auditDate, week.start),
-          lte(qaAudits.auditDate, week.end),
+          gte(qaAudits.auditDate, spanStart),
+          lte(qaAudits.auditDate, spanEnd),
         ),
       )
-      .groupBy(qaAudits.agentId),
+      .groupBy(qaAudits.agentId, qaAudits.auditDate),
   ]);
 
   const leaveByAgent = new Map<string, Array<{ start: string; end: string }>>();
@@ -99,38 +115,45 @@ export async function getQaRoster(user: CurrentUser, week: AuditWeek): Promise<Q
     if (!row.employeeId) continue;
     leaveByAgent.set(row.employeeId, [...(leaveByAgent.get(row.employeeId) ?? []), { start: row.start, end: row.end }]);
   }
-  const doneByAgent = new Map(counts.map((c) => [c.agentId, c.n]));
+  // `${weekStart}|${agentId}` -> audits that week.
+  const doneByWeekAgent = new Map<string, number>();
+  for (const audit of audits) {
+    const key = `${auditWeekOf(audit.auditDate).start}|${audit.agentId}`;
+    doneByWeekAgent.set(key, (doneByWeekAgent.get(key) ?? 0) + audit.n);
+  }
 
-  // Someone who left before the week is not on its roster at all — not
-  // even as a "not required" row. On the calendar of a week they were
-  // still here, they are listed and owe audits like anyone else.
-  const rows: QaRosterRow[] = people
-    .map((person) => {
-      const standing = standingFor(
-        { status: person.status, separatedOn: separated.get(person.id) ?? null, leave: leaveByAgent.get(person.id) ?? [] },
-        week,
-      );
-      return {
-        id: person.id,
-        name: person.name,
-        supervisorName: person.supervisorName,
-        standing,
-        required: requiredFor(standing),
-        completed: doneByAgent.get(person.id) ?? 0,
-      };
-    })
-    .filter((row) => row.standing !== "separated");
+  return weeks.map((week) => {
+    // Someone who left before the week is not on its roster at all — not
+    // even as a "not required" row. On the calendar of a week they were
+    // still here, they are listed and owe audits like anyone else.
+    const rows: QaRosterRow[] = people
+      .map((person) => {
+        const standing = standingFor(
+          { status: person.status, separatedOn: separated.get(person.id) ?? null, leave: leaveByAgent.get(person.id) ?? [] },
+          week,
+        );
+        return {
+          id: person.id,
+          name: person.name,
+          supervisorName: person.supervisorName,
+          standing,
+          required: requiredFor(standing),
+          completed: doneByWeekAgent.get(`${week.start}|${person.id}`) ?? 0,
+        };
+      })
+      .filter((row) => row.standing !== "separated");
 
-  const active = rows.filter((r) => r.standing === "active");
-  const required = active.reduce((sum, r) => sum + r.required, 0);
-  const completed = active.reduce((sum, r) => sum + r.completed, 0);
-  return {
-    rows,
-    activeAgents: active.length,
-    required,
-    completed,
-    completionPct: required === 0 ? 100 : Math.min(100, Math.round((completed / required) * 100)),
-  };
+    const active = rows.filter((r) => r.standing === "active");
+    const required = active.reduce((sum, r) => sum + r.required, 0);
+    const completed = active.reduce((sum, r) => sum + r.completed, 0);
+    return {
+      rows,
+      activeAgents: active.length,
+      required,
+      completed,
+      completionPct: required === 0 ? 100 : Math.min(100, Math.round((completed / required) * 100)),
+    };
+  });
 }
 
 /**
@@ -306,9 +329,12 @@ export async function getQaAnalysisInput(
       auditDate: qaAudits.auditDate,
       scorePct: qaAudits.scorePct,
       isCritical: qaAudits.isCritical,
+      formKey: qaAudits.formKey,
+      formLabel: qaForms.label,
     })
     .from(qaAudits)
     .innerJoin(employees, eq(employees.id, qaAudits.agentId))
+    .innerJoin(qaForms, eq(qaForms.key, qaAudits.formKey))
     .where(and(inArray(qaAudits.agentId, ids), gte(qaAudits.auditDate, window.priorStart), lte(qaAudits.auditDate, window.end)));
   if (audits.length === 0) return { audits: [], fails: [] };
 

@@ -1,9 +1,10 @@
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull } from "drizzle-orm";
 import { ProfilePanel } from "@/components/profile-panel";
 import { SidebarShell } from "@/components/sidebar-shell";
 import { SignOutButton } from "@/components/sign-out-button";
 import { isSupportRole } from "@/lib/auth/scope";
 import type { CurrentUser } from "@/lib/auth/session";
+import { canSwitchView } from "@/lib/auth/view-as";
 import { db } from "@/lib/db/client";
 import { employeeProfiles, employees, notifications, userAvatars } from "@/lib/db/schema";
 import { formFromProfile } from "@/lib/profile/panel";
@@ -192,6 +193,22 @@ export async function AppSidebar({ user, initialOpen }: { user: CurrentUser; ini
     ...(user.role === "admin" ? ADMIN_NAV : []),
   ];
 
+  // A real administrator may look at the app as one of its managers; the
+  // names offered are the ones the data carries, and the rail says which
+  // view is on so the narrower pages are not mistaken for a fault.
+  const viewAs = canSwitchView(user)
+    ? {
+        current: user.actualRole === "admin" ? (user.managerName ?? null) : null,
+        managerNames: (
+          await db.selectDistinct({ name: employees.managerName }).from(employees).where(isNotNull(employees.managerName))
+        )
+          .map((r) => r.name)
+          .filter((n): n is string => Boolean(n))
+          .sort(),
+      }
+    : undefined;
+  const roleLabel = user.actualRole === "admin" ? `Manager view · ${user.managerName ?? ""}`.trim() : (ROLE_LABELS[user.role] ?? user.role);
+
   return (
     <SidebarShell
       items={items}
@@ -199,11 +216,12 @@ export async function AppSidebar({ user, initialOpen }: { user: CurrentUser; ini
       initialOpen={initialOpen}
       profile={
         <ProfilePanel
-          account={{ name: user.name, email: user.email, roleLabel: ROLE_LABELS[user.role] ?? user.role, employeeEid: user.employeeEid }}
+          account={{ name: user.name, email: user.email, roleLabel, employeeEid: user.employeeEid }}
           profile={profile}
           org={orgRow ?? null}
           quickLinks={quickLinks}
           avatarVersion={avatarRow ? avatarRow.updatedAt.getTime() : null}
+          viewAs={viewAs}
         />
       }
       signOut={<SignOutButton tone="sidebar" />}

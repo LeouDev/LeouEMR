@@ -4,7 +4,7 @@ import { summarize, windowFor, windowLabel, type AuditSummary, type FailSummary 
 const TODAY = "2026-09-13";
 
 function audit(over: Partial<AuditSummary> & { id: string; auditDate: string; scorePct: number }): AuditSummary {
-  return { agentName: "Agent", supervisorName: "Lopez, Ana", managerName: "Cruz, Ben", isCritical: false, ...over };
+  return { agentName: "Agent", supervisorName: "Lopez, Ana", managerName: "Cruz, Ben", isCritical: false, formKey: "phones", formLabel: "Phones", ...over };
 }
 
 describe("windowFor", () => {
@@ -38,8 +38,8 @@ describe("summarize", () => {
   const audits = [
     audit({ id: "a", auditDate: "2026-09-10", scorePct: 96 }),
     audit({ id: "b", auditDate: "2026-09-10", scorePct: 80 }),
-    audit({ id: "c", auditDate: "2026-09-12", scorePct: 0, isCritical: true, supervisorName: "Tan, Bea" }),
-    audit({ id: "d", auditDate: "2026-09-12", scorePct: 100, supervisorName: "Tan, Bea", managerName: "Reyes, Cy" }),
+    audit({ id: "c", auditDate: "2026-09-12", scorePct: 0, isCritical: true, supervisorName: "Tan, Bea", formKey: "fax", formLabel: "PANDA Fax" }),
+    audit({ id: "d", auditDate: "2026-09-12", scorePct: 100, supervisorName: "Tan, Bea", managerName: "Reyes, Cy", formKey: "fax", formLabel: "PANDA Fax" }),
     // Prior window: feeds the deltas, never the charts.
     audit({ id: "p1", auditDate: "2026-08-20", scorePct: 60 }),
     audit({ id: "p2", auditDate: "2026-08-25", scorePct: 0, isCritical: true }),
@@ -101,6 +101,41 @@ describe("summarize", () => {
     ]);
     expect(result.findings[0]).toEqual({ label: "Documentation: a. Did not select appropriate dropdown options", count: 2 });
     expect(result.findings).toHaveLength(3);
+  });
+
+  it("lists the forms audited in the window with their audit and failure counts", () => {
+    expect(result.forms).toEqual([
+      { key: "fax", label: "PANDA Fax", audits: 2, fails: 2 },
+      { key: "phones", label: "Phones", audits: 2, fails: 2 },
+    ]);
+    expect(result.form).toBeNull();
+  });
+
+  it("opens every failed category onto the attributes failed under it", () => {
+    expect(result.drill[0]).toEqual({
+      label: "Documentation",
+      count: 2,
+      share: 50,
+      attributes: [{ label: "a. Did not select appropriate dropdown options", count: 2 }],
+    });
+    expect(result.drill.map((d) => d.label)).toEqual(["Documentation", "Closing", "Compliance"]);
+  });
+
+  it("narrows the failure lists to one form when asked, and to every form for one it has not seen", () => {
+    const fax = summarize(audits, fails, window, "leader", "fax");
+    expect(fax.form).toBe("fax");
+    expect(fax.categories).toEqual([
+      { label: "Compliance", count: 1 },
+      { label: "Documentation", count: 1 },
+    ]);
+    expect(fax.drill.map((d) => [d.label, d.share])).toEqual([["Compliance", 50], ["Documentation", 50]]);
+    expect(fax.findings).toHaveLength(2);
+    // The rest of the page is the whole team's: the KPIs do not narrow.
+    expect(fax.total).toBe(4);
+
+    const unknown = summarize(audits, fails, window, "leader", "retired-form");
+    expect(unknown.form).toBeNull();
+    expect(unknown.categories).toEqual(result.categories);
   });
 
   it("says nothing to compare when both windows are empty", () => {

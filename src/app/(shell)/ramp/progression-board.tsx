@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { STAGES, meetsTarget, movement, type ProgressionRow, type StageCell } from "@/lib/ramp/progression";
+import { filterTeams } from "@/lib/ramp/progression-search";
 import type { AgentProgression, StageDetail, TeamProgression } from "@/lib/queries/ramp-progression";
 import { loadRampStageDetail, loadRampTeamAgents } from "./actions";
 import { StagePanel } from "./stage-panel";
@@ -19,11 +20,13 @@ import { StagePanel } from "./stage-panel";
 
 const HEAD = "px-2.5 py-2 text-[11px] font-semibold tracking-[0.06em] text-ink uppercase";
 const CELL = "px-2.5 py-1.5 text-center text-xs tabular-nums";
+const SEARCH = "border-2 border-ink bg-surface px-3 py-2 text-sm text-ink outline-none transition";
 
 export function ProgressionBoard({ teams }: { teams: TeamProgression[] }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [agents, setAgents] = useState<Record<string, AgentProgression[]>>({});
   const [failed, setFailed] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState("");
   const [loading, startLoading] = useTransition();
   const [panel, setPanel] = useState<{
     agent: AgentProgression;
@@ -31,14 +34,37 @@ export function ProgressionBoard({ teams }: { teams: TeamProgression[] }) {
     detail: StageDetail | null;
   } | null>(null);
 
+  // Loads are kicked off from the click or the keystroke that needs them,
+  // one team after another — never concurrently, for the pooler's sake, and
+  // never from an effect, which would re-run on every render.
+  function loadAgents(names: string[]) {
+    const wanted = names.filter((name) => !agents[name] && !failed[name]);
+    if (wanted.length === 0) return;
+    startLoading(async () => {
+      for (const name of wanted) {
+        const result = await loadRampTeamAgents(name);
+        if (result.ok) setAgents((current) => ({ ...current, [name]: result.agents }));
+        else setFailed((current) => ({ ...current, [name]: true }));
+      }
+    });
+  }
+
   function toggleTeam(name: string) {
     setOpen((current) => ({ ...current, [name]: !current[name] }));
-    if (open[name] || agents[name] || loading) return;
-    startLoading(async () => {
-      const result = await loadRampTeamAgents(name);
-      if (result.ok) setAgents((current) => ({ ...current, [name]: result.agents }));
-      else setFailed((current) => ({ ...current, [name]: true }));
-    });
+    if (open[name] || loading) return;
+    loadAgents([name]);
+  }
+
+  // A team found through one of its agents opens on that agent: the
+  // reader typed a person's name to see that person, not a closed band.
+  const visible = filterTeams(teams, query);
+  function search(next: string) {
+    setQuery(next);
+    loadAgents(
+      filterTeams(teams, next)
+        .filter((match) => match.agentIds !== null)
+        .map((match) => match.team.supervisor),
+    );
   }
 
   function openPanel(agent: AgentProgression, stage: number) {
@@ -66,6 +92,26 @@ export function ProgressionBoard({ teams }: { teams: TeamProgression[] }) {
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-3 border-b-2 border-line px-6 py-3">
+        <label className="min-w-64 flex-1 sm:max-w-md">
+          <span className="sr-only">Search supervisor or agent</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => search(e.target.value)}
+            placeholder="Supervisor, agent name or employee ID"
+            className={`${SEARCH} w-full`}
+          />
+        </label>
+        {query.trim() !== "" && (
+          <span className="text-xs text-muted" role="status">
+            {visible.length === 0
+              ? "No team or agent matches"
+              : `${visible.length} of ${teams.length} team${teams.length === 1 ? "" : "s"}`}
+          </span>
+        )}
+      </div>
+
       <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
@@ -80,13 +126,17 @@ export function ProgressionBoard({ teams }: { teams: TeamProgression[] }) {
             </tr>
           </thead>
           <tbody>
-            {teams.map((team) => (
+            {visible.map(({ team, agentIds }) => (
               <TeamRows
                 key={team.supervisor}
                 team={team}
-                open={!!open[team.supervisor]}
+                open={!!open[team.supervisor] || agentIds !== null}
                 failed={!!failed[team.supervisor]}
-                agents={agents[team.supervisor]}
+                agents={
+                  agentIds === null
+                    ? agents[team.supervisor]
+                    : agents[team.supervisor]?.filter((agent) => agentIds.has(agent.employeeId))
+                }
                 onToggle={() => toggleTeam(team.supervisor)}
                 onCell={openPanel}
               />

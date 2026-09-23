@@ -2,6 +2,7 @@ import Link from "next/link";
 import { returnTo } from "@/lib/development/return-to";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { FoldableCard } from "@/components/foldable-card";
 import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { canViewRecords } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -136,8 +137,16 @@ export default async function RecordPage({
           </p>
         </header>
 
-        <Card className="print:break-inside-avoid">
-          <CardHeader title="Weekly timeline" subtitle="Every week this issue has been evaluated" />
+        {/* Folded by default: a dozen weeks of FAIL is a wall between the
+            header and the plan, and the summary already says what it holds. */}
+        <FoldableCard
+          id="record:timeline"
+          title="Weekly timeline"
+          subtitle="Every week this issue has been evaluated"
+          summary={`${history.length} week${history.length === 1 ? "" : "s"} · ${history.filter((h) => h.result === "pass").length} passing`}
+          defaultOpen={false}
+          className="print:break-inside-avoid"
+        >
           <div className="px-6 py-5">
             {history.length === 0 ? (
               <p className="text-sm text-muted">No weeks recorded.</p>
@@ -168,7 +177,7 @@ export default async function RecordPage({
               </ol>
             )}
           </div>
-        </Card>
+        </FoldableCard>
 
         {/* Anchored so the development plan can link straight here. That page
             says a root cause is recorded; the link it puts on that line has

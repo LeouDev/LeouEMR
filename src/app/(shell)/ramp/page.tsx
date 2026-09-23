@@ -1,14 +1,26 @@
-import { Card, CardHeader, EmptyState, StatCard } from "@/components/ui";
+import { redirect } from "next/navigation";
+import { Card, CardHeader, EmptyState, PageBand, StatCard } from "@/components/ui";
 import { canManageActionItems } from "@/lib/auth/scope";
+import { isSupportRole } from "@/lib/auth/scope";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getRampBoard } from "@/lib/queries/ramp";
+import { getRampProgression } from "@/lib/queries/ramp-progression";
+import { employeeScope } from "@/lib/auth/scope";
+import { db } from "@/lib/db/client";
+import { employees } from "@/lib/db/schema";
 import { LAST_STAGE, isNesting } from "@/lib/ramp/engine";
-import { requireRampUser, todayIso } from "./access";
-import { RampBand, RampTabs } from "./ramp-tabs";
 import { ClearRampButton, RampForm } from "./ramp-form";
 import { RampDateEditor } from "./ramp-date-editor";
 import { ReapplyAllButton } from "./reapply-all-button";
+import { ProgressionBoard } from "./progression-board";
+import { RampViewTabs, rampViewFor } from "./view-tabs";
 
 const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink uppercase";
+
+/** Today's date as YYYY-MM-DD, so the board reflects "right now" rather than a filtered period. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /**
  * New-hire ramp: who is currently onboarding, and what their target is
@@ -19,25 +31,49 @@ const HEAD = "px-3 py-2.5 text-xs font-semibold tracking-[0.08em] text-ink upper
  * applies the matching week's target automatically from then on (see
  * loadRampTargets), replacing a per-row target someone would otherwise
  * have to keep editing in the source file by hand every week.
- *
- * How past cohorts actually progressed is the other tab (./progression).
  */
-export default async function RampPage() {
-  const user = await requireRampUser();
+export default async function RampPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string }>;
+}) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (user.status !== "active") redirect("/pending");
+  // A hidden tab is not a permission check; this is a leader tool with
+  // nothing in it for an agent to see about themselves or anyone else.
+  if (user.role === "agent" || isSupportRole(user)) redirect("/dashboard");
+
+  const view = rampViewFor((await searchParams).view);
   const canEdit = canManageActionItems(user);
-  const board = await getRampBoard(user, todayIso());
+  // The board is read on both tabs: its rows are the figures above them.
+  // The progression only on its own tab. Organisation-wide and cached,
+  // then narrowed here: it is one answer for everybody and computing it
+  // per viewer is what the cache exists to prevent (see
+  // lib/queries/ramp-progression.ts).
+  const scope = employeeScope(user);
+  const [board, everyTeam, mine] = await Promise.all([
+    getRampBoard(user, todayIso()),
+    view === "progression" ? getRampProgression() : Promise.resolve([]),
+    view === "progression" && scope !== null
+      ? db
+          .select({ supervisor: employees.supervisorName })
+          .from(employees)
+          .where(scope === "all" ? undefined : scope)
+      : Promise.resolve([]),
+  ]);
+  const visible = new Set(mine.map((r) => r.supervisor ?? "Unassigned"));
+  const teams = everyTeam.filter((team) => visible.has(team.supervisor));
 
   const nesting = board.rows.filter((r) => isNesting(r.stage)).length;
   const completingThisWeek = board.rows.filter((r) => r.stage === LAST_STAGE).length;
 
   return (
     <>
-      <RampBand />
+      <PageBand title="New-Hire Ramp" subtitle="Two nesting weeks, then Week 1 through Week 8, to the standard target" />
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <RampTabs active="board" />
-
-        <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+        <div className="grid gap-4 sm:grid-cols-3">
           <StatCard label="Currently ramping" value={board.rows.length} />
           <StatCard label="In Nesting" value={nesting} hint="Their first two weeks" />
           <StatCard
@@ -48,17 +84,48 @@ export default async function RampPage() {
           />
         </div>
 
+        <RampViewTabs view={view} />
+
+        {view === "progression" ? (
         <Card>
           <CardHeader
-            title="Board"
-            subtitle={
-              board.rows.length === 0
-                ? "Nobody currently ramping"
-                : "Ordered by stage — Nesting first, closest to standard last"
-            }
-            action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
+          title="Progression by stage"
+          subtitle="Every ramp on record, averaged per team — open a team for its agents, then a figure for what the supervisor wrote"
+          action={
+            teams.length > 0 ? (
+              <span className="flex items-center gap-2">
+                {/* Plain links, not buttons: a download is a navigation, and
+                    this way it works with a middle click and a right click
+                    like every other file in the app. */}
+                <a
+                  href="/ramp/export"
+                  className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  CSV
+                </a>
+                <a
+                  href="/ramp/export?format=xlsx"
+                  className="border-2 border-ink px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-orange-brand hover:text-orange-brand"
+                >
+                  Excel
+                </a>
+              </span>
+            ) : undefined
+          }
           />
-
+          <ProgressionBoard teams={teams} />
+        </Card>
+        ) : (
+        <Card>
+          <CardHeader
+          title="Board"
+          subtitle={
+            board.rows.length === 0
+              ? "Nobody currently ramping"
+              : "Ordered by stage — Nesting first, closest to standard last"
+          }
+          action={canEdit && board.rows.length > 0 ? <ReapplyAllButton /> : undefined}
+          />
           {board.rows.length === 0 ? (
             <EmptyState
               title="Nobody currently ramping"
@@ -132,6 +199,7 @@ export default async function RampPage() {
               <RampForm employees={board.eligibleEmployees} skills={board.skills} />
             ))}
         </Card>
+        )}
       </main>
     </>
   );

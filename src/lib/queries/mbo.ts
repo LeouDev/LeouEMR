@@ -1,6 +1,6 @@
 import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
-import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorOfRecord } from "./org-history";
+import { joinPeriodOwner, periodOwnerSubquery, reportingScopeIds, supervisorEidOfRecord, supervisorOfRecord } from "./org-history";
 import { employees } from "@/lib/db/schema";
 import type { CurrentUser } from "@/lib/auth/session";
 import { MBO_GATES } from "@/lib/import-pipeline/par-scoring";
@@ -12,6 +12,8 @@ export interface MboRow {
   employeeId: string;
   eid: string;
   name: string;
+  /** The team leader of record for the period; the EID is the key, the name is for display. */
+  supervisorEid: string | null;
   supervisorName: string | null;
   /** Share of applicable gates met, 0-100. Null when nothing was measured. */
   mbo: number | null;
@@ -53,6 +55,7 @@ export async function getMboRoster(user: CurrentUser, period: Period): Promise<M
         id: employees.id,
         eid: employees.eid,
         name: employees.name,
+        supervisorEid: supervisorEidOfRecord(owner),
         supervisorName: supervisorOfRecord(owner),
       })
       .from(employees)
@@ -87,6 +90,7 @@ export async function getMboRoster(user: CurrentUser, period: Period): Promise<M
         employeeId: r.id,
         eid: r.eid,
         name: r.name,
+        supervisorEid: r.supervisorEid,
         supervisorName: r.supervisorName,
         mbo,
         productionRate,

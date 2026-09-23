@@ -13,7 +13,7 @@ export default async function QualityHistoryPage() {
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="history" canFile={canFileAudit(user)} />
+        <QualityTabs active="history" canFile={canFileAudit(user)} perLeader={user.role !== "supervisor"} />
         <Card>
           <CardHeader
             title="Audit history"

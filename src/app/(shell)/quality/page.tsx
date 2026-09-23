@@ -26,7 +26,7 @@ export default async function QualityDashboardPage({ searchParams }: { searchPar
     <>
       <QualityBand />
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <QualityTabs active="dashboard" canFile={canFile} />
+        <QualityTabs active="dashboard" canFile={canFile} perLeader={showLeader} />
 
         <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Active agents" value={roster.activeAgents} hint={isThisWeek ? "This week" : `Week of ${weekLabel(week)}`} />
