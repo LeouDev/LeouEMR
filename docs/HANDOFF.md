@@ -138,7 +138,11 @@ and `PathnameContext` / `SearchParamsContext` from
    as `postgres` and send a screenshot of the verify row. **The SQL runs
    before the code that reads the new tables is deployed.**
 
-Latest migration: `0061_ews_tracker` (22 Sep; `expected_return` and
+Latest migration: `0062_user_activity_days` (23 Sep; one row per account
+per Manila day it opened the app, for the utilization report — RLS, the
+`emr_app_full_access` policy and the grant; one paste of
+`APPLY_0062_USER_ACTIVITY_DAYS.sql`, rehearsed twice). Before it
+`0061_ews_tracker` (22 Sep; `expected_return` and
 `action_plan` on `ews_assessments`, and the new `ews_headcount` table with
 RLS, the `emr_app_full_access` policy and the grant — one paste of
 `APPLY_0061_EWS_TRACKER.sql`, rehearsed twice on a scratch Postgres). Before
@@ -234,6 +238,12 @@ the coding container; there is no database to run the app against here.
   The data itself is Saturday–Friday by the labels
   (`scripts/sql/week-boundary-check.sql`); the owner chose the
   operation's week regardless.
+- **Utilization report** (23 Sep): `/survey-results/utilization`, who
+  uses the app day to day and EOD reports sent, by team and by manager,
+  with a banded table; daily ping into `user_activity_days` (migration
+  `0062_user_activity_days`, the owner pastes
+  `drizzle/APPLY_0062_USER_ACTIVITY_DAYS.sql` before the deploy; the ping
+  fails soft until then).
 - **View as a manager** (22 Sep): an administrator switches the whole
   app to a manager's view from the profile panel (`src/lib/auth/view-as.ts`,
   cookie applied in `getCurrentUser`; narrowing only).

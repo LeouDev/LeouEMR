@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { ActivityPing } from "@/components/activity-ping";
 import { AppSidebar } from "@/components/app-sidebar";
 import { NavigationProgressBar, NavigationProgressProvider } from "@/components/navigation-progress";
 import { PageTransition } from "@/components/page-transition";
@@ -60,6 +61,7 @@ export default async function ShellLayout({ children }: { children: React.ReactN
     <NavigationProgressProvider>
       <div className="flex min-h-screen flex-col bg-cream md:flex-row">
         <AppSidebar user={user} initialOpen={sidebarOpen} />
+        <ActivityPing />
         <div className="flex min-w-0 flex-1 flex-col">
           {mfa === "grace" && graceUntil && (
             <div className="border-b-2 border-warn bg-warn-bg px-6 py-2.5 text-center text-sm font-semibold text-warn print:hidden">
