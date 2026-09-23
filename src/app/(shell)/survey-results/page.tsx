@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getSurveyCoverage, getSurveyResponses } from "@/lib/queries/survey";
 import { surveyIsLive, surveyLiveFrom } from "@/lib/survey/gate";
 import { ResponsesTable } from "./responses-table";
+import { SurveyTabs } from "./survey-tabs";
 
 /**
  * Every post-login survey response, for an administrator.
@@ -38,8 +39,9 @@ export default async function SurveyResultsPage() {
 
   return (
     <>
-      <PageBand title="Survey Results" subtitle="Post-login survey responses" />
+      <PageBand title="Survey Results" subtitle="Post-login survey responses and how the tool is used" />
       <main className="mx-auto max-w-7xl px-6 py-8">
+        <SurveyTabs active="responses" />
         <p className="mb-7 text-sm text-muted">
           Collected from people after signing in, before they could continue to the site. {status}
         </p>

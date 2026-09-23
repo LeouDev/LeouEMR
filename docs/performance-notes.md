@@ -1804,6 +1804,39 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Utilization report under Survey Results (23 Sep).** For the owner's
+  pitch: who uses the app day to day and how many end-of-day reports go
+  out, by team and by manager. `/survey-results/utilization` (admin
+  only; `SurveyTabs` puts Responses and Utilization side by side) over
+  the last 7, 14, 30 or 90 Manila days: four cards (active accounts of
+  all, active today, daily active average, EOD reports), two bar charts
+  (accounts active per day, EOD reports per day — per reporting week
+  when the range is longer than a month), per-team and per-manager
+  active-rate bar lists, and a banded table (`utilization-table.tsx`,
+  client, the MBO bands pattern; By team / By manager) that opens onto
+  each account's active days, EOD count and last visit. Two sources say
+  an account was active on a day: the new `user_activity_days` table
+  (migration `0062_user_activity_days` / `APPLY_0062_USER_ACTIVITY_DAYS.sql`,
+  rehearsed twice; one row per account per Manila day, written by
+  `ActivityPing` in the shell layout through `recordActivity` — once a
+  day per browser, local-storage marker as the throttle, the server owns
+  the day and the upsert, fails soft before the migration) and anything
+  the audit log recorded them writing (`eod.sent` counted as the EOD
+  figure), which reaches back before the ping existed but only counts
+  writers. Team and manager come from the roster (`getUtilization` in
+  `src/lib/queries/utilization.ts`): an agent's leader and manager, a
+  leader's own team and their manager (off their reports when they
+  have no roster row), a manager as the manager they are linked to;
+  administrators and unlinked support accounts fall in "Leadership &
+  support" / "No manager of record". The folding is pure and tested
+  (`src/lib/utilization/report.ts`: `dailySeries`, `weeklySeries`,
+  `groupByTeam`, `groupByManager`, `totals`, `rangeEnding`, `manilaDay`).
+- **Which account has the View as switch.** The owner has two accounts:
+  galileouuu@gmail.com (administrator, "LeouDev") and
+  leou.comendador@optum.com (manager, the roster's "Comendador"). The
+  switch shows only on an administrator; to have it on the optum account
+  its role is changed to Administrator on the Users page, after which
+  Manager view restores the span.
 - **An administrator can view the app as a manager (22 Sep).** The
   owner is both the administrator and a manager in the data. "View as"
   in the profile panel (`ViewAsToggle`, `src/components/view-as-toggle.tsx`)

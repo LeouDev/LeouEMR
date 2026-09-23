@@ -1063,6 +1063,32 @@ export const auditLog = pgTable("audit_log", {
 });
 
 /**
+ * One row per account per day it opened the app, for the utilization
+ * report: who is using the tool day to day, by team and by manager. The
+ * browser pings once a day (a marker in its own storage keeps it to
+ * once), the row is upserted with the time, and nothing else about the
+ * visit is kept — this is a headcount of use, not a log of what anyone
+ * looked at. The day is the Manila calendar day the team works in.
+ */
+export const userActivityDays = pgTable(
+  "user_activity_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    firstSeen: timestamp("first_seen", { withTimezone: true }).notNull().defaultNow(),
+    lastSeen: timestamp("last_seen", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_activity_days_user_day_idx").on(table.userId, table.day),
+    // The report reads a range of days across every account.
+    index("user_activity_days_day_idx").on(table.day),
+  ],
+);
+
+/**
  * A person's own profile picture, uploaded from the profile panel. Kept in
  * its own table rather than on users: users is read on every request and
  * a picture is tens of kilobytes that only the header's avatar route
