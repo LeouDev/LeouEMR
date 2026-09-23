@@ -2,6 +2,8 @@ import { and, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { auditLog, employees, userActivityDays, users } from "@/lib/db/schema";
 import type { UtilizationAccount, UtilizationRole } from "@/lib/utilization/report";
+import { joinPeriodOwner, managerOfRecord, periodOwnerSubquery, supervisorEidOfRecord, supervisorOfRecord } from "./org-history";
+import { periodContaining } from "./period";
 
 /**
  * Every active account with the days it opened the app in a range and the
@@ -14,10 +16,15 @@ import type { UtilizationAccount, UtilizationRole } from "@/lib/utilization/repo
  * history from day one; it undercounts people who only read, which the
  * ping then fills in. The day is the Manila calendar day throughout.
  *
- * Team and manager come from the roster: an agent's leader and manager of
- * record; a leader's own team, named after them, and their manager; a
- * manager stands as the manager they are linked to. Administrators and
- * unlinked support accounts have neither.
+ * Team and manager come from the month's roster — the org history's
+ * supervisor and manager of record for the month the range ends in, the
+ * same rule EWS My Team follows — not from whatever a person's current
+ * row happens to name: an agent's leader and manager of record; a
+ * leader's own team, named after them, and their manager (read off the
+ * people they led that month when they have no roster row of their own);
+ * a manager stands as the manager they are linked to. Administrators and
+ * unlinked support accounts have neither. An account whose person the
+ * roster has separated is left off: they are not on the roster.
  */
 export async function getUtilization(range: { start: string; end: string }): Promise<UtilizationAccount[]> {
   const accounts = await db
@@ -33,20 +40,32 @@ export async function getUtilization(range: { start: string; end: string }): Pro
   // scan is bounded by the index rather than by a per-row conversion.
   const since = sql`(${range.start}::date::timestamp at time zone 'Asia/Manila')`;
 
+  const month = periodContaining("month", range.end);
+  const owner = periodOwnerSubquery(month);
+  const ledBy = supervisorEidOfRecord(owner);
+
   const [rosterRows, ledRows, activity, lastSeenRows, audits] = await Promise.all([
     eids.length > 0
       ? db
-          .select({ eid: employees.eid, name: employees.name, supervisorName: employees.supervisorName, managerName: employees.managerName })
+          .select({
+            eid: employees.eid,
+            name: employees.name,
+            status: employees.status,
+            supervisorName: supervisorOfRecord(owner),
+            managerName: managerOfRecord(owner),
+          })
           .from(employees)
+          .leftJoin(owner, joinPeriodOwner(owner))
           .where(inArray(employees.eid, eids))
       : Promise.resolve([]),
-    // A leader's manager, read off the people they lead, for a leader with
-    // no roster row of their own.
+    // A leader's manager, read off the people they led that month, for a
+    // leader with no roster row of their own.
     eids.length > 0
       ? db
-          .selectDistinct({ supervisorEid: employees.supervisorEid, managerName: employees.managerName })
+          .selectDistinct({ supervisorEid: ledBy, managerName: managerOfRecord(owner) })
           .from(employees)
-          .where(inArray(employees.supervisorEid, eids))
+          .leftJoin(owner, joinPeriodOwner(owner))
+          .where(inArray(ledBy, eids))
       : Promise.resolve([]),
     db
       .select({ userId: userActivityDays.userId, day: sql<string>`${userActivityDays.day}::text` })
@@ -100,8 +119,9 @@ export async function getUtilization(range: { start: string; end: string }): Pro
     noteSeen(row.actorId, new Date(row.last).toISOString());
   }
 
-  return accounts.map((a) => {
+  return accounts.flatMap((a) => {
     const own = a.employeeEid ? roster.get(a.employeeEid) : undefined;
+    if (own?.status === "separated") return [];
     let team: string | null = null;
     let manager: string | null = null;
     if (a.role === "supervisor") {
@@ -113,15 +133,17 @@ export async function getUtilization(range: { start: string; end: string }): Pro
       team = own?.supervisorName ?? null;
       manager = own?.managerName ?? null;
     }
-    return {
-      userId: a.id,
-      name: a.name,
-      role: a.role as UtilizationRole,
-      team,
-      manager,
-      activeDays: [...(activeDays.get(a.id) ?? [])].sort(),
-      lastSeen: lastSeen.get(a.id) ?? null,
-      eodDays: eodDays.get(a.id) ?? {},
-    };
+    return [
+      {
+        userId: a.id,
+        name: a.name,
+        role: a.role as UtilizationRole,
+        team,
+        manager,
+        activeDays: [...(activeDays.get(a.id) ?? [])].sort(),
+        lastSeen: lastSeen.get(a.id) ?? null,
+        eodDays: eodDays.get(a.id) ?? {},
+      },
+    ];
   });
 }

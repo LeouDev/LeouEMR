@@ -38,6 +38,7 @@ export default async function UtilizationPage({ searchParams }: { searchParams: 
   const today = manilaDay();
   const range = rangeEnding(today, days);
   const accounts = await getUtilization(range);
+  const monthLabel = new Date(`${range.end}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 
   const daily = dailySeries(accounts, range.start, range.end);
   const series = days > 31 ? weeklySeries(accounts, range.start, range.end) : daily;
@@ -63,7 +64,7 @@ export default async function UtilizationPage({ searchParams }: { searchParams: 
 
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">
-            {range.start} to {range.end}, Manila days · an account is active on a day it opened the app or sent anything
+            {range.start} to {range.end}, Manila days · an account is active on a day it opened the app or sent anything · teams and managers as of the {monthLabel} roster
           </p>
           <div className="inline-flex border-2 border-ink">
             {RANGE_OPTIONS.map((option, i) => (

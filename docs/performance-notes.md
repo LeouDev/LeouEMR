@@ -1804,6 +1804,14 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Utilization bands follow the month's roster (23 Sep).** The first
+  cut read each account's team leader and manager off their current
+  employee row. `getUtilization` now joins the org history's period
+  owner for the month the range ends in (`supervisorOfRecord`,
+  `managerOfRecord`, a leader's manager off the people they led that
+  month by `supervisorEidOfRecord`), the rule EWS My Team follows, and
+  leaves off an account whose person the roster has separated. The page
+  says "teams and managers as of the September 2026 roster".
 - **Survey responses filter by NPS band (23 Sep).** A third control
   beside the search and the date window: All NPS / Promoters (9–10) /
   Passives (7–8) / Detractors (0–6), so the feedback worth acting on is
