@@ -55,7 +55,27 @@ function connect(): Database {
     withQueryGate(
       postgres(url, {
         max: POOL_SIZE,
-        idle_timeout: 20,
+        /**
+         * Five minutes, raised from twenty seconds.
+         *
+         * postgres-js asks Postgres for its type catalogue on every new
+         * connection, and `pg_stat_statements` counted that query nearly
+         * thirty thousand times in one billing cycle — about three hundred
+         * megabytes of egress that is handshake rather than data. Dropping
+         * a connection after twenty seconds idle guaranteed the handshake
+         * again on the next request; a serverless instance that serves a
+         * page a minute was paying it every time.
+         *
+         * Held connections are cheap on the database itself because
+         * production goes through the transaction pooler, which reuses
+         * server-side connections per statement — what is held here is a
+         * client connection to the pooler, not a backend. The ceiling to
+         * watch is the pooler's own client limit: this many per instance,
+         * times however many instances are warm. If pages ever start
+         * failing to connect under load, this is the number to bring back
+         * down first.
+         */
+        idle_timeout: 300,
         connect_timeout: 10,
         prepare: false,
       }),

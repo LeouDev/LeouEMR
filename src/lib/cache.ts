@@ -32,11 +32,24 @@ export const CACHE_TAG = {
  * `invalidateCache`). The one thing that cannot is a maintenance script run
  * from the command line (`npm run reevaluate`, `reset:imports`, …), which
  * writes to the same tables outside any request. This bounds how long such
- * a run can go unnoticed by the pages: ten minutes, chosen because those
- * scripts are rare, run by the person who then checks the result, and a
- * redeploy also clears everything.
+ * a run can go unnoticed by the pages.
+ *
+ * Six hours, raised from ten minutes after measuring what the short window
+ * cost. `pg_stat_statements` showed computeOrgPeriodMetrics — an
+ * organisation-wide aggregation over every employee and KPI — running about
+ * 2,700 times in one billing cycle, roughly 3 GB of the 5.77 GB of egress
+ * that put this project over its allowance. Almost none of that was a
+ * write: an entry for a period somebody was actively reading simply expired
+ * every ten minutes and was rebuilt from the fact tables, six times an
+ * hour, all day.
+ *
+ * The window protects against one rare thing and was charging for it
+ * continuously. Six hours keeps the protection — a script run in the
+ * morning is visible by the afternoon, and the person who ran it can
+ * redeploy to clear everything at once — while cutting those rebuilds by
+ * about thirty-six times.
  */
-export const CACHE_SAFETY_SECONDS = 600;
+export const CACHE_SAFETY_SECONDS = 21_600;
 
 /**
  * Wraps a read so its result is shared across requests and instances until
