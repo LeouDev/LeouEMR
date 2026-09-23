@@ -1804,6 +1804,15 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **The weekly timeline folds (23 Sep).** On the action item page and
+  the record page the timeline — a dozen weeks of FAIL between the header
+  and the plan — is a `FoldableCard` (`src/components/foldable-card.tsx`)
+  folded by default with "12 weeks · 0 passing" on the header and a
+  Show/Hide toggle; the fold is remembered per browser through the
+  shared `collapsedStore` (`src/lib/ui/collapsed.ts`), where for this
+  card the stored id means "toggled away from the card's default", so a
+  card that starts folded stays open for whoever opened it. The body
+  stays in the page hidden and shows in print.
 - **Utilization bands follow the month's roster (23 Sep).** The first
   cut read each account's team leader and manager off their current
   employee row. `getUtilization` now joins the org history's period

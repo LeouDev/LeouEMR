@@ -2,6 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { returnTo } from "@/lib/development/return-to";
 import { notFound, redirect } from "next/navigation";
+import { FoldableCard } from "@/components/foldable-card";
 import { Card, CardHeader, PageBand, StatusBadge, formatMetric, formatWeek } from "@/components/ui";
 import { canAcknowledge, canManageActionItems } from "@/lib/auth/scope";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -164,8 +165,15 @@ export default async function ActionItemPage({
           </div>
         )}
 
-        <Card>
-          <CardHeader title="Weekly timeline" subtitle="Every week this issue has been evaluated" />
+        {/* Folded by default: a dozen weeks of FAIL is a wall between the
+            header and the plan, and the summary already says what it holds. */}
+        <FoldableCard
+          id="action-item:timeline"
+          title="Weekly timeline"
+          subtitle="Every week this issue has been evaluated"
+          summary={`${history.length} week${history.length === 1 ? "" : "s"} · ${history.filter((h) => h.result === "pass").length} passing`}
+          defaultOpen={false}
+        >
           <div className="px-6 py-5">
             {history.length === 0 ? (
               <p className="text-sm text-muted">No weeks recorded yet.</p>
@@ -211,7 +219,7 @@ export default async function ActionItemPage({
               </ol>
             )}
           </div>
-        </Card>
+        </FoldableCard>
 
         {isAht && (
           <Card className="mt-6">

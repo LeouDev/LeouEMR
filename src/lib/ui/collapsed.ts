@@ -4,7 +4,9 @@
  * The third place this pattern has been needed — the Development Hub's open
  * rows, My Space's cards, and now the ramp page's two tables — so it is
  * written once here rather than a fourth time. The other two keep their own
- * stores for now; this one is where anything new should go.
+ * stores for now; this one is where anything new should go. `FoldableCard`
+ * (src/components/foldable-card.tsx) is the ready-made card on top of it,
+ * used by the action item and record pages' weekly timeline.
  *
  * localStorage rather than the tab's own: a fold is how a person likes a
  * page laid out, not where they happen to be in it, and it should still be
