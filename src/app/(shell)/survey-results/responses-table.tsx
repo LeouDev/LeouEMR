@@ -8,6 +8,7 @@ import {
   npsCategory,
   summarize,
   surveyCsv,
+  type NpsCategory,
   type SurveyResponseRow,
 } from "@/lib/survey/summary";
 
@@ -31,17 +32,26 @@ const DATE_WINDOWS: Array<{ value: string; label: string; days: number | null }>
   { value: "30", label: "Last 30 days", days: 30 },
 ];
 
+/** The NPS bands as the score defines them: the passives and detractors are where the feedback to act on is. */
+const NPS_BANDS: Array<{ value: NpsCategory | "all"; label: string }> = [
+  { value: "all", label: "All NPS" },
+  { value: "promoter", label: "Promoters (9–10)" },
+  { value: "passive", label: "Passives (7–8)" },
+  { value: "detractor", label: "Detractors (0–6)" },
+];
+
 export function ResponsesTable({ rows }: { rows: SurveyResponseRow[] }) {
   const [search, setSearch] = useState("");
   // Not `window`: that name shadows the global for this whole component,
   // and the export below is one `typeof window` guard away from being
   // quietly wrong.
   const [dateWindow, setDateWindow] = useState("all");
+  const [npsBand, setNpsBand] = useState<NpsCategory | "all">("all");
 
   const visible = useMemo(() => {
     const days = DATE_WINDOWS.find((w) => w.value === dateWindow)?.days ?? null;
-    return filterResponses(rows, { search, withinDays: days });
-  }, [rows, search, dateWindow]);
+    return filterResponses(rows, { search, withinDays: days, nps: npsBand === "all" ? null : npsBand });
+  }, [rows, search, dateWindow, npsBand]);
 
   const stats = useMemo(() => summarize(visible), [visible]);
 
@@ -93,6 +103,18 @@ export function ResponsesTable({ rows }: { rows: SurveyResponseRow[] }) {
           className="border-2 border-ink bg-surface px-3 py-2 text-sm font-semibold text-ink outline-none"
         >
           {DATE_WINDOWS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={npsBand}
+          onChange={(event) => setNpsBand(event.target.value as NpsCategory | "all")}
+          aria-label="NPS band"
+          className="border-2 border-ink bg-surface px-3 py-2 text-sm font-semibold text-ink outline-none"
+        >
+          {NPS_BANDS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>

@@ -76,6 +76,20 @@ describe("filterResponses", () => {
     response({ id: "old", submittedAt: "2026-07-01T00:00:00.000Z", q5Feedback: "Reports load slowly" }),
   ];
 
+  it("narrows to one NPS band, on top of the other filters", () => {
+    const banded = [
+      response({ id: "fan", q4Nps: 10, q5Feedback: "Love it" }),
+      response({ id: "meh", q4Nps: 7, q5Feedback: "Fine" }),
+      response({ id: "sore", q4Nps: 3, q5Feedback: "Reports load slowly" }),
+      response({ id: "sore-old", q4Nps: 0, submittedAt: "2026-07-01T00:00:00.000Z" }),
+    ];
+    expect(filterResponses(banded, { search: "", withinDays: null, nps: "detractor" }, now).map((r) => r.id)).toEqual(["sore", "sore-old"]);
+    expect(filterResponses(banded, { search: "", withinDays: 30, nps: "detractor" }, now).map((r) => r.id)).toEqual(["sore"]);
+    expect(filterResponses(banded, { search: "", withinDays: null, nps: "passive" }, now).map((r) => r.id)).toEqual(["meh"]);
+    expect(filterResponses(banded, { search: "love", withinDays: null, nps: "promoter" }, now).map((r) => r.id)).toEqual(["fan"]);
+    expect(filterResponses(banded, { search: "", withinDays: null, nps: null }, now)).toHaveLength(4);
+  });
+
   it("returns everything newest first when nothing is filtered", () => {
     expect(filterResponses(rows, { search: "", withinDays: null }, now).map((r) => r.id)).toEqual([
       "new",
