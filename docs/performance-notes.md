@@ -1804,6 +1804,12 @@ from every environment this project gets worked on in.
   Tests fake the admin client and extend the in-memory `db` with
   `returning()` and `and`/`ne`/`inArray` predicates so the bulk approval
   runs end to end.
+- **Survey responses filter by NPS band (23 Sep).** A third control
+  beside the search and the date window: All NPS / Promoters (9–10) /
+  Passives (7–8) / Detractors (0–6), so the feedback worth acting on is
+  one pick away. `SurveyFilter.nps` (optional, `npsCategory` on
+  `q4Nps`) in `src/lib/survey/summary.ts`, tested; the cards, the count
+  and the CSV follow the filtered rows as they already did.
 - **Utilization report under Survey Results (23 Sep).** For the owner's
   pitch: who uses the app day to day and how many end-of-day reports go
   out, by team and by manager. `/survey-results/utilization` (admin
